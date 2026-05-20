@@ -1,4 +1,4 @@
-import os, uuid, io, json, smtplib
+import os, uuid, io, json, smtplib, threading, time
 from datetime import datetime, timedelta
 from functools import wraps
 from email.mime.multipart import MIMEMultipart
@@ -947,6 +947,22 @@ def init_db():
 
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()
+
+# Auto-ping toutes les 10 min pour éviter la mise en veille Render (plan gratuit)
+def _keep_alive():
+    import urllib.request
+    url = os.environ.get('BASE_URL', '')
+    if not url or 'localhost' in url:
+        return  # Désactivé en local
+    while True:
+        time.sleep(600)  # 10 minutes
+        try:
+            urllib.request.urlopen(url + '/healthz', timeout=10)
+        except Exception:
+            pass
+
+_t = threading.Thread(target=_keep_alive, daemon=True)
+_t.start()
 
 if __name__ == '__main__':
     init_db()
