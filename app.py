@@ -32,13 +32,17 @@ app = Flask(__name__)
 
 # Base de données : PostgreSQL en production, SQLite en local
 _db_url = os.environ.get('DATABASE_URL', 'sqlite:///agenda.db')
-if _db_url.startswith('postgres://'):          # Render/Heroku utilisent postgres://
+if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+
+# SQLite : désactive les vérifications de thread pour compatibilité Gunicorn
+_connect_args = {'check_same_thread': False} if _db_url.startswith('sqlite') else {}
 
 app.config.update(
     SECRET_KEY=os.environ.get('SECRET_KEY', 'changez-cette-cle-en-production'),
     SQLALCHEMY_DATABASE_URI=_db_url,
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SQLALCHEMY_ENGINE_OPTIONS={'connect_args': _connect_args},
 )
 
 db = SQLAlchemy(app)
