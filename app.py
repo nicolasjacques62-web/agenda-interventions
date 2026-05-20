@@ -921,6 +921,9 @@ def init_db():
             print("  !! Changez ce mot de passe dans Parametres !!")
             print("=" * 55)
 
+# Initialisation automatique au démarrage (local ET production Gunicorn)
+init_db()
+
 if __name__ == '__main__':
     init_db()
     print("\n  Agenda & Bons d'Intervention")
