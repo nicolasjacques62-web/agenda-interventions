@@ -906,6 +906,26 @@ def parametres():
     params = {p.cle: p.valeur for p in Parametre.query.all()}
     return render_template('parametres.html', params=params)
 
+# ─── DIAGNOSTIC ──────────────────────────────────────────────────────────────
+
+@app.route('/healthz')
+def healthz():
+    import traceback
+    try:
+        User.query.count()
+        db_ok = True
+        db_err = None
+    except Exception as e:
+        db_ok = False
+        db_err = traceback.format_exc()
+    return jsonify({
+        'status': 'ok' if db_ok else 'error',
+        'db': str(app.config['SQLALCHEMY_DATABASE_URI'])[:40] + '...',
+        'db_ok': db_ok,
+        'db_error': db_err,
+        'python': __import__('sys').version,
+    })
+
 # ─── INIT ─────────────────────────────────────────────────────────────────────
 
 def init_db():
