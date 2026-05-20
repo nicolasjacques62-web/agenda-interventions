@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Modifier' if client else 'Nouveau' }} client{% endblock %}
+{% block page_title %}
+  <i class="bi bi-person-{{ 'pencil' if client else 'plus' }} me-2"></i>
+  {{ 'Modifier le client' if client else 'Nouveau client' }}
+{% endblock %}
+
+{% block content %}
+<form method="POST">
+<div class="row g-3">
+
+  <div class="col-lg-8">
+    <!-- Identité -->
+    <div class="card mb-3">
+      <div class="card-header">Identité</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Type de client</label>
+            <select name="type_client" class="form-select" id="typeClient">
+              <option value="particulier" {% if not client or client.type_client=='particulier' %}selected{% endif %}>Particulier</option>
+              <option value="professionnel" {% if client and client.type_client=='professionnel' %}selected{% endif %}>Professionnel</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Prénom</label>
+            <input type="text" name="prenom" class="form-control" value="{{ client.prenom if client else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Nom <span class="text-danger">*</span></label>
+            <input type="text" name="nom" class="form-control" value="{{ client.nom if client else '' }}" required>
+          </div>
+          <div class="col-12 pro-fields" style="{{ 'display:none' if (not client or client.type_client=='particulier') else '' }}">
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label fw-semibold">Société</label>
+                <input type="text" name="societe" class="form-control" value="{{ client.societe if client else '' }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">SIRET</label>
+                <input type="text" name="siret_client" class="form-control" value="{{ client.siret_client if client else '' }}">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact -->
+    <div class="card mb-3">
+      <div class="card-header">Coordonnées</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Email</label>
+            <input type="email" name="email" class="form-control" value="{{ client.email if client else '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Téléphone</label>
+            <input type="tel" name="telephone" class="form-control" value="{{ client.telephone if client else '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Tél. 2</label>
+            <input type="tel" name="telephone2" class="form-control" value="{{ client.telephone2 if client else '' }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Adresse</label>
+            <input type="text" name="adresse" class="form-control" value="{{ client.adresse if client else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Code postal</label>
+            <input type="text" name="code_postal" class="form-control" value="{{ client.code_postal if client else '' }}">
+          </div>
+          <div class="col-md-8">
+            <label class="form-label fw-semibold">Ville</label>
+            <input type="text" name="ville" class="form-control" value="{{ client.ville if client else '' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="card mb-3">
+      <div class="card-header">Notes internes</div>
+      <div class="card-body">
+        <textarea name="notes" class="form-control" rows="3" placeholder="Informations complémentaires…">{{ client.notes if client else '' }}</textarea>
+      </div>
+    </div>
+
+    {% if not client %}
+    <!-- Planification automatique -->
+    <div class="card mb-3 border-primary">
+      <div class="card-header bg-primary bg-opacity-10">
+        <div class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" name="planif_auto" id="planifAuto">
+          <label class="form-check-label fw-semibold" for="planifAuto">
+            <i class="bi bi-calendar-plus me-1"></i>Planifier une intervention à la création
+          </label>
+        </div>
+      </div>
+      <div class="card-body" id="planifFields" style="display:none">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Date et heure <span class="text-danger">*</span></label>
+            <input type="datetime-local" name="date_inter" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Durée estimée (min)</label>
+            <input type="number" name="duree_inter" class="form-control" value="60" min="15" step="15">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Titre de l'intervention</label>
+            <input type="text" name="titre_inter" class="form-control" placeholder="Ex : Mise en service, Diagnostic…">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Type</label>
+            <input type="text" name="type_inter" class="form-control" list="types-inter-list" placeholder="Ex : Installation, Maintenance…">
+            <datalist id="types-inter-list">
+              {% for t in types_inter.split(',') if t.strip() %}
+                <option value="{{ t.strip() }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Priorité</label>
+            <select name="priorite_inter" class="form-select">
+              <option value="normale">Normale</option>
+              <option value="urgente">Urgente</option>
+              <option value="faible">Faible</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Technicien</label>
+            <input type="text" name="technicien_inter" class="form-control" list="tech-list">
+            <datalist id="tech-list">
+              {% for t in techniciens.split(',') if t.strip() %}
+                <option value="{{ t.strip() }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Description</label>
+            <textarea name="desc_inter" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card sticky-top" style="top:1rem">
+      <div class="card-header">Actions</div>
+      <div class="card-body d-grid gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check2-circle me-1"></i>{{ 'Enregistrer' if client else 'Créer le client' }}
+        </button>
+        {% if client %}
+          <a href="{{ url_for('client_detail', id=client.id) }}" class="btn btn-outline-secondary">Annuler</a>
+        {% else %}
+          <a href="{{ url_for('clients_liste') }}" class="btn btn-outline-secondary">Annuler</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+</form>
+
+<script>
+document.getElementById('typeClient').addEventListener('change', function() {
+  document.querySelectorAll('.pro-fields').forEach(el => {
+    el.style.display = this.value === 'professionnel' ? '' : 'none';
+  });
+});
+{% if not client %}
+document.getElementById('planifAuto').addEventListener('change', function() {
+  document.getElementById('planifFields').style.display = this.checked ? '' : 'none';
+});
+{% endif %}
+</script>
+{% endblock %}

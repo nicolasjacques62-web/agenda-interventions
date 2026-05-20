@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Modifier' if intervention else 'Nouvelle' }} intervention{% endblock %}
+{% block page_title %}
+  <i class="bi bi-calendar-{{ 'pencil' if intervention else 'plus' }} me-2"></i>
+  {{ 'Modifier l\'intervention' if intervention else 'Nouvelle intervention' }}
+{% endblock %}
+
+{% block content %}
+<form method="POST">
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header">Informations</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Client <span class="text-danger">*</span></label>
+            <select name="client_id" class="form-select" required>
+              <option value="">— Sélectionner un client —</option>
+              {% for c in clients %}
+                <option value="{{ c.id }}"
+                  {% if intervention and intervention.client_id==c.id %}selected
+                  {% elif cid and cid==c.id %}selected{% endif %}>
+                  {{ c.nom_affichage }} ({{ c.reference }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Titre <span class="text-danger">*</span></label>
+            <input type="text" name="titre" class="form-control" required
+                   value="{{ intervention.titre if intervention else '' }}"
+                   placeholder="Ex : Diagnostic, Installation, Maintenance…">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Type d'intervention</label>
+            <input type="text" name="type_intervention" class="form-control"
+                   list="types-list"
+                   value="{{ intervention.type_intervention if intervention else '' }}">
+            <datalist id="types-list">
+              {% for t in types_inter.split(',') if t.strip() %}
+                <option value="{{ t.strip() }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Priorité</label>
+            <select name="priorite" class="form-select">
+              <option value="normale" {% if not intervention or intervention.priorite=='normale' %}selected{% endif %}>Normale</option>
+              <option value="urgente" {% if intervention and intervention.priorite=='urgente' %}selected{% endif %}>🔴 Urgente</option>
+              <option value="faible" {% if intervention and intervention.priorite=='faible' %}selected{% endif %}>Faible</option>
+            </select>
+          </div>
+          {% if intervention %}
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Statut</label>
+            <select name="statut" class="form-select">
+              <option value="planifiee" {% if intervention.statut=='planifiee' %}selected{% endif %}>Planifiée</option>
+              <option value="en_cours" {% if intervention.statut=='en_cours' %}selected{% endif %}>En cours</option>
+              <option value="terminee" {% if intervention.statut=='terminee' %}selected{% endif %}>Terminée</option>
+              <option value="annulee" {% if intervention.statut=='annulee' %}selected{% endif %}>Annulée</option>
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Date et heure <span class="text-danger">*</span></label>
+            <input type="datetime-local" name="date_planifiee" class="form-control" required
+                   value="{{ intervention.date_planifiee.strftime('%Y-%m-%dT%H:%M') if intervention else '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Durée (min)</label>
+            <input type="number" name="duree_estimee" class="form-control" min="15" step="15"
+                   value="{{ intervention.duree_estimee if intervention else 60 }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Technicien</label>
+            <input type="text" name="technicien" class="form-control" list="tech-list"
+                   value="{{ intervention.technicien if intervention else '' }}">
+            <datalist id="tech-list">
+              {% for t in techniciens.split(',') if t.strip() %}
+                <option value="{{ t.strip() }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Description</label>
+            <textarea name="description" class="form-control" rows="3">{{ intervention.description if intervention else '' }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Notes internes</label>
+            <textarea name="notes" class="form-control" rows="2">{{ intervention.notes if intervention else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card sticky-top" style="top:1rem">
+      <div class="card-header">Actions</div>
+      <div class="card-body d-grid gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check2-circle me-1"></i>{{ 'Enregistrer' if intervention else 'Planifier' }}
+        </button>
+        {% if not intervention %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="creer_bon" id="creerBon">
+          <label class="form-check-label small" for="creerBon">Créer le bon d'intervention directement</label>
+        </div>
+        {% endif %}
+        {% if intervention %}
+          <a href="{{ url_for('intervention_detail', id=intervention.id) }}" class="btn btn-outline-secondary">Annuler</a>
+        {% else %}
+          <a href="{{ url_for('interventions_liste') }}" class="btn btn-outline-secondary">Annuler</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}

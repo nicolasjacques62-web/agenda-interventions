@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Clients{% endblock %}
+{% block page_title %}<i class="bi bi-people me-2"></i>Clients{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('client_nouveau') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-person-plus me-1"></i>Nouveau client
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <form class="d-flex gap-2" method="GET">
+      <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Rechercher par nom, email, tél, référence…" style="max-width:350px">
+      <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-search"></i></button>
+      {% if q %}<a href="{{ url_for('clients_liste') }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-x-lg"></i></a>{% endif %}
+    </form>
+  </div>
+  <div class="card-body p-0">
+    {% if clients %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Réf.</th><th>Nom</th><th>Type</th><th>Email</th><th>Téléphone</th>
+            <th>Interventions</th><th>Portail</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in clients %}
+          <tr>
+            <td><span class="badge bg-light text-dark border">{{ c.reference }}</span></td>
+            <td>
+              <a href="{{ url_for('client_detail', id=c.id) }}" class="fw-semibold text-decoration-none">
+                {{ c.nom_affichage }}
+              </a>
+              {% if c.type_client == 'professionnel' and c.societe %}
+                <div class="text-muted small">{{ c.nom_complet }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.type_client == 'professionnel' %}
+                <span class="badge bg-info text-dark">Pro</span>
+              {% else %}
+                <span class="badge bg-light text-dark border">Particulier</span>
+              {% endif %}
+            </td>
+            <td class="small">{{ c.email or '—' }}</td>
+            <td class="small">{{ c.telephone or '—' }}</td>
+            <td>
+              <span class="badge bg-light text-dark border">{{ c.interventions|length }}</span>
+            </td>
+            <td>
+              {% if c.portal_actif %}
+                <span class="badge bg-success"><i class="bi bi-check2"></i> Actif</span>
+              {% else %}
+                <span class="badge bg-light text-muted border">Inactif</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{{ url_for('client_detail', id=c.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+                <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ c.id }}" class="btn btn-sm btn-outline-success" title="Planifier"><i class="bi bi-calendar-plus"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-people fs-1 d-block mb-2"></i>
+      {% if q %}Aucun résultat pour « {{ q }} »{% else %}Aucun client enregistré{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-footer text-muted small">{{ clients|length }} client(s) affiché(s)</div>
+</div>
+{% endblock %}

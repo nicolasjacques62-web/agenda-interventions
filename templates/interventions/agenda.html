@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Agenda{% endblock %}
+{% block page_title %}<i class="bi bi-calendar3 me-2"></i>Agenda{% endblock %}
+
+{% block head %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+<style>
+  #calendar { background:#fff; border-radius:10px; padding:1rem; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .fc-event { cursor:pointer; font-size:.8rem; }
+  .fc-toolbar-title { font-size:1.1rem !important; font-weight:600; }
+  .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('intervention_nouvelle') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg me-1"></i>Nouvelle intervention
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-auto">
+    <div class="d-flex gap-3 align-items-center flex-wrap">
+      <span class="small text-muted fw-semibold">Légende :</span>
+      <span><span class="legend-dot me-1" style="background:#3788d8"></span><small>Planifiée</small></span>
+      <span><span class="legend-dot me-1" style="background:#f39c12"></span><small>En cours</small></span>
+      <span><span class="legend-dot me-1" style="background:#27ae60"></span><small>Terminée</small></span>
+      <span><span class="legend-dot me-1" style="background:#e74c3c"></span><small>Urgente</small></span>
+      <span><span class="legend-dot me-1" style="background:#95a5a6"></span><small>Annulée</small></span>
+    </div>
+  </div>
+</div>
+
+<div id="calendar"></div>
+
+<!-- Tooltip modal -->
+<div class="modal fade" id="eventModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="modalTitle"></h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small" id="modalBody"></div>
+      <div class="modal-footer py-2">
+        <a href="#" id="modalLink" class="btn btn-primary btn-sm">Ouvrir</a>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales/fr.global.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
+    locale: 'fr',
+    initialView: 'timeGridWeek',
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
+    },
+    slotMinTime: '07:00:00',
+    slotMaxTime: '20:00:00',
+    allDaySlot: false,
+    height: 'auto',
+    nowIndicator: true,
+    businessHours: { daysOfWeek:[1,2,3,4,5], startTime:'08:00', endTime:'18:00' },
+    events: '{{ url_for("agenda_events") }}',
+    eventClick: function(info) {
+      info.jsEvent.preventDefault();
+      const p = info.event.extendedProps;
+      document.getElementById('modalTitle').textContent = info.event.title;
+      document.getElementById('modalBody').innerHTML =
+        `<strong>Client :</strong> ${p.client}<br>
+         <strong>Statut :</strong> ${p.statut}<br>
+         <strong>Priorité :</strong> ${p.priorite}<br>
+         ${p.technicien ? '<strong>Technicien :</strong> ' + p.technicien + '<br>' : ''}
+         <strong>Début :</strong> ${info.event.start.toLocaleString('fr-FR')}`;
+      document.getElementById('modalLink').href = info.event.url;
+      new bootstrap.Modal(document.getElementById('eventModal')).show();
+    },
+    eventDidMount: function(info) {
+      info.el.title = info.event.extendedProps.client + ' — ' + info.event.extendedProps.statut;
+    },
+    dateClick: function(info) {
+      window.location.href = '{{ url_for("intervention_nouvelle") }}?date=' + info.dateStr;
+    }
+  });
+  cal.render();
+});
+</script>
+{% endblock %}

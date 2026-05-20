@@ -1,0 +1,7 @@
+# Dépendances pour développement LOCAL uniquement (Python 3.14 Windows)
+flask==3.0.3
+flask-sqlalchemy==3.1.1
+flask-login==0.6.3
+werkzeug==3.0.3
+reportlab==4.2.2
+python-dotenv==1.0.1

@@ -1,0 +1,9 @@
+# Ne jamais envoyer ces fichiers sur GitHub
+.env
+venv/
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+instance/
+.DS_Store

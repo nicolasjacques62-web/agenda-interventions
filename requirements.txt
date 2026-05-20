@@ -1,0 +1,11 @@
+# Dépendances communes (local + production)
+flask==3.0.3
+flask-sqlalchemy==3.1.1
+flask-login==0.6.3
+werkzeug==3.0.3
+reportlab==4.2.2
+python-dotenv==1.0.1
+
+# Production uniquement (serveur Linux Python 3.11)
+gunicorn==22.0.0
+psycopg2-binary==2.9.9

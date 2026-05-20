@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Paramètres{% endblock %}
+{% block page_title %}<i class="bi bi-gear me-2"></i>Paramètres{% endblock %}
+
+{% block content %}
+<form method="POST">
+<div class="row g-3">
+
+  <!-- Société -->
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-building me-2"></i>Informations société</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Nom de la société</label>
+            <input type="text" name="societe" class="form-control" value="{{ params.get('societe','') }}" placeholder="Ma Société SAS">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Adresse complète</label>
+            <input type="text" name="adresse" class="form-control" value="{{ params.get('adresse','') }}" placeholder="12 rue de la Paix, 75001 Paris">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Téléphone</label>
+            <input type="text" name="telephone" class="form-control" value="{{ params.get('telephone','') }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Email société</label>
+            <input type="email" name="email" class="form-control" value="{{ params.get('email','') }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">SIRET</label>
+            <input type="text" name="siret" class="form-control" value="{{ params.get('siret','') }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Listes métier -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-list-ul me-2"></i>Listes personnalisées</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Techniciens (séparés par des virgules)</label>
+          <input type="text" name="techniciens" class="form-control"
+                 value="{{ params.get('techniciens','') }}"
+                 placeholder="Jean Dupont, Marie Martin, Paul Bernard">
+          <div class="form-text">Ces noms apparaîtront en suggestions lors de la planification.</div>
+        </div>
+        <div class="mb-0">
+          <label class="form-label fw-semibold">Types d'intervention (séparés par des virgules)</label>
+          <input type="text" name="types_intervention" class="form-control"
+                 value="{{ params.get('types_intervention','') }}"
+                 placeholder="Installation, Maintenance, Dépannage, Diagnostic">
+        </div>
+      </div>
+    </div>
+
+    <!-- URL de base -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-link-45deg me-2"></i>URL de base (portail client)</div>
+      <div class="card-body">
+        <label class="form-label fw-semibold">URL publique du serveur</label>
+        <input type="url" name="base_url" class="form-control"
+               value="{{ params.get('base_url','http://localhost:5000') }}"
+               placeholder="https://mondomaine.fr">
+        <div class="form-text">Utilisée pour générer les liens d'accès portail client.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email & Sécurité -->
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-envelope me-2"></i>Configuration email (SMTP)</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-8">
+            <label class="form-label fw-semibold">Serveur SMTP</label>
+            <input type="text" name="mail_server" class="form-control"
+                   value="{{ params.get('mail_server','') }}" placeholder="smtp.gmail.com">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Port</label>
+            <input type="number" name="mail_port" class="form-control"
+                   value="{{ params.get('mail_port','587') }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Identifiant (email expéditeur)</label>
+            <input type="text" name="mail_username" class="form-control"
+                   value="{{ params.get('mail_username','') }}" placeholder="contact@masociete.fr">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Mot de passe SMTP</label>
+            <input type="password" name="mail_password" class="form-control"
+                   value="{{ params.get('mail_password','') }}" placeholder="••••••••">
+            <div class="form-text">Pour Gmail : utilisez un mot de passe d'application.</div>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="mail_use_tls"
+                     id="tls" value="true"
+                     {% if params.get('mail_use_tls','true')=='true' %}checked{% endif %}>
+              <label class="form-check-label" for="tls">Utiliser TLS (recommandé)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sécurité admin -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-shield-lock me-2"></i>Sécurité — Mot de passe administrateur</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Nouveau mot de passe</label>
+            <input type="password" name="nouveau_mdp" class="form-control" placeholder="Laisser vide pour ne pas changer">
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Confirmer le nouveau mot de passe</label>
+            <input type="password" name="confirm_mdp" class="form-control">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Infos compte -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-person-circle me-2"></i>Compte administrateur</div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:120px">Identifiant</td><td>{{ current_user.username }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Nom</td><td>{{ current_user.nom or '—' }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Email</td><td>{{ current_user.email or '—' }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Rôle</td><td><span class="badge bg-danger">Administrateur</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <button type="submit" class="btn btn-primary px-4">
+      <i class="bi bi-check2-circle me-1"></i>Enregistrer tous les paramètres
+    </button>
+  </div>
+
+</div>
+</form>
+{% endblock %}

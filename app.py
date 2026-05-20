@@ -1,0 +1,929 @@
+import os, uuid, io, json, smtplib
+from datetime import datetime, timedelta
+from functools import wraps
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+
+from dotenv import load_dotenv
+load_dotenv()  # charge le fichier .env en local, ignoré en production
+
+from flask import (Flask, render_template, request, redirect, url_for,
+                   flash, jsonify, send_file, abort, session as flask_session)
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import (LoginManager, UserMixin, login_user, logout_user,
+                         login_required, current_user)
+from werkzeug.security import generate_password_hash, check_password_hash
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                    Paragraph, Spacer)
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    PDF_OK = True
+except ImportError:
+    PDF_OK = False
+
+app = Flask(__name__)
+
+# Base de données : PostgreSQL en production, SQLite en local
+_db_url = os.environ.get('DATABASE_URL', 'sqlite:///agenda.db')
+if _db_url.startswith('postgres://'):          # Render/Heroku utilisent postgres://
+    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+
+app.config.update(
+    SECRET_KEY=os.environ.get('SECRET_KEY', 'changez-cette-cle-en-production'),
+    SQLALCHEMY_DATABASE_URI=_db_url,
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+)
+
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Veuillez vous connecter.'
+login_manager.login_message_category = 'warning'
+
+# ─── MODÈLES ──────────────────────────────────────────────────────────────────
+
+class User(UserMixin, db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    nom = db.Column(db.String(100))
+    email = db.Column(db.String(120))
+    is_admin = db.Column(db.Boolean, default=True)
+
+    def set_password(self, p): self.password_hash = generate_password_hash(p)
+    def check_password(self, p): return check_password_hash(self.password_hash, p)
+
+
+class Parametre(db.Model):
+    __tablename__ = 'parametres'
+    id = db.Column(db.Integer, primary_key=True)
+    cle = db.Column(db.String(100), unique=True, nullable=False)
+    valeur = db.Column(db.Text)
+
+
+class Client(db.Model):
+    __tablename__ = 'clients'
+    id = db.Column(db.Integer, primary_key=True)
+    reference = db.Column(db.String(20), unique=True)
+    nom = db.Column(db.String(100), nullable=False)
+    prenom = db.Column(db.String(100))
+    email = db.Column(db.String(120))
+    telephone = db.Column(db.String(20))
+    telephone2 = db.Column(db.String(20))
+    adresse = db.Column(db.Text)
+    ville = db.Column(db.String(100))
+    code_postal = db.Column(db.String(10))
+    type_client = db.Column(db.String(20), default='particulier')
+    societe = db.Column(db.String(150))
+    siret_client = db.Column(db.String(20))
+    notes = db.Column(db.Text)
+    actif = db.Column(db.Boolean, default=True)
+    access_token = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
+    portal_password_hash = db.Column(db.String(256))
+    portal_actif = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    interventions = db.relationship('Intervention', backref='client', lazy=True,
+                                    cascade='all, delete-orphan')
+
+    @property
+    def nom_complet(self):
+        return f"{self.prenom} {self.nom}".strip() if self.prenom else self.nom
+
+    @property
+    def nom_affichage(self):
+        if self.type_client == 'professionnel' and self.societe:
+            return self.societe
+        return self.nom_complet
+
+    def set_portal_password(self, p): self.portal_password_hash = generate_password_hash(p)
+    def check_portal_password(self, p):
+        return check_password_hash(self.portal_password_hash, p) if self.portal_password_hash else False
+
+
+class Intervention(db.Model):
+    __tablename__ = 'interventions'
+    id = db.Column(db.Integer, primary_key=True)
+    reference = db.Column(db.String(20), unique=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    titre = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    type_intervention = db.Column(db.String(100))
+    priorite = db.Column(db.String(20), default='normale')
+    statut = db.Column(db.String(20), default='planifiee')
+    date_planifiee = db.Column(db.DateTime, nullable=False)
+    duree_estimee = db.Column(db.Integer, default=60)
+    technicien = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    bon = db.relationship('BonIntervention', backref='intervention', uselist=False,
+                          cascade='all, delete-orphan')
+
+    @property
+    def couleur(self):
+        if self.priorite == 'urgente': return '#e74c3c'
+        return {'planifiee': '#3788d8', 'en_cours': '#f39c12',
+                'terminee': '#27ae60', 'annulee': '#95a5a6'}.get(self.statut, '#3788d8')
+
+    @property
+    def statut_label(self):
+        return {'planifiee': 'Planifiée', 'en_cours': 'En cours',
+                'terminee': 'Terminée', 'annulee': 'Annulée'}.get(self.statut, self.statut)
+
+
+class BonIntervention(db.Model):
+    __tablename__ = 'bons_intervention'
+    id = db.Column(db.Integer, primary_key=True)
+    numero = db.Column(db.String(20), unique=True, nullable=False)
+    intervention_id = db.Column(db.Integer, db.ForeignKey('interventions.id'), nullable=False)
+    travaux_effectues = db.Column(db.Text)
+    materiaux_utilises = db.Column(db.Text)
+    temps_passe = db.Column(db.Integer)
+    observations = db.Column(db.Text)
+    recommandations = db.Column(db.Text)
+    statut = db.Column(db.String(20), default='brouillon')
+    date_creation = db.Column(db.DateTime, default=datetime.utcnow)
+    date_finalisation = db.Column(db.DateTime)
+    date_envoi = db.Column(db.DateTime)
+    signature_client = db.Column(db.Boolean, default=False)
+    date_signature = db.Column(db.DateTime)
+
+    @property
+    def statut_label(self):
+        return {'brouillon': 'Brouillon', 'finalise': 'Finalisé',
+                'envoye': 'Envoyé', 'signe': 'Signé'}.get(self.statut, self.statut)
+
+    @property
+    def statut_couleur(self):
+        return {'brouillon': 'secondary', 'finalise': 'primary',
+                'envoye': 'info', 'signe': 'success'}.get(self.statut, 'secondary')
+
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+@login_manager.user_loader
+def load_user(uid): return User.query.get(int(uid))
+
+def get_param(cle, defaut=''):
+    p = Parametre.query.filter_by(cle=cle).first()
+    return p.valeur if p else defaut
+
+def set_param(cle, valeur):
+    p = Parametre.query.filter_by(cle=cle).first()
+    if p: p.valeur = valeur
+    else: db.session.add(Parametre(cle=cle, valeur=valeur))
+    db.session.commit()
+
+def next_ref(model, prefix, pad=5):
+    last = model.query.order_by(model.id.desc()).first()
+    return f"{prefix}{((last.id if last else 0) + 1):0{pad}d}"
+
+def next_bon_num():
+    last = BonIntervention.query.order_by(BonIntervention.id.desc()).first()
+    n = (last.id if last else 0) + 1
+    return f"BI{datetime.now().year}{n:04d}"
+
+def generer_pdf(bon):
+    if not PDF_OK:
+        raise RuntimeError("ReportLab non installé.")
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+    s_titre = ParagraphStyle('t', parent=styles['Title'], fontSize=15,
+                             alignment=TA_CENTER, spaceAfter=6)
+    s_h = ParagraphStyle('h', parent=styles['Normal'], fontSize=10,
+                         fontName='Helvetica-Bold', spaceAfter=4)
+    s_n = ParagraphStyle('n', parent=styles['Normal'], fontSize=9, spaceAfter=3)
+    s_sm = ParagraphStyle('sm', parent=styles['Normal'], fontSize=8,
+                          alignment=TA_CENTER, textColor=colors.grey)
+
+    soc = get_param('societe', 'Ma Société')
+    inter = bon.intervention
+    cli = inter.client
+    elems = []
+
+    elems.append(Paragraph(soc, s_titre))
+    info_soc = ' | '.join(filter(None, [
+        get_param('adresse'), get_param('telephone'), get_param('email')]))
+    if info_soc: elems.append(Paragraph(info_soc, ParagraphStyle(
+        'si', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=4)))
+    if get_param('siret'):
+        elems.append(Paragraph(f"SIRET : {get_param('siret')}", ParagraphStyle(
+            'si2', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=10)))
+
+    elems.append(Paragraph(f"BON D'INTERVENTION N° {bon.numero}", s_titre))
+    elems.append(Spacer(1, 0.4*cm))
+
+    data_h = [
+        ['', 'INTERVENTION', '', 'CLIENT', ''],
+        ['Réf.', inter.reference, '', 'Nom', cli.nom_affichage],
+        ['Date', inter.date_planifiee.strftime('%d/%m/%Y %H:%M'), '',
+         'Email', cli.email or ''],
+        ['Type', inter.type_intervention or '', '', 'Tél', cli.telephone or ''],
+        ['Tech.', inter.technicien or '', '',
+         'Adresse', f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip()],
+        ['Statut', inter.statut_label, '', '', ''],
+    ]
+    t = Table(data_h, colWidths=[2*cm, 6*cm, 0.3*cm, 2.5*cm, 6.7*cm])
+    t.setStyle(TableStyle([
+        ('SPAN', (0, 0), (1, 0)), ('SPAN', (3, 0), (4, 0)),
+        ('BACKGROUND', (0, 0), (1, 0), colors.HexColor('#2c3e50')),
+        ('BACKGROUND', (3, 0), (4, 0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0, 0), (4, 0), colors.white),
+        ('FONTNAME', (0, 0), (4, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (3, 1), (3, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (1, -1), 0.4, colors.grey),
+        ('GRID', (3, 0), (4, -1), 0.4, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
+        ('ROWBACKGROUNDS', (3, 1), (4, -1), [colors.white, colors.HexColor('#f5f5f5')]),
+    ]))
+    elems.append(t)
+    elems.append(Spacer(1, 0.5*cm))
+
+    if inter.description:
+        elems.append(Paragraph("Description :", s_h))
+        elems.append(Paragraph(inter.description.replace('\n', '<br/>'), s_n))
+        elems.append(Spacer(1, 0.3*cm))
+
+    elems.append(Paragraph("Travaux effectués :", s_h))
+    elems.append(Paragraph((bon.travaux_effectues or 'À compléter').replace('\n', '<br/>'), s_n))
+    elems.append(Spacer(1, 0.3*cm))
+
+    if bon.materiaux_utilises:
+        try:
+            mats = json.loads(bon.materiaux_utilises)
+            if mats:
+                elems.append(Paragraph("Matériaux utilisés :", s_h))
+                md = [['Désignation', 'Qté', 'Unité']]
+                for m in mats:
+                    md.append([m.get('designation',''), str(m.get('quantite','')), m.get('unite','')])
+                tm = Table(md, colWidths=[10*cm, 2.5*cm, 5*cm])
+                tm.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#34495e')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), 9),
+                    ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f5f5f5')]),
+                    ('PADDING', (0,0), (-1,-1), 4),
+                ]))
+                elems.append(tm)
+                elems.append(Spacer(1, 0.3*cm))
+        except Exception:
+            pass
+
+    if bon.temps_passe:
+        h, m = divmod(bon.temps_passe, 60)
+        elems.append(Paragraph(f"Temps passé : {h}h{m:02d}" if h else f"Temps passé : {m} min", s_n))
+        elems.append(Spacer(1, 0.2*cm))
+
+    if bon.observations:
+        elems.append(Paragraph("Observations :", s_h))
+        elems.append(Paragraph(bon.observations.replace('\n', '<br/>'), s_n))
+        elems.append(Spacer(1, 0.3*cm))
+
+    if bon.recommandations:
+        elems.append(Paragraph("Recommandations :", s_h))
+        elems.append(Paragraph(bon.recommandations.replace('\n', '<br/>'), s_n))
+        elems.append(Spacer(1, 0.3*cm))
+
+    elems.append(Spacer(1, 0.8*cm))
+    sig = [
+        ['Signature du technicien', 'Signature du client'],
+        ['', ''],
+        ['', ''],
+        ['Nom & Date :', 'Nom & Date :'],
+    ]
+    ts = Table(sig, colWidths=[8.75*cm, 8.75*cm])
+    ts.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('BOX', (0,0), (0,-1), 1, colors.black),
+        ('BOX', (1,0), (1,-1), 1, colors.black),
+        ('LINEBELOW', (0,0), (-1,0), 0.5, colors.grey),
+        ('ROWHEIGHT', (0,1), (-1,2), 55),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
+    elems.append(ts)
+
+    elems.append(Spacer(1, 0.4*cm))
+    elems.append(Paragraph(
+        f"Document établi le {bon.date_creation.strftime('%d/%m/%Y')} — {bon.numero} — {soc}",
+        s_sm))
+
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+def envoyer_bon_email(bon):
+    srv = get_param('mail_server')
+    port = int(get_param('mail_port', '587'))
+    usr = get_param('mail_username')
+    pwd = get_param('mail_password')
+    if not all([srv, usr, pwd]):
+        return False, "Configuration email manquante dans les Paramètres."
+    cli = bon.intervention.client
+    if not cli.email:
+        return False, "Le client n'a pas d'adresse email."
+    soc = get_param('societe', 'Ma Société')
+    msg = MIMEMultipart()
+    msg['From'] = f"{soc} <{usr}>"
+    msg['To'] = cli.email
+    msg['Subject'] = f"Bon d'intervention N° {bon.numero} — {soc}"
+    corps = (f"Bonjour {cli.prenom or cli.nom},\n\n"
+             f"Veuillez trouver ci-joint votre bon d'intervention N° {bon.numero} "
+             f"du {bon.intervention.date_planifiee.strftime('%d/%m/%Y')}.\n\n"
+             f"Cordialement,\n{soc}\n{get_param('telephone')}\n{get_param('email')}")
+    msg.attach(MIMEText(corps, 'plain', 'utf-8'))
+    try:
+        pdf = generer_pdf(bon)
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(pdf.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="bon_{bon.numero}.pdf"')
+        msg.attach(part)
+    except Exception as e:
+        return False, f"Erreur PDF : {e}"
+    try:
+        with smtplib.SMTP(srv, port) as s:
+            if get_param('mail_use_tls', 'true') == 'true':
+                s.starttls()
+            s.login(usr, pwd)
+            s.send_message(msg)
+        return True, "Email envoyé avec succès."
+    except Exception as e:
+        return False, f"Erreur envoi : {e}"
+
+# ─── ROUTES AUTH ──────────────────────────────────────────────────────────────
+
+@app.route('/')
+def index():
+    return redirect(url_for('dashboard') if current_user.is_authenticated else url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        u = User.query.filter_by(username=request.form.get('username')).first()
+        if u and u.check_password(request.form.get('password', '')):
+            login_user(u, remember='remember' in request.form)
+            flash(f'Bienvenue, {u.nom or u.username} !', 'success')
+            return redirect(request.args.get('next') or url_for('dashboard'))
+        flash('Identifiant ou mot de passe incorrect.', 'danger')
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Déconnexion réussie.', 'info')
+    return redirect(url_for('login'))
+
+# ─── DASHBOARD ────────────────────────────────────────────────────────────────
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    today = datetime.now().date()
+    stats = dict(
+        clients=Client.query.filter_by(actif=True).count(),
+        auj=Intervention.query.filter(
+            db.func.date(Intervention.date_planifiee) == today,
+            Intervention.statut.in_(['planifiee', 'en_cours'])).count(),
+        semaine=Intervention.query.filter(
+            Intervention.date_planifiee.between(datetime.now(),
+                                                datetime.now() + timedelta(days=7)),
+            Intervention.statut.in_(['planifiee', 'en_cours'])).count(),
+        bons_brouillon=BonIntervention.query.filter_by(statut='brouillon').count(),
+        urgentes=Intervention.query.filter_by(priorite='urgente', statut='planifiee').count(),
+    )
+    prochaines = Intervention.query.filter(
+        Intervention.date_planifiee >= datetime.now(),
+        Intervention.statut.in_(['planifiee', 'en_cours'])
+    ).order_by(Intervention.date_planifiee).limit(8).all()
+    return render_template('dashboard.html', stats=stats, prochaines=prochaines)
+
+# ─── CLIENTS ──────────────────────────────────────────────────────────────────
+
+@app.route('/clients')
+@login_required
+def clients_liste():
+    q = request.args.get('q', '')
+    query = Client.query
+    if q:
+        query = query.filter(db.or_(
+            Client.nom.ilike(f'%{q}%'), Client.prenom.ilike(f'%{q}%'),
+            Client.email.ilike(f'%{q}%'), Client.telephone.ilike(f'%{q}%'),
+            Client.societe.ilike(f'%{q}%'), Client.reference.ilike(f'%{q}%'),
+        ))
+    clients = query.order_by(Client.nom).all()
+    return render_template('clients/index.html', clients=clients, q=q)
+
+@app.route('/clients/nouveau', methods=['GET', 'POST'])
+@login_required
+def client_nouveau():
+    if request.method == 'POST':
+        c = Client(
+            reference=next_ref(Client, 'CLT'),
+            nom=request.form['nom'].strip(),
+            prenom=request.form.get('prenom','').strip(),
+            email=request.form.get('email','').strip(),
+            telephone=request.form.get('telephone','').strip(),
+            telephone2=request.form.get('telephone2','').strip(),
+            adresse=request.form.get('adresse','').strip(),
+            ville=request.form.get('ville','').strip(),
+            code_postal=request.form.get('code_postal','').strip(),
+            type_client=request.form.get('type_client','particulier'),
+            societe=request.form.get('societe','').strip(),
+            siret_client=request.form.get('siret_client','').strip(),
+            notes=request.form.get('notes','').strip(),
+        )
+        db.session.add(c)
+        db.session.commit()
+
+        if request.form.get('planif_auto') and request.form.get('date_inter'):
+            try:
+                di = datetime.strptime(request.form['date_inter'], '%Y-%m-%dT%H:%M')
+                inter = Intervention(
+                    reference=next_ref(Intervention, 'INT'),
+                    client_id=c.id,
+                    titre=request.form.get('titre_inter', f'Première intervention — {c.nom_affichage}'),
+                    description=request.form.get('desc_inter','').strip(),
+                    type_intervention=request.form.get('type_inter','').strip(),
+                    priorite=request.form.get('priorite_inter','normale'),
+                    date_planifiee=di,
+                    duree_estimee=int(request.form.get('duree_inter', 60) or 60),
+                    technicien=request.form.get('technicien_inter','').strip(),
+                )
+                db.session.add(inter)
+                db.session.commit()
+                flash(f'Client {c.nom_affichage} créé + intervention planifiée ({inter.reference}).', 'success')
+            except Exception as e:
+                flash(f'Client créé, erreur planification : {e}', 'warning')
+        else:
+            flash(f'Client {c.nom_affichage} créé — Réf. {c.reference}', 'success')
+        return redirect(url_for('client_detail', id=c.id))
+
+    techniciens = get_param('techniciens', '')
+    types_inter = get_param('types_intervention', '')
+    return render_template('clients/create.html', client=None,
+                           techniciens=techniciens, types_inter=types_inter)
+
+@app.route('/clients/<int:id>', methods=['GET'])
+@login_required
+def client_detail(id):
+    c = Client.query.get_or_404(id)
+    interventions = Intervention.query.filter_by(client_id=id)\
+        .order_by(Intervention.date_planifiee.desc()).all()
+    base = get_param('base_url', request.host_url.rstrip('/'))
+    lien = f"{base}/portail/{c.access_token}"
+    return render_template('clients/detail.html', client=c,
+                           interventions=interventions, lien_portail=lien)
+
+@app.route('/clients/<int:id>/modifier', methods=['GET', 'POST'])
+@login_required
+def client_modifier(id):
+    c = Client.query.get_or_404(id)
+    if request.method == 'POST':
+        c.nom = request.form['nom'].strip()
+        c.prenom = request.form.get('prenom','').strip()
+        c.email = request.form.get('email','').strip()
+        c.telephone = request.form.get('telephone','').strip()
+        c.telephone2 = request.form.get('telephone2','').strip()
+        c.adresse = request.form.get('adresse','').strip()
+        c.ville = request.form.get('ville','').strip()
+        c.code_postal = request.form.get('code_postal','').strip()
+        c.type_client = request.form.get('type_client','particulier')
+        c.societe = request.form.get('societe','').strip()
+        c.siret_client = request.form.get('siret_client','').strip()
+        c.notes = request.form.get('notes','').strip()
+        db.session.commit()
+        flash('Fiche client mise à jour.', 'success')
+        return redirect(url_for('client_detail', id=id))
+    techniciens = get_param('techniciens', '')
+    types_inter = get_param('types_intervention', '')
+    return render_template('clients/create.html', client=c,
+                           techniciens=techniciens, types_inter=types_inter)
+
+@app.route('/clients/<int:id>/supprimer', methods=['POST'])
+@login_required
+def client_supprimer(id):
+    c = Client.query.get_or_404(id)
+    c.actif = False
+    db.session.commit()
+    flash(f'Client {c.nom_affichage} désactivé.', 'info')
+    return redirect(url_for('clients_liste'))
+
+@app.route('/clients/<int:id>/portail/activer', methods=['POST'])
+@login_required
+def portail_activer(id):
+    c = Client.query.get_or_404(id)
+    if not c.email:
+        flash('Le client doit avoir une adresse email.', 'warning')
+    else:
+        c.portal_actif = True
+        if not c.access_token:
+            c.access_token = str(uuid.uuid4())
+        db.session.commit()
+        flash('Portail client activé. Partagez le lien avec le client.', 'success')
+    return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/<int:id>/portail/desactiver', methods=['POST'])
+@login_required
+def portail_desactiver(id):
+    c = Client.query.get_or_404(id)
+    c.portal_actif = False
+    db.session.commit()
+    flash('Portail client désactivé.', 'info')
+    return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/<int:id>/portail/regenerer', methods=['POST'])
+@login_required
+def portail_regenerer(id):
+    c = Client.query.get_or_404(id)
+    c.access_token = str(uuid.uuid4())
+    c.portal_password_hash = None
+    db.session.commit()
+    flash('Lien régénéré. L\'ancien lien est invalidé.', 'success')
+    return redirect(url_for('client_detail', id=id))
+
+# ─── AGENDA / INTERVENTIONS ───────────────────────────────────────────────────
+
+@app.route('/agenda')
+@login_required
+def agenda():
+    return render_template('interventions/agenda.html')
+
+@app.route('/agenda/api/events')
+@login_required
+def agenda_events():
+    start = request.args.get('start')
+    end = request.args.get('end')
+    q = Intervention.query
+    if start: q = q.filter(Intervention.date_planifiee >= start)
+    if end: q = q.filter(Intervention.date_planifiee <= end)
+    events = []
+    for i in q.all():
+        fin = i.date_planifiee + timedelta(minutes=i.duree_estimee)
+        events.append({
+            'id': i.id,
+            'title': f"[{i.client.nom_affichage}] {i.titre}",
+            'start': i.date_planifiee.isoformat(),
+            'end': fin.isoformat(),
+            'color': i.couleur,
+            'url': url_for('intervention_detail', id=i.id),
+            'extendedProps': {'statut': i.statut_label, 'priorite': i.priorite,
+                              'client': i.client.nom_affichage,
+                              'technicien': i.technicien or ''},
+        })
+    return jsonify(events)
+
+@app.route('/interventions')
+@login_required
+def interventions_liste():
+    statut = request.args.get('statut','')
+    priorite = request.args.get('priorite','')
+    cid = request.args.get('client_id','')
+    q = Intervention.query
+    if statut: q = q.filter_by(statut=statut)
+    if priorite: q = q.filter_by(priorite=priorite)
+    if cid: q = q.filter_by(client_id=int(cid))
+    interventions = q.order_by(Intervention.date_planifiee.desc()).all()
+    clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
+    return render_template('interventions/index.html', interventions=interventions,
+                           clients=clients, statut=statut, priorite=priorite, cid=cid)
+
+@app.route('/interventions/nouvelle', methods=['GET', 'POST'])
+@login_required
+def intervention_nouvelle():
+    if request.method == 'POST':
+        try:
+            dp = datetime.strptime(request.form['date_planifiee'], '%Y-%m-%dT%H:%M')
+        except ValueError:
+            dp = datetime.strptime(request.form['date_planifiee'], '%Y-%m-%d %H:%M')
+        i = Intervention(
+            reference=next_ref(Intervention, 'INT'),
+            client_id=int(request.form['client_id']),
+            titre=request.form['titre'].strip(),
+            description=request.form.get('description','').strip(),
+            type_intervention=request.form.get('type_intervention','').strip(),
+            priorite=request.form.get('priorite','normale'),
+            date_planifiee=dp,
+            duree_estimee=int(request.form.get('duree_estimee', 60) or 60),
+            technicien=request.form.get('technicien','').strip(),
+            notes=request.form.get('notes','').strip(),
+        )
+        db.session.add(i)
+        db.session.commit()
+        flash(f'Intervention {i.reference} planifiée.', 'success')
+        if request.form.get('creer_bon'):
+            b = BonIntervention(numero=next_bon_num(), intervention_id=i.id)
+            db.session.add(b)
+            db.session.commit()
+            return redirect(url_for('bon_detail', id=b.id))
+        return redirect(url_for('intervention_detail', id=i.id))
+
+    clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
+    cid = request.args.get('client_id')
+    techniciens = get_param('techniciens', '')
+    types_inter = get_param('types_intervention', '')
+    return render_template('interventions/create.html', intervention=None,
+                           clients=clients, cid=int(cid) if cid else None,
+                           techniciens=techniciens, types_inter=types_inter)
+
+@app.route('/interventions/<int:id>')
+@login_required
+def intervention_detail(id):
+    i = Intervention.query.get_or_404(id)
+    return render_template('interventions/detail.html', intervention=i)
+
+@app.route('/interventions/<int:id>/modifier', methods=['GET', 'POST'])
+@login_required
+def intervention_modifier(id):
+    i = Intervention.query.get_or_404(id)
+    if request.method == 'POST':
+        try:
+            i.date_planifiee = datetime.strptime(request.form['date_planifiee'], '%Y-%m-%dT%H:%M')
+        except ValueError:
+            i.date_planifiee = datetime.strptime(request.form['date_planifiee'], '%Y-%m-%d %H:%M')
+        i.client_id = int(request.form['client_id'])
+        i.titre = request.form['titre'].strip()
+        i.description = request.form.get('description','').strip()
+        i.type_intervention = request.form.get('type_intervention','').strip()
+        i.priorite = request.form.get('priorite','normale')
+        i.statut = request.form.get('statut','planifiee')
+        i.duree_estimee = int(request.form.get('duree_estimee', 60) or 60)
+        i.technicien = request.form.get('technicien','').strip()
+        i.notes = request.form.get('notes','').strip()
+        db.session.commit()
+        flash('Intervention mise à jour.', 'success')
+        return redirect(url_for('intervention_detail', id=id))
+    clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
+    techniciens = get_param('techniciens', '')
+    types_inter = get_param('types_intervention', '')
+    return render_template('interventions/create.html', intervention=i,
+                           clients=clients, cid=i.client_id,
+                           techniciens=techniciens, types_inter=types_inter)
+
+@app.route('/interventions/<int:id>/statut', methods=['POST'])
+@login_required
+def intervention_statut(id):
+    i = Intervention.query.get_or_404(id)
+    s = request.form.get('statut')
+    if s in ['planifiee','en_cours','terminee','annulee']:
+        i.statut = s
+        db.session.commit()
+        flash(f'Statut → {i.statut_label}', 'success')
+    return redirect(url_for('intervention_detail', id=id))
+
+@app.route('/interventions/<int:id>/supprimer', methods=['POST'])
+@login_required
+def intervention_supprimer(id):
+    i = Intervention.query.get_or_404(id)
+    db.session.delete(i)
+    db.session.commit()
+    flash('Intervention supprimée.', 'info')
+    return redirect(url_for('interventions_liste'))
+
+# ─── BONS D'INTERVENTION ──────────────────────────────────────────────────────
+
+@app.route('/bons')
+@login_required
+def bons_liste():
+    statut = request.args.get('statut','')
+    q = BonIntervention.query
+    if statut: q = q.filter_by(statut=statut)
+    bons = q.order_by(BonIntervention.date_creation.desc()).all()
+    return render_template('bons/index.html', bons=bons, statut=statut)
+
+@app.route('/bons/nouveau', methods=['GET', 'POST'])
+@login_required
+def bon_nouveau():
+    if request.method == 'POST':
+        iid = int(request.form['intervention_id'])
+        inter = Intervention.query.get_or_404(iid)
+        if inter.bon:
+            flash('Un bon existe déjà pour cette intervention.', 'warning')
+            return redirect(url_for('bon_detail', id=inter.bon.id))
+        mats = _extract_mats(request)
+        b = BonIntervention(
+            numero=next_bon_num(), intervention_id=iid,
+            travaux_effectues=request.form.get('travaux_effectues','').strip(),
+            observations=request.form.get('observations','').strip(),
+            recommandations=request.form.get('recommandations','').strip(),
+            temps_passe=int(request.form['temps_passe']) if request.form.get('temps_passe') else None,
+            materiaux_utilises=json.dumps(mats, ensure_ascii=False) if mats else None,
+        )
+        db.session.add(b)
+        inter.statut = 'terminee'
+        db.session.commit()
+        flash(f'Bon N° {b.numero} créé.', 'success')
+        return redirect(url_for('bon_detail', id=b.id))
+
+    iid = request.args.get('intervention_id')
+    existing_ids = db.session.query(BonIntervention.intervention_id).all()
+    existing_ids = [e[0] for e in existing_ids]
+    interventions = Intervention.query.filter(
+        Intervention.id.notin_(existing_ids)
+    ).order_by(Intervention.date_planifiee.desc()).all()
+    return render_template('bons/create.html', bon=None, interventions=interventions,
+                           iid=int(iid) if iid else None, materiaux=[])
+
+@app.route('/bons/<int:id>')
+@login_required
+def bon_detail(id):
+    b = BonIntervention.query.get_or_404(id)
+    mats = json.loads(b.materiaux_utilises) if b.materiaux_utilises else []
+    return render_template('bons/detail.html', bon=b, materiaux=mats)
+
+@app.route('/bons/<int:id>/modifier', methods=['GET', 'POST'])
+@login_required
+def bon_modifier(id):
+    b = BonIntervention.query.get_or_404(id)
+    if request.method == 'POST':
+        b.travaux_effectues = request.form.get('travaux_effectues','').strip()
+        b.observations = request.form.get('observations','').strip()
+        b.recommandations = request.form.get('recommandations','').strip()
+        b.temps_passe = int(request.form['temps_passe']) if request.form.get('temps_passe') else None
+        mats = _extract_mats(request)
+        b.materiaux_utilises = json.dumps(mats, ensure_ascii=False) if mats else None
+        if request.form.get('finaliser'):
+            b.statut = 'finalise'
+            b.date_finalisation = datetime.utcnow()
+        db.session.commit()
+        flash('Bon mis à jour.', 'success')
+        return redirect(url_for('bon_detail', id=id))
+    mats = json.loads(b.materiaux_utilises) if b.materiaux_utilises else []
+    return render_template('bons/create.html', bon=b, intervention=b.intervention,
+                           interventions=[], iid=b.intervention_id, materiaux=mats)
+
+def _extract_mats(req):
+    desig = req.form.getlist('mat_designation[]')
+    qty = req.form.getlist('mat_quantite[]')
+    unit = req.form.getlist('mat_unite[]')
+    return [{'designation': d, 'quantite': q, 'unite': u}
+            for d, q, u in zip(desig, qty, unit) if d.strip()]
+
+@app.route('/bons/<int:id>/pdf')
+@login_required
+def bon_pdf(id):
+    b = BonIntervention.query.get_or_404(id)
+    try:
+        buf = generer_pdf(b)
+        return send_file(buf, download_name=f"bon_{b.numero}.pdf",
+                         mimetype='application/pdf',
+                         as_attachment=request.args.get('dl') == '1')
+    except Exception as e:
+        flash(f'Erreur PDF : {e}', 'danger')
+        return redirect(url_for('bon_detail', id=id))
+
+@app.route('/bons/<int:id>/envoyer', methods=['POST'])
+@login_required
+def bon_envoyer(id):
+    b = BonIntervention.query.get_or_404(id)
+    ok, msg = envoyer_bon_email(b)
+    if ok:
+        b.statut = 'envoye'
+        b.date_envoi = datetime.utcnow()
+        db.session.commit()
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(url_for('bon_detail', id=id))
+
+@app.route('/bons/<int:id>/supprimer', methods=['POST'])
+@login_required
+def bon_supprimer(id):
+    b = BonIntervention.query.get_or_404(id)
+    iid = b.intervention_id
+    db.session.delete(b)
+    db.session.commit()
+    flash('Bon supprimé.', 'info')
+    return redirect(url_for('intervention_detail', id=iid))
+
+# ─── PORTAIL CLIENT ───────────────────────────────────────────────────────────
+
+@app.route('/portail/<token>', methods=['GET', 'POST'])
+def portail_access(token):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
+    if not c: abort(404)
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'register' and not c.portal_password_hash:
+            pwd = request.form.get('password','')
+            cpwd = request.form.get('confirm_password','')
+            if len(pwd) < 6:
+                flash('Mot de passe trop court (6 caractères minimum).', 'danger')
+            elif pwd != cpwd:
+                flash('Les mots de passe ne correspondent pas.', 'danger')
+            else:
+                c.set_portal_password(pwd)
+                db.session.commit()
+                flask_session['portal_cid'] = c.id
+                flash('Compte créé ! Bienvenue.', 'success')
+                return redirect(url_for('portail_dashboard', token=token))
+        elif action == 'login':
+            if c.check_portal_password(request.form.get('password','')):
+                flask_session['portal_cid'] = c.id
+                flash(f'Bienvenue, {c.prenom or c.nom} !', 'success')
+                return redirect(url_for('portail_dashboard', token=token))
+            flash('Mot de passe incorrect.', 'danger')
+    return render_template('portal/access.html', client=c, token=token,
+                           is_registered=bool(c.portal_password_hash))
+
+@app.route('/portail/<token>/dashboard')
+def portail_dashboard(token):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    interventions = Intervention.query.filter_by(client_id=c.id)\
+        .order_by(Intervention.date_planifiee.desc()).all()
+    return render_template('portal/dashboard.html', client=c,
+                           interventions=interventions, token=token)
+
+@app.route('/portail/<token>/bon/<int:bid>/pdf')
+def portail_bon_pdf(token, bid):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    b = BonIntervention.query.get_or_404(bid)
+    if b.intervention.client_id != c.id: abort(403)
+    buf = generer_pdf(b)
+    return send_file(buf, download_name=f"bon_{b.numero}.pdf", mimetype='application/pdf')
+
+@app.route('/portail/<token>/bon/<int:bid>/signer', methods=['POST'])
+def portail_signer(token, bid):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    b = BonIntervention.query.get_or_404(bid)
+    if b.intervention.client_id != c.id: abort(403)
+    b.signature_client = True
+    b.date_signature = datetime.utcnow()
+    b.statut = 'signe'
+    db.session.commit()
+    flash('Bon signé électroniquement. Merci !', 'success')
+    return redirect(url_for('portail_dashboard', token=token))
+
+@app.route('/portail/<token>/deconnexion')
+def portail_deconnexion(token):
+    flask_session.pop('portal_cid', None)
+    return redirect(url_for('portail_access', token=token))
+
+# ─── PARAMÈTRES ───────────────────────────────────────────────────────────────
+
+@app.route('/parametres', methods=['GET', 'POST'])
+@login_required
+def parametres():
+    if request.method == 'POST':
+        for k in ['societe','adresse','telephone','email','siret',
+                  'mail_server','mail_port','mail_username','mail_password',
+                  'mail_use_tls','base_url','techniciens','types_intervention']:
+            if k in request.form:
+                set_param(k, request.form[k])
+        if request.form.get('nouveau_mdp'):
+            if request.form['nouveau_mdp'] == request.form.get('confirm_mdp',''):
+                current_user.set_password(request.form['nouveau_mdp'])
+                db.session.commit()
+                flash('Mot de passe mis à jour.', 'success')
+            else:
+                flash('Les mots de passe ne correspondent pas.', 'danger')
+        flash('Paramètres enregistrés.', 'success')
+        return redirect(url_for('parametres'))
+    params = {p.cle: p.valeur for p in Parametre.query.all()}
+    return render_template('parametres.html', params=params)
+
+# ─── INIT ─────────────────────────────────────────────────────────────────────
+
+def init_db():
+    with app.app_context():
+        db.create_all()
+        if not User.query.filter_by(username='admin').first():
+            a = User(username='admin', nom='Administrateur', is_admin=True)
+            a.set_password('Admin123!')
+            db.session.add(a)
+            db.session.commit()
+            print("=" * 55)
+            print("  Compte admin cree  :  admin / Admin123!")
+            print("  !! Changez ce mot de passe dans Parametres !!")
+            print("=" * 55)
+
+if __name__ == '__main__':
+    init_db()
+    print("\n  Agenda & Bons d'Intervention")
+    print("  http://localhost:5000")
+    print()
+    app.run(debug=False, host='0.0.0.0', port=5000)

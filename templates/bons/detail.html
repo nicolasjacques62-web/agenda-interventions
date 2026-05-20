@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Bon {{ bon.numero }}{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-text me-2"></i>Bon N° {{ bon.numero }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('bon_modifier', id=bon.id) }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-pencil me-1"></i>Modifier
+</a>
+<a href="{{ url_for('bon_pdf', id=bon.id) }}" class="btn btn-outline-danger btn-sm" target="_blank">
+  <i class="bi bi-filetype-pdf me-1"></i>Voir PDF
+</a>
+<a href="{{ url_for('bon_pdf', id=bon.id) }}?dl=1" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-download me-1"></i>Télécharger
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <!-- Statut & infos -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-info-circle me-2"></i>Informations</span>
+        <span class="badge bg-{{ bon.statut_couleur }} fs-6">{{ bon.statut_label }}</span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:110px">Numéro</td><td class="fw-bold">{{ bon.numero }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Client</td>
+            <td><a href="{{ url_for('client_detail', id=bon.intervention.client_id) }}">{{ bon.intervention.client.nom_affichage }}</a></td></tr>
+          <tr><td class="text-muted small fw-semibold">Intervention</td>
+            <td><a href="{{ url_for('intervention_detail', id=bon.intervention_id) }}">{{ bon.intervention.reference }}</a></td></tr>
+          <tr><td class="text-muted small fw-semibold">Date inter.</td><td>{{ bon.intervention.date_planifiee.strftime('%d/%m/%Y') }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Créé le</td><td>{{ bon.date_creation.strftime('%d/%m/%Y') }}</td></tr>
+          {% if bon.date_finalisation %}
+          <tr><td class="text-muted small fw-semibold">Finalisé</td><td>{{ bon.date_finalisation.strftime('%d/%m/%Y') }}</td></tr>
+          {% endif %}
+          {% if bon.date_envoi %}
+          <tr><td class="text-muted small fw-semibold">Envoyé</td><td>{{ bon.date_envoi.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+          {% endif %}
+          {% if bon.temps_passe %}
+          <tr><td class="text-muted small fw-semibold">Temps passé</td>
+            <td>{% set h = bon.temps_passe // 60 %}{% set m = bon.temps_passe % 60 %}
+              {{ h ~ 'h' ~ '%02d'|format(m) if h else m|string ~ ' min' }}</td></tr>
+          {% endif %}
+        </table>
+
+        {% if bon.signature_client %}
+        <div class="alert alert-success py-2 small mt-2 mb-0">
+          <i class="bi bi-check-circle-fill me-1"></i>
+          Signé le {{ bon.date_signature.strftime('%d/%m/%Y à %H:%M') }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-send me-2"></i>Envoi au client</div>
+      <div class="card-body d-grid gap-2">
+        {% if bon.intervention.client.email %}
+        <form method="POST" action="{{ url_for('bon_envoyer', id=bon.id) }}"
+              onsubmit="return confirm('Envoyer le bon par email à {{ bon.intervention.client.email }} ?')">
+          <button class="btn btn-success w-100 btn-sm">
+            <i class="bi bi-envelope me-1"></i>Envoyer par email
+            <small class="d-block text-success-emphasis">{{ bon.intervention.client.email }}</small>
+          </button>
+        </form>
+        {% else %}
+        <div class="text-muted small">Le client n'a pas d'adresse email.</div>
+        {% endif %}
+        <a href="{{ url_for('bon_pdf', id=bon.id) }}?dl=1" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-download me-1"></i>Télécharger le PDF
+        </a>
+      </div>
+    </div>
+
+    <!-- Danger -->
+    <div class="card border-danger">
+      <div class="card-header text-danger"><i class="bi bi-trash me-2"></i>Zone dangereuse</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('bon_supprimer', id=bon.id) }}"
+              onsubmit="return confirm('Supprimer définitivement ce bon ?')">
+          <button class="btn btn-outline-danger btn-sm w-100">Supprimer le bon</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <!-- Contenu du bon -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-card-text me-2"></i>Travaux effectués</div>
+      <div class="card-body">
+        {% if bon.travaux_effectues %}
+          <p class="mb-0" style="white-space:pre-line">{{ bon.travaux_effectues }}</p>
+        {% else %}
+          <span class="text-muted fst-italic">Non renseigné</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if materiaux %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-box-seam me-2"></i>Matériaux utilisés</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Désignation</th><th style="width:100px">Quantité</th><th style="width:100px">Unité</th></tr>
+          </thead>
+          <tbody>
+            {% for m in materiaux %}
+            <tr>
+              <td>{{ m.designation }}</td>
+              <td>{{ m.quantite }}</td>
+              <td>{{ m.unite }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if bon.observations %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-eye me-2"></i>Observations</div>
+      <div class="card-body">
+        <p class="mb-0" style="white-space:pre-line">{{ bon.observations }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if bon.recommandations %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recommandations</div>
+      <div class="card-body">
+        <p class="mb-0" style="white-space:pre-line">{{ bon.recommandations }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Aperçu zone signature -->
+    <div class="card">
+      <div class="card-header"><i class="bi bi-pen me-2"></i>Zone de signature</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6 text-center">
+            <div class="border rounded p-3" style="min-height:80px">
+              <div class="text-muted small mb-2">Signature du technicien</div>
+              <div class="text-muted small">{{ bon.intervention.technicien or '—' }}</div>
+            </div>
+          </div>
+          <div class="col-6 text-center">
+            <div class="border rounded p-3 {% if bon.signature_client %}border-success{% endif %}" style="min-height:80px">
+              <div class="text-muted small mb-2">Signature du client</div>
+              {% if bon.signature_client %}
+                <div class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Signé électroniquement</div>
+                <div class="text-muted small">{{ bon.date_signature.strftime('%d/%m/%Y') }}</div>
+              {% else %}
+                <div class="text-muted small fst-italic">En attente</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

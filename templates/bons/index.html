@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Bons d'intervention{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-text me-2"></i>Bons d'intervention{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('bon_nouveau') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-file-plus me-1"></i>Nouveau bon
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex gap-2 flex-wrap">
+      <span class="small text-muted fw-semibold me-1">Filtrer :</span>
+      {% for s, label, cls in [('','Tous','secondary'),('brouillon','Brouillon','secondary'),('finalise','Finalisé','primary'),('envoye','Envoyé','info'),('signe','Signé','success')] %}
+      <a href="{{ url_for('bons_liste', statut=s) }}"
+         class="btn btn-sm btn-{{ 'outline-' if statut!=s else '' }}{{ cls }}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    {% if bons %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>N°</th><th>Client</th><th>Intervention</th><th>Date</th><th>Statut</th><th>Signature</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for b in bons %}
+          <tr>
+            <td><a href="{{ url_for('bon_detail', id=b.id) }}" class="fw-semibold text-decoration-none">{{ b.numero }}</a></td>
+            <td>{{ b.intervention.client.nom_affichage }}</td>
+            <td>
+              <a href="{{ url_for('intervention_detail', id=b.intervention_id) }}" class="text-decoration-none text-muted small">
+                {{ b.intervention.titre }}
+              </a>
+            </td>
+            <td class="small text-nowrap">{{ b.date_creation.strftime('%d/%m/%Y') }}</td>
+            <td><span class="badge bg-{{ b.statut_couleur }}">{{ b.statut_label }}</span></td>
+            <td>
+              {% if b.signature_client %}
+                <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Signé</span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{{ url_for('bon_detail', id=b.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+                <a href="{{ url_for('bon_pdf', id=b.id) }}" class="btn btn-sm btn-outline-danger" target="_blank"><i class="bi bi-filetype-pdf"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-file-earmark-x fs-1 d-block mb-2"></i>Aucun bon d'intervention
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-footer text-muted small">{{ bons|length }} bon(s)</div>
+</div>
+{% endblock %}

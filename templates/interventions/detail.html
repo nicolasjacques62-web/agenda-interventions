@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}{{ intervention.reference }}{% endblock %}
+{% block page_title %}<i class="bi bi-wrench me-2"></i>{{ intervention.reference }} — {{ intervention.titre }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('intervention_modifier', id=intervention.id) }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-pencil me-1"></i>Modifier
+</a>
+{% if not intervention.bon %}
+<a href="{{ url_for('bon_nouveau') }}?intervention_id={{ intervention.id }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-file-plus me-1"></i>Créer le bon
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <!-- Détails -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-info-circle me-2"></i>Détails</span>
+        <span class="badge badge-{{ intervention.statut }}">{{ intervention.statut_label }}</span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:110px">Référence</td><td>{{ intervention.reference }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Client</td>
+            <td><a href="{{ url_for('client_detail', id=intervention.client_id) }}">{{ intervention.client.nom_affichage }}</a></td></tr>
+          <tr><td class="text-muted small fw-semibold">Type</td><td>{{ intervention.type_intervention or '—' }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Date</td><td>{{ intervention.date_planifiee.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Durée</td><td>{{ intervention.duree_estimee }} min</td></tr>
+          <tr><td class="text-muted small fw-semibold">Technicien</td><td>{{ intervention.technicien or '—' }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Priorité</td>
+            <td>{% if intervention.priorite=='urgente' %}<span class="badge bg-danger">Urgente</span>
+                {% elif intervention.priorite=='normale' %}<span class="badge bg-primary">Normale</span>
+                {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Créée le</td><td>{{ intervention.created_at.strftime('%d/%m/%Y') }}</td></tr>
+        </table>
+        {% if intervention.description %}
+        <hr class="my-2">
+        <div class="text-muted small fw-semibold mb-1">Description</div>
+        <div class="small">{{ intervention.description }}</div>
+        {% endif %}
+        {% if intervention.notes %}
+        <hr class="my-2">
+        <div class="text-muted small fw-semibold mb-1">Notes internes</div>
+        <div class="small">{{ intervention.notes }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Changer statut -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-arrow-repeat me-2"></i>Changer le statut</div>
+      <div class="card-body d-grid gap-2">
+        {% for s, label, cls in [('planifiee','Planifiée','outline-primary'),('en_cours','En cours','warning'),('terminee','Terminée','success'),('annulee','Annulée','outline-danger')] %}
+        <form method="POST" action="{{ url_for('intervention_statut', id=intervention.id) }}">
+          <input type="hidden" name="statut" value="{{ s }}">
+          <button class="btn btn-{{ cls }} btn-sm w-100 {% if intervention.statut==s %}active{% endif %}"
+                  {% if intervention.statut==s %}disabled{% endif %}>
+            {{ label }}
+          </button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <div class="card border-danger">
+      <div class="card-header text-danger"><i class="bi bi-trash me-2"></i>Zone dangereuse</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('intervention_supprimer', id=intervention.id) }}"
+              onsubmit="return confirm('Supprimer définitivement cette intervention et son bon ?')">
+          <button class="btn btn-outline-danger btn-sm w-100">Supprimer l'intervention</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <!-- Bon d'intervention -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-file-earmark-text me-2"></i>Bon d'intervention</span>
+        {% if intervention.bon %}
+          <span class="badge bg-{{ intervention.bon.statut_couleur }}">{{ intervention.bon.statut_label }}</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if intervention.bon %}
+          {% set bon = intervention.bon %}
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <div class="small text-muted fw-semibold">Numéro</div>
+              <div class="fw-bold">{{ bon.numero }}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted fw-semibold">Créé le</div>
+              <div>{{ bon.date_creation.strftime('%d/%m/%Y') }}</div>
+            </div>
+            {% if bon.date_envoi %}
+            <div class="col-md-6">
+              <div class="small text-muted fw-semibold">Envoyé le</div>
+              <div>{{ bon.date_envoi.strftime('%d/%m/%Y %H:%M') }}</div>
+            </div>
+            {% endif %}
+            {% if bon.signature_client %}
+            <div class="col-md-6">
+              <div class="small text-muted fw-semibold">Signé le</div>
+              <div class="text-success">{{ bon.date_signature.strftime('%d/%m/%Y %H:%M') }} ✓</div>
+            </div>
+            {% endif %}
+          </div>
+
+          {% if bon.travaux_effectues %}
+          <div class="mb-3">
+            <div class="small text-muted fw-semibold mb-1">Travaux effectués</div>
+            <div class="small bg-light rounded p-2">{{ bon.travaux_effectues }}</div>
+          </div>
+          {% endif %}
+
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('bon_detail', id=bon.id) }}" class="btn btn-primary btn-sm">
+              <i class="bi bi-eye me-1"></i>Voir le bon
+            </a>
+            <a href="{{ url_for('bon_pdf', id=bon.id) }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+              <i class="bi bi-filetype-pdf me-1"></i>PDF
+            </a>
+            <a href="{{ url_for('bon_modifier', id=bon.id) }}" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-pencil me-1"></i>Modifier
+            </a>
+            {% if intervention.client.email %}
+            <form method="POST" action="{{ url_for('bon_envoyer', id=bon.id) }}">
+              <button class="btn btn-outline-success btn-sm">
+                <i class="bi bi-envelope me-1"></i>Envoyer par email
+              </button>
+            </form>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="text-center py-4 text-muted">
+            <i class="bi bi-file-earmark-plus fs-1 d-block mb-2"></i>
+            <p>Aucun bon d'intervention pour cette intervention.</p>
+            <a href="{{ url_for('bon_nouveau') }}?intervention_id={{ intervention.id }}" class="btn btn-primary">
+              <i class="bi bi-file-plus me-1"></i>Créer le bon d'intervention
+            </a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

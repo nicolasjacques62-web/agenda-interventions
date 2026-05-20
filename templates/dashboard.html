@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+{% block page_title %}<i class="bi bi-speedometer2 me-2"></i>Tableau de bord{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('intervention_nouvelle') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg me-1"></i>Nouvelle intervention
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="card stat-card h-100" style="border-color:#3788d8">
+      <div class="card-body d-flex align-items-center gap-3">
+        <div class="rounded-3 p-3" style="background:#eff6ff"><i class="bi bi-people fs-3 text-primary"></i></div>
+        <div>
+          <div class="fs-2 fw-bold">{{ stats.clients }}</div>
+          <div class="text-muted small">Clients actifs</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card stat-card h-100" style="border-color:#f39c12">
+      <div class="card-body d-flex align-items-center gap-3">
+        <div class="rounded-3 p-3" style="background:#fffbeb"><i class="bi bi-calendar-day fs-3" style="color:#f39c12"></i></div>
+        <div>
+          <div class="fs-2 fw-bold">{{ stats.auj }}</div>
+          <div class="text-muted small">Interventions aujourd'hui</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card stat-card h-100" style="border-color:#27ae60">
+      <div class="card-body d-flex align-items-center gap-3">
+        <div class="rounded-3 p-3" style="background:#f0fdf4"><i class="bi bi-calendar-week fs-3 text-success"></i></div>
+        <div>
+          <div class="fs-2 fw-bold">{{ stats.semaine }}</div>
+          <div class="text-muted small">Cette semaine</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card stat-card h-100" style="border-color:{% if stats.urgentes > 0 %}#e74c3c{% else %}#95a5a6{% endif %}">
+      <div class="card-body d-flex align-items-center gap-3">
+        <div class="rounded-3 p-3" style="background:#fef2f2"><i class="bi bi-exclamation-triangle fs-3 text-danger"></i></div>
+        <div>
+          <div class="fs-2 fw-bold {% if stats.urgentes > 0 %}text-danger{% endif %}">{{ stats.urgentes }}</div>
+          <div class="text-muted small">Urgentes en attente</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock-history me-2"></i>Prochaines interventions</span>
+        <a href="{{ url_for('agenda') }}" class="btn btn-outline-primary btn-sm">Voir l'agenda</a>
+      </div>
+      <div class="card-body p-0">
+        {% if prochaines %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th><th>Client</th><th>Titre</th><th>Priorité</th><th>Statut</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for i in prochaines %}
+              <tr class="priority-{{ i.priorite }}">
+                <td class="text-nowrap">
+                  <div class="fw-semibold">{{ i.date_planifiee.strftime('%d/%m/%Y') }}</div>
+                  <div class="text-muted small">{{ i.date_planifiee.strftime('%H:%M') }}</div>
+                </td>
+                <td>{{ i.client.nom_affichage }}</td>
+                <td>{{ i.titre }}</td>
+                <td>
+                  {% if i.priorite == 'urgente' %}
+                    <span class="badge bg-danger">Urgente</span>
+                  {% elif i.priorite == 'normale' %}
+                    <span class="badge bg-primary">Normale</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Faible</span>
+                  {% endif %}
+                </td>
+                <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+                <td><a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <div class="text-center py-5 text-muted">
+            <i class="bi bi-calendar-check fs-1 d-block mb-2"></i>
+            Aucune intervention à venir
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-file-earmark-text me-2"></i>Bons en brouillon</span>
+        <span class="badge bg-secondary">{{ stats.bons_brouillon }}</span>
+      </div>
+      <div class="card-body">
+        {% if stats.bons_brouillon > 0 %}
+          <p class="text-muted small">{{ stats.bons_brouillon }} bon(s) en attente de finalisation.</p>
+          <a href="{{ url_for('bons_liste', statut='brouillon') }}" class="btn btn-outline-primary btn-sm w-100">
+            <i class="bi bi-pencil me-1"></i>Compléter les bons
+          </a>
+        {% else %}
+          <p class="text-muted small mb-0">Tous les bons sont à jour.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-lightning me-2"></i>Actions rapides</div>
+      <div class="card-body d-grid gap-2">
+        <a href="{{ url_for('client_nouveau') }}" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-person-plus me-1"></i>Nouveau client
+        </a>
+        <a href="{{ url_for('intervention_nouvelle') }}" class="btn btn-outline-success btn-sm">
+          <i class="bi bi-calendar-plus me-1"></i>Planifier une intervention
+        </a>
+        <a href="{{ url_for('bon_nouveau') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-file-plus me-1"></i>Créer un bon
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

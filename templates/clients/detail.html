@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}{{ client.nom_affichage }}{% endblock %}
+{% block page_title %}<i class="bi bi-person me-2"></i>{{ client.nom_affichage }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('client_modifier', id=client.id) }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-pencil me-1"></i>Modifier
+</a>
+<a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-calendar-plus me-1"></i>Planifier
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Fiche client -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-person-vcard me-2"></i>Fiche client</span>
+        <span class="badge bg-light text-dark border">{{ client.reference }}</span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:110px">Type</td>
+            <td>{% if client.type_client=='professionnel' %}<span class="badge bg-info text-dark">Professionnel</span>{% else %}<span class="badge bg-light text-dark border">Particulier</span>{% endif %}</td></tr>
+          {% if client.societe %}<tr><td class="text-muted small fw-semibold">Société</td><td>{{ client.societe }}</td></tr>{% endif %}
+          {% if client.siret_client %}<tr><td class="text-muted small fw-semibold">SIRET</td><td>{{ client.siret_client }}</td></tr>{% endif %}
+          <tr><td class="text-muted small fw-semibold">Nom</td><td>{{ client.nom_complet }}</td></tr>
+          {% if client.email %}<tr><td class="text-muted small fw-semibold">Email</td><td><a href="mailto:{{ client.email }}">{{ client.email }}</a></td></tr>{% endif %}
+          {% if client.telephone %}<tr><td class="text-muted small fw-semibold">Tél.</td><td><a href="tel:{{ client.telephone }}">{{ client.telephone }}</a></td></tr>{% endif %}
+          {% if client.telephone2 %}<tr><td class="text-muted small fw-semibold">Tél. 2</td><td><a href="tel:{{ client.telephone2 }}">{{ client.telephone2 }}</a></td></tr>{% endif %}
+          {% if client.adresse %}<tr><td class="text-muted small fw-semibold">Adresse</td><td>{{ client.adresse }}<br>{{ client.code_postal }} {{ client.ville }}</td></tr>{% endif %}
+          <tr><td class="text-muted small fw-semibold">Client depuis</td><td>{{ client.created_at.strftime('%d/%m/%Y') }}</td></tr>
+        </table>
+        {% if client.notes %}
+        <hr class="my-2">
+        <div class="text-muted small fw-semibold mb-1">Notes</div>
+        <div class="small">{{ client.notes }}</div>
+        {% endif %}
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <a href="{{ url_for('client_modifier', id=client.id) }}" class="btn btn-outline-secondary btn-sm flex-fill">
+          <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        <form method="POST" action="{{ url_for('client_supprimer', id=client.id) }}"
+              onsubmit="return confirm('Désactiver ce client ?')">
+          <button class="btn btn-outline-danger btn-sm"><i class="bi bi-archive"></i></button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Portail client -->
+    <div class="card">
+      <div class="card-header"><i class="bi bi-share me-2"></i>Portail client</div>
+      <div class="card-body">
+        {% if client.portal_actif %}
+          <div class="alert alert-success py-2 small mb-2">
+            <i class="bi bi-check-circle me-1"></i>Portail actif
+          </div>
+          <label class="form-label small fw-semibold">Lien d'inscription / accès</label>
+          <div class="input-group mb-2">
+            <input type="text" class="form-control form-control-sm" id="portalLink" value="{{ lien_portail }}" readonly>
+            <button class="btn btn-outline-secondary btn-sm" onclick="copyLink()" title="Copier">
+              <i class="bi bi-clipboard"></i>
+            </button>
+          </div>
+          <div class="d-grid gap-1">
+            <form method="POST" action="{{ url_for('portail_regenerer', id=client.id) }}"
+                  onsubmit="return confirm('Régénérer invalidera l\'ancien lien. Continuer ?')">
+              <button class="btn btn-outline-warning btn-sm w-100">
+                <i class="bi bi-arrow-repeat me-1"></i>Régénérer le lien
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('portail_desactiver', id=client.id) }}">
+              <button class="btn btn-outline-danger btn-sm w-100">
+                <i class="bi bi-x-circle me-1"></i>Désactiver le portail
+              </button>
+            </form>
+          </div>
+        {% else %}
+          <p class="small text-muted">Le portail permet au client de consulter ses interventions et signer ses bons via un lien sécurisé.</p>
+          {% if not client.email %}
+            <div class="alert alert-warning py-2 small">Un email est requis pour activer le portail.</div>
+          {% else %}
+            <form method="POST" action="{{ url_for('portail_activer', id=client.id) }}">
+              <button class="btn btn-success w-100 btn-sm">
+                <i class="bi bi-link-45deg me-1"></i>Activer et générer le lien
+              </button>
+            </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Interventions -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-wrench me-2"></i>Interventions ({{ interventions|length }})</span>
+        <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
+          <i class="bi bi-plus-lg me-1"></i>Planifier
+        </a>
+      </div>
+      <div class="card-body p-0">
+        {% if interventions %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for i in interventions %}
+              <tr class="priority-{{ i.priorite }}">
+                <td><small class="text-muted">{{ i.reference }}</small></td>
+                <td class="text-nowrap small">{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}</td>
+                <td>{{ i.titre }}</td>
+                <td>
+                  {% if i.priorite == 'urgente' %}<span class="badge bg-danger">Urgente</span>
+                  {% elif i.priorite == 'normale' %}<span class="badge bg-primary">Normale</span>
+                  {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}
+                </td>
+                <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+                <td>
+                  {% if i.bon %}
+                    <a href="{{ url_for('bon_detail', id=i.bon.id) }}" class="badge bg-{{ i.bon.statut_couleur }} text-decoration-none">
+                      {{ i.bon.numero }}
+                    </a>
+                  {% else %}
+                    <a href="{{ url_for('bon_nouveau') }}?intervention_id={{ i.id }}" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:1px 6px">
+                      <i class="bi bi-file-plus"></i> Créer
+                    </a>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <div class="text-center py-5 text-muted">
+            <i class="bi bi-calendar fs-1 d-block mb-2"></i>
+            Aucune intervention pour ce client
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function copyLink() {
+  const el = document.getElementById('portalLink');
+  el.select();
+  navigator.clipboard.writeText(el.value).then(() => {
+    const btn = event.target.closest('button');
+    btn.innerHTML = '<i class="bi bi-check2"></i>';
+    setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i>', 2000);
+  });
+}
+</script>
+{% endblock %}
