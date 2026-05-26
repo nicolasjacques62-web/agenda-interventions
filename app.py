@@ -816,6 +816,8 @@ def bon_envoyer(id):
 @app.route('/test-email')
 def test_email():
     import traceback
+    # Debug : affiche les variables d'environnement APP_*
+    env_vars = {k: ('***' if 'PASSWORD' in k else v) for k, v in os.environ.items() if k.startswith('APP_')}
     try:
         srv  = get_param('mail_server') or ''
         port = int(get_param('mail_port') or '587')
@@ -824,7 +826,7 @@ def test_email():
         tls  = (get_param('mail_use_tls') or 'true') == 'true'
         cfg  = {'serveur': srv, 'port': port, 'identifiant': usr, 'tls': tls, 'mdp_renseigne': bool(pwd)}
         if not all([srv, usr, pwd]):
-            return jsonify({'statut': 'erreur', 'message': 'Configuration incomplète — allez dans Paramètres et remplissez la section email', 'config': cfg})
+            return jsonify({'statut': 'erreur', 'message': 'Configuration incomplète — allez dans Paramètres et remplissez la section email', 'config': cfg, 'env_vars_detectes': env_vars})
         with smtplib.SMTP(srv, port, timeout=20) as s:
             s.ehlo()
             if tls:
