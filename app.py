@@ -809,29 +809,28 @@ def bon_envoyer(id):
     return redirect(url_for('bon_detail', id=id))
 
 @app.route('/test-email')
-@login_required
 def test_email():
     import traceback
-    srv  = get_param('mail_server')
-    port = int(get_param('mail_port', '587'))
-    usr  = get_param('mail_username')
-    pwd  = get_param('mail_password', '').replace(' ', '')  # enlève les espaces du mot de passe app
-    tls  = get_param('mail_use_tls', 'true') == 'true'
-    cfg  = {'serveur': srv, 'port': port, 'identifiant': usr, 'tls': tls, 'mdp_renseigne': bool(pwd)}
-    if not all([srv, usr, pwd]):
-        return jsonify({'statut': 'erreur', 'message': 'Configuration incomplète dans Paramètres', 'config': cfg})
     try:
+        srv  = get_param('mail_server') or ''
+        port = int(get_param('mail_port') or '587')
+        usr  = get_param('mail_username') or ''
+        pwd  = (get_param('mail_password') or '').replace(' ', '')
+        tls  = (get_param('mail_use_tls') or 'true') == 'true'
+        cfg  = {'serveur': srv, 'port': port, 'identifiant': usr, 'tls': tls, 'mdp_renseigne': bool(pwd)}
+        if not all([srv, usr, pwd]):
+            return jsonify({'statut': 'erreur', 'message': 'Configuration incomplète — allez dans Paramètres et remplissez la section email', 'config': cfg})
         with smtplib.SMTP(srv, port, timeout=20) as s:
             s.ehlo()
             if tls:
                 s.starttls()
                 s.ehlo()
             s.login(usr, pwd)
-        return jsonify({'statut': 'ok', 'message': 'Connexion SMTP réussie — email prêt', 'config': cfg})
+        return jsonify({'statut': 'ok', 'message': 'Connexion SMTP réussie — email opérationnel !', 'config': cfg})
     except smtplib.SMTPAuthenticationError as e:
-        return jsonify({'statut': 'erreur', 'message': f'Mot de passe refusé — vérifiez votre mot de passe application Microsoft : {e}', 'config': cfg})
+        return jsonify({'statut': 'erreur', 'message': f'Mot de passe refusé : {e}', 'config': cfg})
     except Exception as e:
-        return jsonify({'statut': 'erreur', 'message': str(e), 'detail': traceback.format_exc()[-500:], 'config': cfg})
+        return jsonify({'statut': 'erreur', 'message': str(e), 'detail': traceback.format_exc()[-800:]})
 
 @app.route('/bons/<int:id>/supprimer', methods=['POST'])
 @login_required
