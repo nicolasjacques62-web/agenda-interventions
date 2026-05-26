@@ -169,6 +169,17 @@ class BonIntervention(db.Model):
         return {'brouillon': 'secondary', 'finalise': 'primary',
                 'envoye': 'info', 'signe': 'success'}.get(self.statut, 'secondary')
 
+
+class BonPhoto(db.Model):
+    __tablename__ = 'bon_photos'
+    id = db.Column(db.Integer, primary_key=True)
+    bon_id = db.Column(db.Integer, db.ForeignKey('bons_intervention.id'), nullable=False)
+    nom = db.Column(db.String(200), default='photo')
+    data = db.Column(db.Text, nullable=False)   # image encodée en base64
+    mimetype = db.Column(db.String(50), default='image/jpeg')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    bon = db.relationship('BonIntervention', backref='photos')
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 @login_manager.user_loader
@@ -859,6 +870,53 @@ def bon_supprimer(id):
     db.session.commit()
     flash('Bon supprimé.', 'info')
     return redirect(url_for('intervention_detail', id=iid))
+
+# ─── PHOTOS BONS ─────────────────────────────────────────────────────────────
+
+@app.route('/bons/<int:id>/photos/ajouter', methods=['POST'])
+@login_required
+def bon_photo_ajouter(id):
+    b = BonIntervention.query.get_or_404(id)
+    file = request.files.get('photo')
+    if not file or not file.filename:
+        flash('Aucun fichier sélectionné.', 'warning')
+        return redirect(url_for('bon_detail', id=id))
+    # Vérifie que c'est bien une image
+    if not file.mimetype.startswith('image/'):
+        flash('Le fichier doit être une image.', 'danger')
+        return redirect(url_for('bon_detail', id=id))
+    # Limite à 8 Mo
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > 8 * 1024 * 1024:
+        flash('Image trop lourde (max 8 Mo). Compressez-la avant.', 'danger')
+        return redirect(url_for('bon_detail', id=id))
+    data_b64 = base64.b64encode(file.read()).decode('utf-8')
+    photo = BonPhoto(bon_id=id, nom=file.filename,
+                     data=data_b64, mimetype=file.mimetype)
+    db.session.add(photo)
+    db.session.commit()
+    flash('Photo ajoutée.', 'success')
+    return redirect(url_for('bon_detail', id=id))
+
+@app.route('/bons/photos/<int:photo_id>')
+@login_required
+def bon_photo_voir(photo_id):
+    p = BonPhoto.query.get_or_404(photo_id)
+    img_bytes = base64.b64decode(p.data)
+    return send_file(io.BytesIO(img_bytes), mimetype=p.mimetype,
+                     download_name=p.nom)
+
+@app.route('/bons/photos/<int:photo_id>/supprimer', methods=['POST'])
+@login_required
+def bon_photo_supprimer(photo_id):
+    p = BonPhoto.query.get_or_404(photo_id)
+    bid = p.bon_id
+    db.session.delete(p)
+    db.session.commit()
+    flash('Photo supprimée.', 'info')
+    return redirect(url_for('bon_detail', id=bid))
 
 # ─── PORTAIL CLIENT ───────────────────────────────────────────────────────────
 
