@@ -817,12 +817,15 @@ def bon_envoyer(id):
 @app.route('/test-email')
 def test_email():
     env_vars = {k: ('***' if 'KEY' in k or 'PASSWORD' in k else v) for k, v in os.environ.items() if k.startswith('APP_')}
-    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+    raw_key = os.environ.get('APP_BREVO_API_KEY', '')
+    api_key = ''.join(raw_key.split())
+    version = 'v5-join-split'
     if not api_key:
         return jsonify({
             'statut': 'erreur',
             'message': 'APP_BREVO_API_KEY manquant — ajoutez cette variable dans Render > Environment',
-            'env_vars_detectes': env_vars
+            'env_vars_detectes': env_vars,
+            'version_code': version,
         })
     req = urllib.request.Request(
         'https://api.brevo.com/v3/account',
@@ -834,13 +837,14 @@ def test_email():
             return jsonify({
                 'statut': 'ok',
                 'message': f"Connexion Brevo réussie — compte : {data.get('email', '?')}",
-                'env_vars_detectes': env_vars
+                'env_vars_detectes': env_vars,
+                'version_code': version,
             })
     except urllib.error.HTTPError as e:
         detail = e.read().decode('utf-8', errors='ignore')[:300]
-        return jsonify({'statut': 'erreur', 'message': f'Erreur Brevo {e.code} : {detail}', 'env_vars_detectes': env_vars})
+        return jsonify({'statut': 'erreur', 'message': f'Erreur Brevo {e.code} : {detail}', 'env_vars_detectes': env_vars, 'version_code': version, 'key_longueur': len(api_key)})
     except Exception as e:
-        return jsonify({'statut': 'erreur', 'message': str(e), 'env_vars_detectes': env_vars})
+        return jsonify({'statut': 'erreur', 'message': str(e), 'env_vars_detectes': env_vars, 'version_code': version, 'key_longueur_raw': len(raw_key), 'key_longueur_clean': len(api_key)})
 
 @app.route('/bons/<int:id>/supprimer', methods=['POST'])
 @login_required
