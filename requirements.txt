@@ -6,6 +6,6 @@ werkzeug==3.0.3
 reportlab==4.2.2
 python-dotenv==1.0.1
 
-# Production uniquement (serveur Linux Python 3.11)
+# Production uniquement
 gunicorn==22.0.0
-psycopg2-binary==2.9.9
+psycopg[binary]>=3.1
