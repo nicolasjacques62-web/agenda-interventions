@@ -175,6 +175,11 @@ class BonIntervention(db.Model):
 def load_user(uid): return User.query.get(int(uid))
 
 def get_param(cle, defaut=''):
+    # Priorité : variable d'environnement > base de données > valeur par défaut
+    env_key = 'APP_' + cle.upper()
+    env_val = os.environ.get(env_key)
+    if env_val:
+        return env_val
     p = Parametre.query.filter_by(cle=cle).first()
     return p.valeur if p else defaut
 
