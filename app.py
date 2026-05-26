@@ -1,10 +1,6 @@
-import os, uuid, io, json, smtplib, threading, time
+import os, uuid, io, json, threading, time, base64, urllib.request, urllib.error
 from datetime import datetime, timedelta
 from functools import wraps
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 
 from dotenv import load_dotenv
 load_dotenv()  # charge le fichier .env en local, ignoré en production
@@ -339,41 +335,46 @@ def generer_pdf(bon):
 
 
 def envoyer_bon_email(bon):
-    srv = get_param('mail_server')
-    port = int(get_param('mail_port', '587'))
-    usr = get_param('mail_username')
-    pwd = get_param('mail_password', '').replace(' ', '')  # supprime les espaces (mot de passe app Microsoft)
-    if not all([srv, usr, pwd]):
-        return False, "Configuration email manquante dans les Paramètres."
+    api_key = os.environ.get('APP_BREVO_API_KEY', '')
+    if not api_key:
+        return False, "Clé API Brevo manquante. Ajoutez APP_BREVO_API_KEY dans les variables d'environnement Render."
     cli = bon.intervention.client
     if not cli.email:
         return False, "Le client n'a pas d'adresse email."
     soc = get_param('societe', 'Ma Société')
-    msg = MIMEMultipart()
-    msg['From'] = f"{soc} <{usr}>"
-    msg['To'] = cli.email
-    msg['Subject'] = f"Bon d'intervention N° {bon.numero} — {soc}"
+    sender_email = get_param('mail_username') or get_param('email')
+    if not sender_email:
+        return False, "Email expéditeur manquant dans les Paramètres (champ 'Email expéditeur')."
     corps = (f"Bonjour {cli.prenom or cli.nom},\n\n"
              f"Veuillez trouver ci-joint votre bon d'intervention N° {bon.numero} "
              f"du {bon.intervention.date_planifiee.strftime('%d/%m/%Y')}.\n\n"
              f"Cordialement,\n{soc}\n{get_param('telephone')}\n{get_param('email')}")
-    msg.attach(MIMEText(corps, 'plain', 'utf-8'))
     try:
-        pdf = generer_pdf(bon)
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(pdf.read())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="bon_{bon.numero}.pdf"')
-        msg.attach(part)
+        pdf_buf = generer_pdf(bon)
+        pdf_b64 = base64.b64encode(pdf_buf.read()).decode('utf-8')
     except Exception as e:
         return False, f"Erreur PDF : {e}"
+    payload = json.dumps({
+        "sender": {"name": soc, "email": sender_email},
+        "to": [{"email": cli.email, "name": cli.nom_affichage}],
+        "subject": f"Bon d'intervention N° {bon.numero} — {soc}",
+        "textContent": corps,
+        "attachment": [{"content": pdf_b64, "name": f"bon_{bon.numero}.pdf"}]
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        'https://api.brevo.com/v3/smtp/email',
+        data=payload,
+        headers={'api-key': api_key, 'Content-Type': 'application/json'},
+        method='POST'
+    )
     try:
-        with smtplib.SMTP(srv, port) as s:
-            if get_param('mail_use_tls', 'true') == 'true':
-                s.starttls()
-            s.login(usr, pwd)
-            s.send_message(msg)
-        return True, "Email envoyé avec succès."
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status in (200, 201, 202):
+                return True, "Email envoyé avec succès via Brevo."
+            return False, f"Erreur Brevo : statut {resp.status}"
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode('utf-8', errors='ignore')[:300]
+        return False, f"Erreur Brevo {e.code} : {detail}"
     except Exception as e:
         return False, f"Erreur envoi : {e}"
 
@@ -815,29 +816,31 @@ def bon_envoyer(id):
 
 @app.route('/test-email')
 def test_email():
-    import traceback
-    # Debug : affiche les variables d'environnement APP_*
-    env_vars = {k: ('***' if 'PASSWORD' in k else v) for k, v in os.environ.items() if k.startswith('APP_')}
+    env_vars = {k: ('***' if 'KEY' in k or 'PASSWORD' in k else v) for k, v in os.environ.items() if k.startswith('APP_')}
+    api_key = os.environ.get('APP_BREVO_API_KEY', '')
+    if not api_key:
+        return jsonify({
+            'statut': 'erreur',
+            'message': 'APP_BREVO_API_KEY manquant — ajoutez cette variable dans Render > Environment',
+            'env_vars_detectes': env_vars
+        })
+    req = urllib.request.Request(
+        'https://api.brevo.com/v3/account',
+        headers={'api-key': api_key},
+    )
     try:
-        srv  = get_param('mail_server') or ''
-        port = int(get_param('mail_port') or '587')
-        usr  = get_param('mail_username') or ''
-        pwd  = (get_param('mail_password') or '').replace(' ', '')
-        tls  = (get_param('mail_use_tls') or 'true') == 'true'
-        cfg  = {'serveur': srv, 'port': port, 'identifiant': usr, 'tls': tls, 'mdp_renseigne': bool(pwd)}
-        if not all([srv, usr, pwd]):
-            return jsonify({'statut': 'erreur', 'message': 'Configuration incomplète — allez dans Paramètres et remplissez la section email', 'config': cfg, 'env_vars_detectes': env_vars})
-        with smtplib.SMTP(srv, port, timeout=20) as s:
-            s.ehlo()
-            if tls:
-                s.starttls()
-                s.ehlo()
-            s.login(usr, pwd)
-        return jsonify({'statut': 'ok', 'message': 'Connexion SMTP réussie — email opérationnel !', 'config': cfg})
-    except smtplib.SMTPAuthenticationError as e:
-        return jsonify({'statut': 'erreur', 'message': f'Mot de passe refusé : {e}', 'config': cfg})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            return jsonify({
+                'statut': 'ok',
+                'message': f"Connexion Brevo réussie — compte : {data.get('email', '?')}",
+                'env_vars_detectes': env_vars
+            })
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode('utf-8', errors='ignore')[:300]
+        return jsonify({'statut': 'erreur', 'message': f'Erreur Brevo {e.code} : {detail}', 'env_vars_detectes': env_vars})
     except Exception as e:
-        return jsonify({'statut': 'erreur', 'message': str(e), 'detail': traceback.format_exc()[-800:]})
+        return jsonify({'statut': 'erreur', 'message': str(e), 'env_vars_detectes': env_vars})
 
 @app.route('/bons/<int:id>/supprimer', methods=['POST'])
 @login_required
