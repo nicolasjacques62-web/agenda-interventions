@@ -27,7 +27,8 @@ except ImportError:
 app = Flask(__name__)
 
 # Base de données : PostgreSQL en production, SQLite en local
-_db_url = os.environ.get('DATABASE_URL', '').strip() or 'sqlite:///agenda.db'
+# On supprime TOUS les espaces/newlines autour de l'URL (copie Render parfois pollue)
+_db_url = ''.join((os.environ.get('DATABASE_URL') or '').split()) or 'sqlite:///agenda.db'
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
 
