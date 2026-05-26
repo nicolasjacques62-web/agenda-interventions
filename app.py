@@ -335,7 +335,7 @@ def generer_pdf(bon):
 
 
 def envoyer_bon_email(bon):
-    api_key = os.environ.get('APP_BREVO_API_KEY', '')
+    api_key = os.environ.get('APP_BREVO_API_KEY', '').strip()
     if not api_key:
         return False, "Clé API Brevo manquante. Ajoutez APP_BREVO_API_KEY dans les variables d'environnement Render."
     cli = bon.intervention.client
@@ -817,7 +817,7 @@ def bon_envoyer(id):
 @app.route('/test-email')
 def test_email():
     env_vars = {k: ('***' if 'KEY' in k or 'PASSWORD' in k else v) for k, v in os.environ.items() if k.startswith('APP_')}
-    api_key = os.environ.get('APP_BREVO_API_KEY', '')
+    api_key = os.environ.get('APP_BREVO_API_KEY', '').strip()
     if not api_key:
         return jsonify({
             'statut': 'erreur',
