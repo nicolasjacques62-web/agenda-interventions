@@ -3,42 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Agenda & Interventions{% endblock %}</title>
+  <title>{% block title %}HPS — Agenda & Interventions{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
-    body { background: #f4f6f9; }
-    .sidebar { width: 240px; min-height: 100vh; background: #1e293b; position: fixed; top: 0; left: 0; z-index: 100; }
-    .sidebar .brand { padding: 1.2rem 1rem; border-bottom: 1px solid #334155; }
-    .sidebar .brand h6 { color: #94a3b8; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; margin: 0; }
-    .sidebar .brand h5 { color: #fff; font-size: 1rem; margin: .2rem 0 0; }
-    .sidebar .nav-link { color: #94a3b8; padding: .55rem 1rem; display: flex; align-items: center; gap: .6rem; border-radius: 6px; margin: 1px 6px; font-size: .88rem; }
-    .sidebar .nav-link:hover, .sidebar .nav-link.active { background: #334155; color: #fff; }
+    :root {
+      --hps-blue:      #1AABE3;
+      --hps-blue-dark: #1292C4;
+      --hps-blue-light:#E8F6FC;
+      --hps-dark:      #0a1628;
+      --hps-dark2:     #112240;
+      --hps-grey:      #94a3b8;
+    }
+
+    body { background: #f0f6fa; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 240px; min-height: 100vh;
+      background: var(--hps-dark);
+      position: fixed; top: 0; left: 0; z-index: 100;
+      border-right: 3px solid var(--hps-blue);
+    }
+    .sidebar .brand {
+      padding: 1rem;
+      border-bottom: 1px solid var(--hps-dark2);
+      background: var(--hps-dark);
+      text-align: center;
+    }
+    .sidebar .brand img {
+      max-width: 180px;
+      height: auto;
+      filter: brightness(0) invert(1); /* logo blanc sur fond sombre */
+    }
+    .sidebar .brand-fallback {
+      display: none;
+    }
+    .sidebar .brand img.logo-error {
+      display: none;
+    }
+    .sidebar .brand img.logo-error ~ .brand-fallback {
+      display: block;
+    }
+    .sidebar .brand-fallback h6 { color: var(--hps-grey); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; margin: 0; }
+    .sidebar .brand-fallback h5 { color: #fff; font-size: 1rem; margin: .2rem 0 0; }
+
+    .sidebar .nav-link {
+      color: var(--hps-grey);
+      padding: .55rem 1rem;
+      display: flex; align-items: center; gap: .6rem;
+      border-radius: 6px;
+      margin: 1px 6px;
+      font-size: .88rem;
+      transition: all .15s;
+    }
+    .sidebar .nav-link:hover {
+      background: var(--hps-dark2);
+      color: var(--hps-blue);
+    }
+    .sidebar .nav-link.active {
+      background: var(--hps-blue);
+      color: #fff;
+    }
     .sidebar .nav-link i { font-size: 1rem; width: 18px; }
-    .sidebar .nav-section { color: #475569; font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; padding: .8rem 1rem .3rem; }
+    .sidebar .nav-section {
+      color: var(--hps-blue);
+      font-size: .68rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      padding: .8rem 1rem .3rem;
+      opacity: .7;
+    }
+
+    /* ── MAIN ── */
     .main { margin-left: 240px; padding: 1.5rem; }
-    .topbar { background: #fff; border-bottom: 1px solid #e2e8f0; padding: .7rem 1.5rem; margin: -1.5rem -1.5rem 1.5rem; display: flex; align-items: center; justify-content: space-between; }
-    .topbar h4 { margin: 0; font-size: 1.1rem; color: #1e293b; font-weight: 600; }
-    .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-radius: 10px; }
-    .card-header { background: #fff; border-bottom: 1px solid #f1f5f9; font-weight: 600; }
-    .stat-card { border-left: 4px solid; }
-    .badge-planifiee { background: #3788d8; }
-    .badge-en_cours { background: #f39c12; }
-    .badge-terminee { background: #27ae60; }
-    .badge-annulee { background: #95a5a6; }
-    .badge-urgente { background: #e74c3c; }
+    .topbar {
+      background: #fff;
+      border-bottom: 2px solid var(--hps-blue);
+      padding: .7rem 1.5rem;
+      margin: -1.5rem -1.5rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .topbar h4 { margin: 0; font-size: 1.1rem; color: var(--hps-dark); font-weight: 600; }
+
+    /* ── CARDS ── */
+    .card { border: none; box-shadow: 0 1px 4px rgba(0,0,0,.08); border-radius: 10px; }
+    .card-header { background: #fff; border-bottom: 1px solid #e8f0f6; font-weight: 600; }
+
+    /* ── BADGES STATUTS ── */
+    .badge-planifiee  { background: var(--hps-blue); }
+    .badge-en_cours   { background: #f39c12; }
+    .badge-terminee   { background: #27ae60; }
+    .badge-annulee    { background: #95a5a6; }
+    .badge-urgente    { background: #e74c3c; }
+
     .priority-urgente { border-left: 3px solid #e74c3c; }
-    .priority-normale { border-left: 3px solid #3788d8; }
-    .priority-faible { border-left: 3px solid #95a5a6; }
+    .priority-normale { border-left: 3px solid var(--hps-blue); }
+    .priority-faible  { border-left: 3px solid #95a5a6; }
+
+    /* ── BOUTONS ── */
+    .btn-primary {
+      background: var(--hps-blue);
+      border-color: var(--hps-blue);
+    }
+    .btn-primary:hover, .btn-primary:focus {
+      background: var(--hps-blue-dark);
+      border-color: var(--hps-blue-dark);
+    }
+    .btn-outline-primary {
+      color: var(--hps-blue);
+      border-color: var(--hps-blue);
+    }
+    .btn-outline-primary:hover {
+      background: var(--hps-blue);
+      border-color: var(--hps-blue);
+    }
+
+    /* ── STAT CARDS ── */
+    .stat-card { border-left: 4px solid var(--hps-blue); }
+
+    /* ── LIENS ── */
+    a { color: var(--hps-blue); }
+    a:hover { color: var(--hps-blue-dark); }
+
+    /* ── TABLE ── */
+    .table th { color: var(--hps-dark); }
+
+    /* ── TOPBAR ICON ── */
+    .topbar-logo {
+      height: 36px;
+      width: auto;
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
 
 <div class="sidebar">
-  <div class="brand">
-    <h6>Gestion</h6>
-    <h5><i class="bi bi-tools"></i> Interventions</h5>
+  <div class="brand py-3">
+    <img src="{{ url_for('static', filename='logo.png') }}"
+         alt="HPS — Hygiene Pro Services 3D"
+         onerror="this.classList.add('logo-error')">
+    <div class="brand-fallback">
+      <h6>Hygiene Pro Services 3D</h6>
+      <h5><i class="bi bi-tools"></i> HPS Interventions</h5>
+    </div>
   </div>
   <nav class="pt-2">
     <div class="nav-section">Principal</div>
