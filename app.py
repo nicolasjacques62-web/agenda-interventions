@@ -1352,12 +1352,11 @@ init_db()
 
 # Auto-ping toutes les 10 min pour éviter la mise en veille Render (plan gratuit)
 def _keep_alive():
-    import urllib.request
-    url = os.environ.get('BASE_URL', '')
+    url = os.environ.get('BASE_URL', '').strip()
     if not url or 'localhost' in url:
         return  # Désactivé en local
     while True:
-        time.sleep(600)  # 10 minutes
+        time.sleep(240)  # 4 minutes (Render dors après 15 min sans requête)
         try:
             urllib.request.urlopen(url + '/healthz', timeout=10)
         except Exception:
