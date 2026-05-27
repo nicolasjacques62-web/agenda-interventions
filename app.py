@@ -1337,6 +1337,18 @@ def healthz():
 def init_db():
     with app.app_context():
         db.create_all()
+        # ── Migrations manuelles : ajout de colonnes sur tables existantes ──
+        migrations = [
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS latitude FLOAT",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS longitude FLOAT",
+        ]
+        for sql in migrations:
+            try:
+                db.session.execute(db.text(sql))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        # ── Compte admin par défaut ──────────────────────────────────────────
         if not User.query.filter_by(username='admin').first():
             a = User(username='admin', nom='Administrateur', is_admin=True)
             a.set_password('Admin123!')
