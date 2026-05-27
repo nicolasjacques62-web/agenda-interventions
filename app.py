@@ -695,11 +695,20 @@ def agenda():
 @app.route('/agenda/api/events')
 @login_required
 def agenda_events():
-    start = request.args.get('start')
-    end = request.args.get('end')
+    start = request.args.get('start', '')
+    end   = request.args.get('end', '')
     q = Intervention.query
-    if start: q = q.filter(Intervention.date_planifiee >= start)
-    if end: q = q.filter(Intervention.date_planifiee <= end)
+    try:
+        # FullCalendar envoie des dates ISO avec timezone ex: 2026-05-24T00:00:00+02:00
+        # On extrait juste YYYY-MM-DD pour éviter les problèmes de comparaison
+        if start:
+            start_dt = datetime.strptime(start[:10], '%Y-%m-%d')
+            q = q.filter(Intervention.date_planifiee >= start_dt)
+        if end:
+            end_dt = datetime.strptime(end[:10], '%Y-%m-%d')
+            q = q.filter(Intervention.date_planifiee <= end_dt)
+    except Exception:
+        pass  # Si parsing échoue, on retourne toutes les interventions
     events = []
     for i in q.all():
         try:
