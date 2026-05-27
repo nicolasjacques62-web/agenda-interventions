@@ -925,17 +925,63 @@ TYPES_PRESTATION = [
     'Dératisation + Désinsectisation + Désinfection',
 ]
 
+def _planifier_passages_auto(client, type_prestation, passages_annuels, date_debut, date_fin):
+    """Crée automatiquement les interventions planifiées pour un contrat.
+    Ne crée que les passages futurs et évite les doublons (fenêtre ±15 jours)."""
+    from datetime import date as date_type, timedelta
+    if passages_annuels <= 0:
+        return 0
+    today = datetime.now().date()
+    debut = date_debut or today
+    fin = date_fin or date_type(debut.year, 12, 31)
+    total_days = (fin - debut).days
+    if total_days <= 0:
+        return 0
+    interval_days = total_days // passages_annuels
+    created = 0
+    for i in range(passages_annuels):
+        planned_date = debut + timedelta(days=i * interval_days)
+        if planned_date < today:
+            continue  # ne pas créer dans le passé
+        # Vérifier doublon ±15 jours
+        win_start = datetime.combine(planned_date - timedelta(days=15), datetime.min.time())
+        win_end   = datetime.combine(planned_date + timedelta(days=15), datetime.max.time())
+        existing = Intervention.query.filter(
+            Intervention.client_id == client.id,
+            Intervention.type_intervention.ilike(f'%{type_prestation}%'),
+            Intervention.date_planifiee.between(win_start, win_end),
+            Intervention.statut.in_(['planifiee', 'en_cours', 'terminee'])
+        ).first()
+        if not existing:
+            heure = datetime.combine(planned_date, datetime.strptime('08:00', '%H:%M').time())
+            inter = Intervention(
+                reference=next_ref(Intervention, 'INT'),
+                client_id=client.id,
+                titre=f'{type_prestation} — {client.nom_affichage}',
+                type_intervention=type_prestation,
+                priorite='normale',
+                statut='planifiee',
+                date_planifiee=heure,
+                duree_estimee=60,
+            )
+            db.session.add(inter)
+            created += 1
+    return created
+
+
 @app.route('/clients/<int:id>/contrats/sauvegarder', methods=['POST'])
 @login_required
 def contrats_sauvegarder(id):
-    """Sauvegarde tous les types de prestation en une fois."""
-    Client.query.get_or_404(id)
+    """Sauvegarde tous les types de prestation et planifie automatiquement."""
+    client = Client.query.get_or_404(id)
     try:
         dd = datetime.strptime(request.form['date_debut'], '%Y-%m-%d').date() if request.form.get('date_debut') else None
         df = datetime.strptime(request.form['date_fin'], '%Y-%m-%d').date() if request.form.get('date_fin') else None
     except ValueError:
         dd = df = None
     nb = int(request.form.get('nb_types', 0))
+    planifier = request.form.get('planifier_auto') == '1'
+    total_crees = 0
     for i in range(1, nb + 1):
         type_p = request.form.get(f'type_{i}', '').strip()
         passages = int(request.form.get(f'passages_{i}') or 0)
@@ -951,8 +997,15 @@ def contrats_sauvegarder(id):
                 client_id=id, type_prestation=type_p,
                 passages_annuels=passages, date_debut=dd, date_fin=df
             ))
+        # Planification automatique si demandé et passages > 0
+        if planifier and passages > 0:
+            db.session.flush()  # pour avoir les IDs
+            total_crees += _planifier_passages_auto(client, type_p, passages, dd, df)
     db.session.commit()
-    flash('Contrats mis à jour.', 'success')
+    if planifier and total_crees > 0:
+        flash(f'Contrats mis à jour + {total_crees} intervention(s) planifiée(s) automatiquement dans l\'agenda.', 'success')
+    else:
+        flash('Contrats mis à jour.', 'success')
     return redirect(url_for('client_detail', id=id))
 
 @app.route('/contrats/<int:cid>/supprimer', methods=['POST'])
