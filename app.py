@@ -327,6 +327,21 @@ def next_bon_num():
     n = (last.id if last else 0) + 1
     return f"BI{datetime.now().year}{n:04d}"
 
+def _sig_to_image(b64_data, max_w=7*cm, max_h=3*cm):
+    """Convertit une signature base64 (data URL ou raw) en objet RLImage, ou '' si invalide."""
+    if not b64_data:
+        return ''
+    try:
+        data = b64_data
+        if ',' in data:
+            data = data.split(',', 1)[1]
+        raw = base64.b64decode(data)
+        buf = io.BytesIO(raw)
+        img = RLImage(buf, width=max_w, height=max_h, kind='proportional')
+        return img
+    except Exception:
+        return ''
+
 def generer_pdf(bon):
     if not PDF_OK:
         raise RuntimeError("ReportLab non installé.")
@@ -469,21 +484,32 @@ def generer_pdf(bon):
         elems.append(Spacer(1, 0.3*cm))
 
     elems.append(Spacer(1, 0.8*cm))
+
+    # Signatures : récupérer les images si elles existent
+    img_tech   = _sig_to_image(bon.signature_technicien)
+    img_client = _sig_to_image(bon.signature_image)
+
+    # Ligne "Nom & Date" avec date de signature si disponible
+    date_sig_str = bon.date_signature.strftime('%d/%m/%Y %H:%M') if bon.date_signature else ''
+    nom_date_tech   = f"Nom & Date : {date_sig_str}" if img_tech   else 'Nom & Date :'
+    nom_date_client = f"Nom & Date : {date_sig_str}" if img_client else 'Nom & Date :'
+
     sig = [
         ['Signature du technicien', 'Signature du client'],
-        ['', ''],
-        ['', ''],
-        ['Nom & Date :', 'Nom & Date :'],
+        [img_tech, img_client],
+        [nom_date_tech, nom_date_client],
     ]
     ts = Table(sig, colWidths=[8.75*cm, 8.75*cm])
     ts.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('FONTSIZE', (0,0), (-1,-1), 9),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('BOX', (0,0), (0,-1), 1, colors.black),
         ('BOX', (1,0), (1,-1), 1, colors.black),
         ('LINEBELOW', (0,0), (-1,0), 0.5, colors.grey),
-        ('ROWHEIGHT', (0,1), (-1,2), 55),
+        ('LINEBELOW', (0,1), (-1,1), 0.5, colors.grey),
+        ('ROWHEIGHT', (0,1), (-1,1), 90),
         ('PADDING', (0,0), (-1,-1), 6),
     ]))
     elems.append(ts)
