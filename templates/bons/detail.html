@@ -2,6 +2,23 @@
 {% block title %}Bon {{ bon.numero }}{% endblock %}
 {% block page_title %}<i class="bi bi-file-earmark-text me-2"></i>Bon N° {{ bon.numero }}{% endblock %}
 
+{% block head %}
+<style>
+  .sig-canvas {
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    cursor: crosshair;
+    touch-action: none;
+    background: #fff;
+    display: block;
+    width: 100%;
+  }
+  .sig-canvas.has-sig { border-color: #1aabe3; border-style: solid; }
+  .sig-preview { max-width:100%; border:1px solid #e2e8f0; border-radius:6px; background:#fff; }
+  .sig-box { background:#f8fafc; border-radius:8px; padding:12px; }
+</style>
+{% endblock %}
+
 {% block topbar_actions %}
 <a href="{{ url_for('bon_modifier', id=bon.id) }}" class="btn btn-outline-primary btn-sm">
   <i class="bi bi-pencil me-1"></i>Modifier
@@ -54,7 +71,7 @@
       </div>
     </div>
 
-    <!-- Actions -->
+    <!-- Actions envoi -->
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-send me-2"></i>Envoi au client</div>
       <div class="card-body d-grid gap-2">
@@ -75,7 +92,7 @@
       </div>
     </div>
 
-    <!-- Danger -->
+    <!-- Zone danger -->
     <div class="card border-danger">
       <div class="card-header text-danger"><i class="bi bi-trash me-2"></i>Zone dangereuse</div>
       <div class="card-body">
@@ -88,7 +105,7 @@
   </div>
 
   <div class="col-lg-8">
-    <!-- Contenu du bon -->
+    <!-- Travaux -->
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-card-text me-2"></i>Travaux effectués</div>
       <div class="card-body">
@@ -110,11 +127,7 @@
           </thead>
           <tbody>
             {% for m in materiaux %}
-            <tr>
-              <td>{{ m.designation }}</td>
-              <td>{{ m.quantite }}</td>
-              <td>{{ m.unite }}</td>
-            </tr>
+            <tr><td>{{ m.designation }}</td><td>{{ m.quantite }}</td><td>{{ m.unite }}</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -125,18 +138,14 @@
     {% if bon.observations %}
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-eye me-2"></i>Observations</div>
-      <div class="card-body">
-        <p class="mb-0" style="white-space:pre-line">{{ bon.observations }}</p>
-      </div>
+      <div class="card-body"><p class="mb-0" style="white-space:pre-line">{{ bon.observations }}</p></div>
     </div>
     {% endif %}
 
     {% if bon.recommandations %}
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recommandations</div>
-      <div class="card-body">
-        <p class="mb-0" style="white-space:pre-line">{{ bon.recommandations }}</p>
-      </div>
+      <div class="card-body"><p class="mb-0" style="white-space:pre-line">{{ bon.recommandations }}</p></div>
     </div>
     {% endif %}
 
@@ -151,17 +160,13 @@
         </button>
       </div>
       <div class="card-body">
-
-        <!-- Formulaire upload (masqué par défaut) -->
         <div class="collapse mb-3" id="form-photo">
           <form method="POST" action="{{ url_for('bon_photo_ajouter', id=bon.id) }}" enctype="multipart/form-data">
             <div class="mb-2">
-              <!-- capture="environment" ouvre la caméra arrière sur mobile -->
               <input type="file" name="photo" id="photo-input" class="form-control"
                      accept="image/*" capture="environment" required>
-              <div class="form-text">📷 Sur mobile, votre caméra s'ouvrira directement. Max 8 Mo.</div>
+              <div class="form-text">📷 Sur mobile, votre caméra s'ouvrira. Max 8 Mo.</div>
             </div>
-            <!-- Aperçu avant envoi -->
             <div id="preview-container" class="mb-2" style="display:none">
               <img id="preview-img" src="" alt="Aperçu" class="img-thumbnail" style="max-height:200px;">
             </div>
@@ -173,28 +178,23 @@
           </form>
         </div>
 
-        <!-- Galerie photos -->
         {% if bon.photos %}
         <div class="row g-2">
           {% for photo in bon.photos %}
           <div class="col-6 col-md-4 col-lg-3" id="photo-card-{{ photo.id }}">
             <div class="position-relative">
               <a href="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" target="_blank">
-                <img src="{{ url_for('bon_photo_voir', photo_id=photo.id) }}"
-                     alt="{{ photo.nom }}"
-                     class="img-thumbnail w-100"
-                     style="height:120px; object-fit:cover;">
+                <img src="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" alt="{{ photo.nom }}"
+                     class="img-thumbnail w-100" style="height:120px;object-fit:cover;">
               </a>
               <div class="position-absolute bottom-0 start-0 end-0 p-1"
-                   style="background:rgba(0,0,0,.5); font-size:.7rem; color:#fff; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+                   style="background:rgba(0,0,0,.5);font-size:.7rem;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
                 {{ photo.created_at.strftime('%d/%m %H:%M') }}
               </div>
               <form method="POST" action="{{ url_for('bon_photo_supprimer', photo_id=photo.id) }}"
                     onsubmit="return confirm('Supprimer cette photo ?')"
                     class="position-absolute top-0 end-0 m-1">
-                <button class="btn btn-danger btn-sm py-0 px-1" title="Supprimer">
-                  <i class="bi bi-trash" style="font-size:.75rem;"></i>
-                </button>
+                <button class="btn btn-danger btn-sm py-0 px-1"><i class="bi bi-trash" style="font-size:.75rem"></i></button>
               </form>
             </div>
           </div>
@@ -202,44 +202,127 @@
         </div>
         {% else %}
         <div class="text-muted small fst-italic text-center py-2">
-          <i class="bi bi-camera me-1"></i>Aucune photo — cliquez sur "Ajouter" pour prendre une photo
+          <i class="bi bi-camera me-1"></i>Aucune photo — cliquez sur "Ajouter"
         </div>
         {% endif %}
-
       </div>
     </div>
 
-    <!-- Aperçu zone signature -->
+    <!-- ═══════════════════════════════════════════
+         ZONE SIGNATURES (pad au doigt / souris)
+         ═══════════════════════════════════════════ -->
     <div class="card">
-      <div class="card-header"><i class="bi bi-pen me-2"></i>Zone de signature</div>
+      <div class="card-header"><i class="bi bi-pen me-2"></i>Signatures</div>
       <div class="card-body">
-        <div class="row g-3">
-          <div class="col-6 text-center">
-            <div class="border rounded p-3" style="min-height:80px">
-              <div class="text-muted small mb-2">Signature du technicien</div>
-              <div class="text-muted small">{{ bon.intervention.technicien or '—' }}</div>
+
+        <form method="POST" action="{{ url_for('bon_signer', id=bon.id) }}" id="form-signatures">
+
+          <div class="row g-3">
+
+            <!-- Signature technicien -->
+            <div class="col-md-6">
+              <div class="sig-box">
+                <div class="fw-semibold small mb-2">
+                  <i class="bi bi-person-badge me-1 text-primary"></i>
+                  Technicien — {{ bon.intervention.technicien or 'non assigné' }}
+                </div>
+                {% if bon.signature_technicien %}
+                  <div class="text-center mb-2">
+                    <img src="{{ bon.signature_technicien }}" alt="Signature technicien" class="sig-preview" style="max-height:100px;">
+                  </div>
+                  <div class="text-success small text-center mb-2">
+                    <i class="bi bi-check-circle-fill me-1"></i>Signé
+                  </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm w-100"
+                          onclick="resetSig('tech')">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Refaire
+                  </button>
+                  <div id="tech-pad-zone" style="display:none" class="mt-2">
+                    <canvas id="canvas-tech" class="sig-canvas" height="120"></canvas>
+                    <div class="d-flex gap-2 mt-2">
+                      <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearCanvas('tech')">
+                        <i class="bi bi-eraser me-1"></i>Effacer
+                      </button>
+                    </div>
+                    <input type="hidden" name="signature_technicien_data" id="sig-tech-data">
+                  </div>
+                {% else %}
+                  <canvas id="canvas-tech" class="sig-canvas" height="120"></canvas>
+                  <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearCanvas('tech')">
+                      <i class="bi bi-eraser me-1"></i>Effacer
+                    </button>
+                  </div>
+                  <input type="hidden" name="signature_technicien_data" id="sig-tech-data">
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Signature client -->
+            <div class="col-md-6">
+              <div class="sig-box">
+                <div class="fw-semibold small mb-2">
+                  <i class="bi bi-person me-1 text-success"></i>
+                  Client — {{ bon.intervention.client.nom_affichage }}
+                </div>
+                {% if bon.signature_client and bon.signature_image %}
+                  <div class="text-center mb-2">
+                    <img src="{{ bon.signature_image }}" alt="Signature client" class="sig-preview" style="max-height:100px;">
+                  </div>
+                  <div class="text-success small text-center mb-2">
+                    <i class="bi bi-check-circle-fill me-1"></i>
+                    Signé le {{ bon.date_signature.strftime('%d/%m/%Y à %H:%M') }}
+                  </div>
+                  <button type="button" class="btn btn-outline-warning btn-sm w-100"
+                          onclick="resetSig('client')">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Refaire la signature
+                  </button>
+                  <div id="client-pad-zone" style="display:none" class="mt-2">
+                    <canvas id="canvas-client" class="sig-canvas" height="120"></canvas>
+                    <div class="d-flex gap-2 mt-2">
+                      <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearCanvas('client')">
+                        <i class="bi bi-eraser me-1"></i>Effacer
+                      </button>
+                    </div>
+                    <input type="hidden" name="signature_client_data" id="sig-client-data">
+                  </div>
+                {% elif bon.signature_client %}
+                  <div class="text-success small text-center py-3">
+                    <i class="bi bi-check-circle-fill fs-3 d-block mb-1"></i>
+                    Signé électroniquement<br>
+                    <small>{{ bon.date_signature.strftime('%d/%m/%Y à %H:%M') }}</small>
+                  </div>
+                {% else %}
+                  <canvas id="canvas-client" class="sig-canvas" height="120"></canvas>
+                  <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearCanvas('client')">
+                      <i class="bi bi-eraser me-1"></i>Effacer
+                    </button>
+                  </div>
+                  <input type="hidden" name="signature_client_data" id="sig-client-data">
+                {% endif %}
+              </div>
             </div>
           </div>
-          <div class="col-6 text-center">
-            <div class="border rounded p-3 {% if bon.signature_client %}border-success{% endif %}" style="min-height:80px">
-              <div class="text-muted small mb-2">Signature du client</div>
-              {% if bon.signature_client %}
-                <div class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Signé électroniquement</div>
-                <div class="text-muted small">{{ bon.date_signature.strftime('%d/%m/%Y') }}</div>
-              {% else %}
-                <div class="text-muted small fst-italic">En attente</div>
-              {% endif %}
-            </div>
+
+          <!-- Bouton sauvegarder -->
+          <div class="text-end mt-3">
+            <button type="submit" class="btn btn-success" onclick="return collectSignatures()">
+              <i class="bi bi-check2-circle me-1"></i>Enregistrer les signatures
+            </button>
           </div>
-        </div>
+
+        </form>
       </div>
     </div>
+
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ── Aperçu photo ──
 document.getElementById('photo-input')?.addEventListener('change', function() {
   const file = this.files[0];
   if (!file) return;
@@ -249,6 +332,113 @@ document.getElementById('photo-input')?.addEventListener('change', function() {
     document.getElementById('preview-container').style.display = 'block';
   };
   reader.readAsDataURL(file);
+});
+
+// ══════════════════════════════════════════
+// PAD DE SIGNATURE — canvas tactile/souris
+// ══════════════════════════════════════════
+
+class SignaturePad {
+  constructor(canvasId) {
+    this.canvas  = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx     = this.canvas.getContext('2d');
+    this.drawing = false;
+    this.empty   = true;
+    this._resize();
+    this._bind();
+  }
+
+  _resize() {
+    // Adapter la résolution du canvas à sa taille CSS
+    const rect = this.canvas.getBoundingClientRect();
+    this.canvas.width  = rect.width  || this.canvas.offsetWidth  || 300;
+    this.canvas.height = this.canvas.height || 120;
+    this.ctx.strokeStyle = '#1e293b';
+    this.ctx.lineWidth   = 2.5;
+    this.ctx.lineCap     = 'round';
+    this.ctx.lineJoin    = 'round';
+  }
+
+  _pos(e) {
+    const r = this.canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  }
+
+  _start(e) {
+    e.preventDefault();
+    this.drawing = true;
+    const p = this._pos(e);
+    this.ctx.beginPath();
+    this.ctx.moveTo(p.x, p.y);
+    this.canvas.classList.add('has-sig');
+    this.empty = false;
+  }
+
+  _move(e) {
+    if (!this.drawing) return;
+    e.preventDefault();
+    const p = this._pos(e);
+    this.ctx.lineTo(p.x, p.y);
+    this.ctx.stroke();
+  }
+
+  _end(e) { this.drawing = false; }
+
+  _bind() {
+    this.canvas.addEventListener('mousedown',  e => this._start(e));
+    this.canvas.addEventListener('mousemove',  e => this._move(e));
+    this.canvas.addEventListener('mouseup',    e => this._end(e));
+    this.canvas.addEventListener('mouseleave', e => this._end(e));
+    this.canvas.addEventListener('touchstart', e => this._start(e), {passive:false});
+    this.canvas.addEventListener('touchmove',  e => this._move(e),  {passive:false});
+    this.canvas.addEventListener('touchend',   e => this._end(e));
+  }
+
+  clear() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.canvas.classList.remove('has-sig');
+    this.empty = true;
+  }
+
+  toDataURL() { return this.empty ? '' : this.canvas.toDataURL('image/png'); }
+}
+
+// Instancier les pads
+const padTech   = new SignaturePad('canvas-tech');
+const padClient = new SignaturePad('canvas-client');
+
+function clearCanvas(who) {
+  if (who === 'tech')   padTech.clear();
+  if (who === 'client') padClient.clear();
+}
+
+function resetSig(who) {
+  const zone = document.getElementById(who + '-pad-zone');
+  if (zone) zone.style.display = 'block';
+}
+
+function collectSignatures() {
+  const dataTech   = document.getElementById('sig-tech-data');
+  const dataClient = document.getElementById('sig-client-data');
+  if (dataTech)   dataTech.value   = padTech.toDataURL();
+  if (dataClient) dataClient.value = padClient.toDataURL();
+
+  // Vérifier qu'au moins une signature a été tracée
+  const hasTech   = dataTech   && dataTech.value   !== '';
+  const hasClient = dataClient && dataClient.value  !== '';
+  if (!hasTech && !hasClient) {
+    alert('Veuillez tracer au moins une signature avant d\'enregistrer.');
+    return false;
+  }
+  return true;
+}
+
+// Redimensionner les canvas après chargement (car CSS flex peut modifier la taille)
+window.addEventListener('load', () => {
+  padTech._resize();
+  padClient._resize();
 });
 </script>
 {% endblock %}

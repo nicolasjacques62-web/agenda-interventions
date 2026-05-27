@@ -172,6 +172,8 @@ class BonIntervention(db.Model):
     date_envoi = db.Column(db.DateTime)
     signature_client = db.Column(db.Boolean, default=False)
     date_signature = db.Column(db.DateTime)
+    signature_image = db.Column(db.Text)        # base64 PNG de la signature
+    signature_technicien = db.Column(db.Text)   # base64 PNG signature technicien
 
     @property
     def statut_label(self):
@@ -909,6 +911,26 @@ def bon_detail(id):
     mats = json.loads(b.materiaux_utilises) if b.materiaux_utilises else []
     return render_template('bons/detail.html', bon=b, materiaux=mats)
 
+@app.route('/bons/<int:id>/signer', methods=['POST'])
+@login_required
+def bon_signer(id):
+    b = BonIntervention.query.get_or_404(id)
+    sig_client = request.form.get('signature_client_data', '').strip()
+    sig_tech   = request.form.get('signature_technicien_data', '').strip()
+    if sig_client:
+        b.signature_image  = sig_client
+        b.signature_client = True
+        b.date_signature   = datetime.utcnow()
+        b.statut = 'signe'
+    if sig_tech:
+        b.signature_technicien = sig_tech
+        if b.statut == 'brouillon':
+            b.statut = 'finalise'
+            b.date_finalisation = datetime.utcnow()
+    db.session.commit()
+    flash('Signature enregistrée avec succès.', 'success')
+    return redirect(url_for('bon_detail', id=id))
+
 @app.route('/bons/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
 def bon_modifier(id):
@@ -1328,8 +1350,13 @@ def portail_signer(token, bid):
         return redirect(url_for('portail_access', token=token))
     b = BonIntervention.query.get_or_404(bid)
     if b.intervention.client_id != c.id: abort(403)
+    sig_data = request.form.get('signature_data', '').strip()
+    if not sig_data:
+        flash('Veuillez apposer votre signature avant de valider.', 'warning')
+        return redirect(url_for('portail_dashboard', token=token))
+    b.signature_image  = sig_data
     b.signature_client = True
-    b.date_signature = datetime.utcnow()
+    b.date_signature   = datetime.utcnow()
     b.statut = 'signe'
     db.session.commit()
     flash('Bon signé électroniquement. Merci !', 'success')
@@ -1392,6 +1419,8 @@ def init_db():
         migrations = [
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS latitude FLOAT",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS longitude FLOAT",
+            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_image TEXT",
+            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_technicien TEXT",
         ]
         for sql in migrations:
             try:

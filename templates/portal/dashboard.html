@@ -7,28 +7,70 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
-    body { background: #f4f6f9; }
-    .portal-header { background: #1e293b; color: #fff; padding: 1rem 1.5rem; }
-    .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-radius: 10px; }
-    .badge-planifiee { background: #3788d8; }
-    .badge-en_cours { background: #f39c12; }
-    .badge-terminee { background: #27ae60; }
-    .badge-annulee { background: #95a5a6; }
+    :root { --hps-blue: #1aabe3; --hps-dark: #1e293b; }
+    body { background: #f0f4f8; font-family: 'Segoe UI', sans-serif; }
+
+    .portal-header {
+      background: var(--hps-dark); color: #fff;
+      padding: .75rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .portal-header img { max-height:45px; background:#fff; border-radius:6px; padding:4px 8px; }
+
+    .card { border:none; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .card-header { border-radius:12px 12px 0 0 !important; font-weight:600; }
+
+    .badge-planifiee { background:#3788d8; }
+    .badge-en_cours  { background:#f39c12; }
+    .badge-terminee  { background:#27ae60; }
+    .badge-annulee   { background:#95a5a6; }
+
+    .next-card { border-left:5px solid var(--hps-blue) !important; background:linear-gradient(135deg,#fff 80%,#e8f6fd); }
+    .next-badge { background:var(--hps-blue); color:#fff; font-size:.7rem; padding:2px 8px; border-radius:20px; font-weight:600; }
+
+    .section-title {
+      font-weight:700; font-size:1rem; color:var(--hps-dark);
+      margin-bottom:.75rem; display:flex; align-items:center; gap:.5rem;
+    }
+    .section-title::after { content:''; flex:1; height:2px; background:#e2e8f0; margin-left:.5rem; }
+
+    .contact-bar { background:var(--hps-blue); color:#fff; padding:.5rem 1.5rem; font-size:.85rem; }
+
+    /* Signature pad */
+    #sig-canvas-portal {
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      cursor: crosshair;
+      touch-action: none;
+      background: #f8fafc;
+      display: block;
+      width: 100%;
+    }
+    #sig-canvas-portal.has-sig { border-color: var(--hps-blue); border-style: solid; }
   </style>
 </head>
 <body>
 
-<div class="portal-header d-flex justify-content-between align-items-center">
-  <div>
-    <div style="font-size:.75rem;color:#94a3b8">Espace client</div>
-    <h5 class="mb-0">{{ client.nom_affichage }}</h5>
+<!-- Header -->
+<div class="portal-header">
+  <img src="/static/logo.png" alt="{{ soc }}" onerror="this.style.display='none'">
+  <div class="text-end">
+    <div style="font-size:.7rem;color:#94a3b8">Espace client sécurisé</div>
+    <div class="fw-semibold">{{ client.nom_affichage }}</div>
   </div>
-  <a href="{{ url_for('portail_deconnexion', token=token) }}" class="btn btn-outline-light btn-sm">
-    <i class="bi bi-box-arrow-right me-1"></i>Déconnexion
-  </a>
 </div>
 
-<div class="container py-4">
+<!-- Barre contact -->
+{% if tel_soc or email_soc %}
+<div class="contact-bar d-flex gap-4 flex-wrap">
+  {% if tel_soc %}<span><i class="bi bi-telephone me-1"></i><a href="tel:{{ tel_soc }}" class="text-white">{{ tel_soc }}</a></span>{% endif %}
+  {% if email_soc %}<span><i class="bi bi-envelope me-1"></i><a href="mailto:{{ email_soc }}" class="text-white">{{ email_soc }}</a></span>{% endif %}
+  <span class="ms-auto"><a href="{{ url_for('portail_deconnexion', token=token) }}" class="text-white text-decoration-none"><i class="bi bi-box-arrow-right me-1"></i>Déconnexion</a></span>
+</div>
+{% endif %}
+
+<div class="container py-4" style="max-width:800px">
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}{% for cat, msg in messages %}
@@ -38,85 +80,272 @@
     {% endfor %}{% endif %}
   {% endwith %}
 
-  <h5 class="mb-3"><i class="bi bi-calendar3 me-2"></i>Mes interventions</h5>
+  <!-- PROCHAINS PASSAGES -->
+  <div class="section-title">
+    <i class="bi bi-calendar-event text-primary"></i>
+    Prochains passages
+    {% if a_venir %}<span class="badge bg-primary rounded-pill ms-1">{{ a_venir|length }}</span>{% endif %}
+  </div>
 
-  {% if interventions %}
-    {% for i in interventions %}
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <div>
-          <span class="fw-semibold">{{ i.titre }}</span>
-          <span class="text-muted small ms-2">{{ i.reference }}</span>
-        </div>
-        <span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span>
-      </div>
+  {% if a_venir %}
+    {% for i in a_venir %}
+    {% set is_next = loop.first %}
+    <div class="card mb-3 {% if is_next %}next-card{% endif %}">
       <div class="card-body">
-        <div class="row g-2 small">
-          <div class="col-sm-4">
-            <span class="text-muted">Date :</span>
-            <strong>{{ i.date_planifiee.strftime('%d/%m/%Y à %H:%M') }}</strong>
-          </div>
-          {% if i.type_intervention %}
-          <div class="col-sm-4">
-            <span class="text-muted">Type :</span> {{ i.type_intervention }}
-          </div>
-          {% endif %}
-          {% if i.technicien %}
-          <div class="col-sm-4">
-            <span class="text-muted">Technicien :</span> {{ i.technicien }}
-          </div>
-          {% endif %}
-          {% if i.description %}
-          <div class="col-12 mt-1">
-            <span class="text-muted">Description :</span> {{ i.description }}
-          </div>
-          {% endif %}
-        </div>
-
-        {% if i.bon and i.bon.statut in ['finalise', 'envoye', 'signe'] %}
-        <hr class="my-2">
-        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-          <div class="small">
-            <i class="bi bi-file-earmark-text me-1 text-primary"></i>
-            <strong>Bon d'intervention N° {{ i.bon.numero }}</strong>
-            <span class="badge bg-{{ i.bon.statut_couleur }} ms-1">{{ i.bon.statut_label }}</span>
-            {% if i.bon.signature_client %}
-              <span class="text-success ms-2"><i class="bi bi-check-circle-fill"></i> Signé</span>
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+          <div>
+            {% if is_next %}<span class="next-badge mb-1 d-inline-block">⭐ Prochain passage</span>{% endif %}
+            <div class="fw-bold">{{ i.type_intervention or i.titre }}</div>
+            <div class="text-muted small mt-1">
+              <i class="bi bi-calendar3 me-1"></i>
+              <strong>{{ i.date_planifiee.strftime('%A %d %B %Y') }}</strong>
+              à {{ i.date_planifiee.strftime('%H:%M') }}
+            </div>
+            {% if i.technicien %}
+            <div class="text-muted small"><i class="bi bi-person me-1"></i>Technicien : {{ i.technicien }}</div>
+            {% endif %}
+            {% if i.duree_estimee %}
+            <div class="text-muted small"><i class="bi bi-clock me-1"></i>Durée estimée : {{ i.duree_estimee }} min</div>
             {% endif %}
           </div>
-          <div class="d-flex gap-2">
-            <a href="{{ url_for('portail_bon_pdf', token=token, bid=i.bon.id) }}"
-               class="btn btn-sm btn-outline-danger" target="_blank">
-              <i class="bi bi-filetype-pdf me-1"></i>Télécharger
-            </a>
-            {% if not i.bon.signature_client %}
-            <form method="POST" action="{{ url_for('portail_signer', token=token, bid=i.bon.id) }}"
-                  onsubmit="return confirm('Confirmer la signature électronique de ce bon ?')">
-              <button class="btn btn-sm btn-success">
-                <i class="bi bi-pen me-1"></i>Signer
-              </button>
-            </form>
-            {% endif %}
-          </div>
+          <span class="badge badge-{{ i.statut }} px-2 py-1">{{ i.statut_label }}</span>
         </div>
-        {% endif %}
       </div>
     </div>
     {% endfor %}
   {% else %}
-    <div class="card">
-      <div class="card-body text-center py-5 text-muted">
-        <i class="bi bi-calendar-check fs-1 d-block mb-2"></i>
-        Aucune intervention enregistrée pour le moment.
+    <div class="card mb-3">
+      <div class="card-body text-center py-4 text-muted">
+        <i class="bi bi-calendar-check fs-2 d-block mb-2 text-success"></i>
+        Aucun passage planifié prochainement
       </div>
     </div>
   {% endif %}
 
-  <div class="text-center mt-4 text-muted" style="font-size:.75rem">
-    Espace sécurisé — Accès personnel et confidentiel
+  <!-- BONS D'INTERVENTION -->
+  {% if bons %}
+  <div class="section-title mt-4">
+    <i class="bi bi-file-earmark-text text-success"></i>
+    Bons d'intervention
+    <span class="badge bg-success rounded-pill ms-1">{{ bons|length }}</span>
+  </div>
+
+  {% for b in bons %}
+  <div class="card mb-2">
+    <div class="card-body py-2">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <div class="fw-semibold small">
+            <i class="bi bi-file-earmark-text me-1 text-primary"></i>
+            Bon N° {{ b.numero }}
+            <span class="badge bg-{{ b.statut_couleur }} ms-1">{{ b.statut_label }}</span>
+            {% if b.signature_client %}
+              <span class="text-success ms-1"><i class="bi bi-check-circle-fill"></i> Signé</span>
+            {% endif %}
+          </div>
+          <div class="text-muted" style="font-size:.75rem">
+            {{ b.intervention.type_intervention or b.intervention.titre }} —
+            {{ b.intervention.date_planifiee.strftime('%d/%m/%Y') }}
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('portail_bon_pdf', token=token, bid=b.id) }}"
+             class="btn btn-sm btn-outline-danger" target="_blank">
+            <i class="bi bi-filetype-pdf me-1"></i>PDF
+          </a>
+          {% if not b.signature_client %}
+          <button class="btn btn-sm btn-success"
+                  onclick="ouvrirSignature({{ b.id }}, '{{ b.numero }}')">
+            <i class="bi bi-pen me-1"></i>Signer
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <!-- HISTORIQUE -->
+  {% if passes %}
+  <div class="section-title mt-4">
+    <i class="bi bi-clock-history text-secondary"></i>
+    Historique des interventions
+  </div>
+  <div class="card">
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Date</th><th>Type</th><th>Technicien</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for i in passes %}
+          <tr>
+            <td class="small">{{ i.date_planifiee.strftime('%d/%m/%Y') }}</td>
+            <td class="small">{{ i.type_intervention or i.titre }}</td>
+            <td class="small text-muted">{{ i.technicien or '—' }}</td>
+            <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+            <td>
+              {% if i.bon and i.bon.statut in ['finalise','envoye','signe'] %}
+              <a href="{{ url_for('portail_bon_pdf', token=token, bid=i.bon.id) }}"
+                 class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:1px 6px" target="_blank">
+                <i class="bi bi-filetype-pdf"></i>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="text-center mt-4 text-muted" style="font-size:.72rem">
+    <i class="bi bi-shield-lock me-1"></i>Espace sécurisé — Accès personnel et confidentiel — {{ soc }}
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════
+     MODAL SIGNATURE AU DOIGT
+     ═══════════════════════════════════════════ -->
+<div class="modal fade" id="modalSignature" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pen me-2"></i>Signer le bon <span id="modal-bon-num"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <p class="text-muted small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Signez ci-dessous avec votre doigt (ou la souris) pour valider votre bon d'intervention.
+        </p>
+
+        <div class="border rounded p-2 mb-3" style="background:#fff">
+          <canvas id="sig-canvas-portal" height="160"></canvas>
+        </div>
+
+        <div class="d-flex gap-2 mb-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearPortalSig()">
+            <i class="bi bi-eraser me-1"></i>Effacer
+          </button>
+        </div>
+
+        <div class="alert alert-warning py-2 small mb-0" id="sig-warning" style="display:none">
+          <i class="bi bi-exclamation-triangle me-1"></i>Veuillez tracer votre signature avant de valider.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-success" onclick="validerSignature()">
+          <i class="bi bi-check2-circle me-1"></i>Valider la signature
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Formulaire caché pour soumettre la signature -->
+<form id="form-sig-portail" method="POST" style="display:none">
+  <input type="hidden" name="signature_data" id="hidden-sig-data">
+</form>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ══════════════════════════════════════════
+// PAD DE SIGNATURE PORTAIL CLIENT
+// ══════════════════════════════════════════
+let portalPad = null;
+let currentBonId = null;
+
+class SignaturePad {
+  constructor(canvasId) {
+    this.canvas  = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx     = this.canvas.getContext('2d');
+    this.drawing = false;
+    this.empty   = true;
+    this._resize();
+    this._bind();
+  }
+  _resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    this.canvas.width  = rect.width || this.canvas.offsetWidth || 340;
+    this.canvas.height = 160;
+    this.ctx.strokeStyle = '#1e293b';
+    this.ctx.lineWidth   = 2.5;
+    this.ctx.lineCap     = 'round';
+    this.ctx.lineJoin    = 'round';
+  }
+  _pos(e) {
+    const r = this.canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  }
+  _start(e) {
+    e.preventDefault();
+    this.drawing = true; this.empty = false;
+    const p = this._pos(e);
+    this.ctx.beginPath(); this.ctx.moveTo(p.x, p.y);
+    this.canvas.classList.add('has-sig');
+  }
+  _move(e) {
+    if (!this.drawing) return;
+    e.preventDefault();
+    const p = this._pos(e);
+    this.ctx.lineTo(p.x, p.y);
+    this.ctx.stroke();
+  }
+  _end(e) { this.drawing = false; }
+  _bind() {
+    this.canvas.addEventListener('mousedown',  e => this._start(e));
+    this.canvas.addEventListener('mousemove',  e => this._move(e));
+    this.canvas.addEventListener('mouseup',    e => this._end(e));
+    this.canvas.addEventListener('mouseleave', e => this._end(e));
+    this.canvas.addEventListener('touchstart', e => this._start(e), {passive:false});
+    this.canvas.addEventListener('touchmove',  e => this._move(e),  {passive:false});
+    this.canvas.addEventListener('touchend',   e => this._end(e));
+  }
+  clear() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.canvas.classList.remove('has-sig');
+    this.empty = true;
+  }
+  toDataURL() { return this.empty ? '' : this.canvas.toDataURL('image/png'); }
+}
+
+function ouvrirSignature(bonId, bonNum) {
+  currentBonId = bonId;
+  document.getElementById('modal-bon-num').textContent = 'N° ' + bonNum;
+  document.getElementById('sig-warning').style.display = 'none';
+
+  const modal = new bootstrap.Modal(document.getElementById('modalSignature'));
+  modal.show();
+
+  // Initialiser le pad APRÈS l'ouverture du modal (sinon canvas.width = 0)
+  document.getElementById('modalSignature').addEventListener('shown.bs.modal', function handler() {
+    portalPad = new SignaturePad('sig-canvas-portal');
+    this.removeEventListener('shown.bs.modal', handler);
+  });
+}
+
+function clearPortalSig() {
+  if (portalPad) portalPad.clear();
+}
+
+function validerSignature() {
+  if (!portalPad || portalPad.empty) {
+    document.getElementById('sig-warning').style.display = 'block';
+    return;
+  }
+  const imgData = portalPad.toDataURL();
+  const form = document.getElementById('form-sig-portail');
+  form.action = '/portail/{{ token }}/bons/' + currentBonId + '/signer';
+  document.getElementById('hidden-sig-data').value = imgData;
+  form.submit();
+}
+</script>
 </body>
 </html>
