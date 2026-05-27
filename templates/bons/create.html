@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<form method="POST">
+<form method="POST" enctype="multipart/form-data">
 <div class="row g-3">
   <div class="col-lg-8">
 
@@ -25,7 +25,6 @@
       </div>
     </div>
     {% else %}
-    <!-- Résumé intervention en mode édition -->
     <div class="card mb-3 border-primary">
       <div class="card-body py-2">
         <div class="d-flex align-items-center gap-3">
@@ -102,6 +101,102 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════
+         PHOTOS (visible en mode édition)
+         ═══════════════════════════════════ -->
+    {% if bon %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-camera me-2"></i>Photos d'intervention
+        {% if bon.photos %}<span class="badge bg-secondary ms-1">{{ bon.photos|length }}</span>{% endif %}
+      </div>
+      <div class="card-body">
+
+        <!-- Input unique caméra/galerie -->
+        <input type="file" id="photo-input" name="photo_upload"
+               accept="image/*" class="d-none"
+               onchange="previewPhoto(this)">
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <button type="button" class="btn btn-primary w-100 py-3"
+                    onclick="ouvrirCamera()">
+              <i class="bi bi-camera-fill d-block fs-2 mb-1"></i>
+              <span class="fw-semibold">Prendre une photo</span>
+              <div style="font-size:.72rem;opacity:.85">Caméra de la tablette</div>
+            </button>
+          </div>
+          <div class="col-6">
+            <button type="button" class="btn btn-outline-primary w-100 py-3"
+                    onclick="ouvrirGalerie()">
+              <i class="bi bi-images d-block fs-2 mb-1"></i>
+              <span class="fw-semibold">Choisir une image</span>
+              <div style="font-size:.72rem;opacity:.85">Depuis la galerie</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Aperçu + bouton enregistrer -->
+        <div id="preview-zone" style="display:none" class="mb-3">
+          <div class="text-center mb-2">
+            <img id="preview-img" src="" alt="Aperçu"
+                 class="img-fluid rounded shadow-sm" style="max-height:260px;max-width:100%">
+          </div>
+          <div class="alert alert-info py-2 small">
+            <i class="bi bi-info-circle me-1"></i>
+            Cliquez sur <strong>Enregistrer la photo</strong> ci-dessous, puis sauvegardez le bon.
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" name="ajouter_photo" value="1" class="btn btn-success flex-fill">
+              <i class="bi bi-cloud-upload me-1"></i>Enregistrer la photo
+            </button>
+            <button type="button" class="btn btn-outline-secondary" onclick="annulerPhoto()">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Galerie des photos existantes -->
+        {% if bon.photos %}
+        <div class="row g-2">
+          {% for photo in bon.photos %}
+          <div class="col-6 col-md-4">
+            <div class="position-relative">
+              <a href="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" target="_blank">
+                <img src="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" alt="{{ photo.nom }}"
+                     class="img-thumbnail w-100" style="height:110px;object-fit:cover;">
+              </a>
+              <div class="position-absolute bottom-0 start-0 end-0 p-1"
+                   style="background:rgba(0,0,0,.55);font-size:.7rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                {{ photo.created_at.strftime('%d/%m %H:%M') }}
+              </div>
+              <form method="POST" action="{{ url_for('bon_photo_supprimer', photo_id=photo.id) }}"
+                    onsubmit="return confirm('Supprimer cette photo ?')"
+                    class="position-absolute top-0 end-0 m-1">
+                <button class="btn btn-danger btn-sm py-0 px-1">
+                  <i class="bi bi-trash" style="font-size:.75rem"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-muted small fst-italic text-center py-1">
+          <i class="bi bi-images me-1"></i>Aucune photo pour l'instant
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+    {% else %}
+    <!-- Message sur la page de création -->
+    <div class="alert alert-info">
+      <i class="bi bi-camera me-2"></i>
+      <strong>Photos :</strong> Vous pourrez ajouter des photos après avoir enregistré le bon.
+    </div>
+    {% endif %}
+
   </div>
 
   <div class="col-lg-4">
@@ -146,6 +241,38 @@ function ajouterLigne() {
   `;
   document.getElementById('matBody').appendChild(tr);
   tr.querySelector('input').focus();
+}
+
+// ── Caméra / Galerie ──
+function ouvrirCamera() {
+  const inp = document.getElementById('photo-input');
+  if (!inp) return;
+  inp.setAttribute('capture', 'environment');
+  inp.value = '';
+  inp.click();
+}
+function ouvrirGalerie() {
+  const inp = document.getElementById('photo-input');
+  if (!inp) return;
+  inp.removeAttribute('capture');
+  inp.value = '';
+  inp.click();
+}
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('preview-img').src = e.target.result;
+    document.getElementById('preview-zone').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+function annulerPhoto() {
+  document.getElementById('preview-zone').style.display = 'none';
+  document.getElementById('preview-img').src = '';
+  const inp = document.getElementById('photo-input');
+  if (inp) inp.value = '';
 }
 </script>
 {% endblock %}

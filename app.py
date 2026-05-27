@@ -945,9 +945,25 @@ def bon_modifier(id):
         if request.form.get('finaliser'):
             b.statut = 'finalise'
             b.date_finalisation = datetime.utcnow()
+
+        # ── Gestion photo ajoutée depuis le formulaire modifier ──
+        if request.form.get('ajouter_photo'):
+            file = request.files.get('photo_upload')
+            if file and file.filename and file.mimetype.startswith('image/'):
+                file.seek(0, 2); size = file.tell(); file.seek(0)
+                if size <= 8 * 1024 * 1024:
+                    data_b64 = base64.b64encode(file.read()).decode('utf-8')
+                    photo = BonPhoto(bon_id=id, nom=file.filename,
+                                     data=data_b64, mimetype=file.mimetype)
+                    db.session.add(photo)
+                    flash('Photo ajoutée.', 'success')
+                else:
+                    flash('Image trop lourde (max 8 Mo).', 'danger')
+
         db.session.commit()
-        flash('Bon mis à jour.', 'success')
-        return redirect(url_for('bon_detail', id=id))
+        if not request.form.get('ajouter_photo'):
+            flash('Bon mis à jour.', 'success')
+        return redirect(url_for('bon_modifier', id=id))
     mats = json.loads(b.materiaux_utilises) if b.materiaux_utilises else []
     return render_template('bons/create.html', bon=b, intervention=b.intervention,
                            interventions=[], iid=b.intervention_id, materiaux=mats)
