@@ -432,53 +432,49 @@ def generer_pdf(bon):
 
     if has_prosane or has_cepa:
         elems.append(Spacer(1, 0.5*cm))
-        # Ligne séparatrice
-        sep_data = [['']]
-        sep = Table(sep_data, colWidths=[17.5*cm])
-        sep.setStyle(TableStyle([
-            ('LINEABOVE', (0, 0), (-1, 0), 0.8, colors.HexColor('#1aabe3')),
-        ]))
+        # Ligne séparatrice bleue
+        sep = Table([['']], colWidths=[17.5*cm])
+        sep.setStyle(TableStyle([('LINEABOVE', (0,0), (-1,0), 0.8, colors.HexColor('#1aabe3'))]))
         elems.append(sep)
-        elems.append(Spacer(1, 0.2*cm))
+        elems.append(Spacer(1, 0.3*cm))
 
-        # Ligne "Produits utilisés / certifications"
+        # Texte centré
         elems.append(Paragraph("Produits homologués et certifications :",
                                ParagraphStyle('lp', parent=styles['Normal'], fontSize=7,
-                                              textColor=colors.grey, spaceAfter=4)))
+                                              textColor=colors.grey, alignment=TA_CENTER, spaceAfter=6)))
 
-        footer_cells = []
-        footer_widths = []
-
+        # Logos centrés
+        logo_cells = []
         if has_prosane and has_cepa:
             try:
                 img_p = RLImage(logo_prosane_path, width=3.5*cm, height=1.5*cm, kind='proportional')
                 img_c = RLImage(logo_cepa_path,    width=3.5*cm, height=1.5*cm, kind='proportional')
-                footer_cells  = [[img_p, img_c, '']]
-                footer_widths = [4*cm, 4*cm, 9.5*cm]
+                logo_cells = [['', img_p, '', img_c, '']]
+                col_w = [3.375*cm, 3.5*cm, 3.75*cm, 3.5*cm, 3.375*cm]
             except Exception:
-                footer_cells  = [['Prosane', 'CEPA', '']]
-                footer_widths = [4*cm, 4*cm, 9.5*cm]
+                logo_cells = [['', 'Prosane', '', 'CEPA', '']]
+                col_w = [3.375*cm, 3.5*cm, 3.75*cm, 3.5*cm, 3.375*cm]
         elif has_prosane:
             try:
                 img_p = RLImage(logo_prosane_path, width=3.5*cm, height=1.5*cm, kind='proportional')
-                footer_cells  = [[img_p, '']]
-                footer_widths = [4*cm, 13.5*cm]
+                logo_cells = [['', img_p, '']]
+                col_w = [7*cm, 3.5*cm, 7*cm]
             except Exception:
-                footer_cells  = [['Prosane', '']]
-                footer_widths = [4*cm, 13.5*cm]
+                logo_cells = [['', 'Prosane', '']]
+                col_w = [7*cm, 3.5*cm, 7*cm]
         else:
             try:
                 img_c = RLImage(logo_cepa_path, width=3.5*cm, height=1.5*cm, kind='proportional')
-                footer_cells  = [[img_c, '']]
-                footer_widths = [4*cm, 13.5*cm]
+                logo_cells = [['', img_c, '']]
+                col_w = [7*cm, 3.5*cm, 7*cm]
             except Exception:
-                footer_cells  = [['CEPA', '']]
-                footer_widths = [4*cm, 13.5*cm]
+                logo_cells = [['', 'CEPA', '']]
+                col_w = [7*cm, 3.5*cm, 7*cm]
 
-        ft = Table(footer_cells, colWidths=footer_widths)
+        ft = Table(logo_cells, colWidths=col_w)
         ft.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN',  (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN',  (0,0), (-1,-1), 'CENTER'),
         ]))
         elems.append(ft)
 
