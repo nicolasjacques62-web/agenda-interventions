@@ -912,10 +912,12 @@ def _optimiser_tournee(points, depart_lat=None, depart_lon=None):
         remaining.remove(nearest)
     return route
 
+DETOUR_MAX_KM = 30   # seuil de détour maximum pour proposer une date
+
 def _suggerer_dates(client, nb=8, horizon=60):
     """Retourne les meilleures dates (dans les <horizon> prochains jours) où une tournée
-    est déjà planifiée dans le secteur du client, triées par proximité géographique.
-    Seuls les jours avec des interventions existantes sont proposés."""
+    est déjà planifiée ET où le client peut être intégré avec moins de DETOUR_MAX_KM de détour.
+    Le détour est estimé par la distance au stop existant le plus proche ce jour-là."""
     if not client.latitude or not client.longitude:
         _geocoder_client(client)
 
@@ -924,41 +926,55 @@ def _suggerer_dates(client, nb=8, horizon=60):
 
     for delta in range(1, horizon + 1):
         jour = today + timedelta(days=delta)
-        if jour.weekday() == 6:          # dimanche → ignoré
+        if jour.weekday() == 6:
             continue
 
-        # Uniquement les jours où une tournée est déjà planifiée
         inter_jour = Intervention.query.filter(
             db.func.date(Intervention.date_planifiee) == jour,
             Intervention.statut.in_(['planifiee', 'en_cours'])
         ).all()
 
         if not inter_jour:
-            continue   # ← on ignore les jours sans tournée
+            continue
 
         nb_inter = len(inter_jour)
-        dist_km = None
-        score = 30     # valeur de base si pas de coordonnées disponibles
 
-        if client.latitude and client.longitude:
-            lats = [i.client.latitude  for i in inter_jour if i.client.latitude]
-            lons = [i.client.longitude for i in inter_jour if i.client.longitude]
-            if lats and lons:
-                c_lat = sum(lats) / len(lats)
-                c_lon = sum(lons) / len(lons)
-                dist_km = _haversine(client.latitude, client.longitude, c_lat, c_lon)
-                score = max(0, round(100 - dist_km * 1.25))
-                if nb_inter > 6:
-                    score = max(0, score - (nb_inter - 6) * 5)
+        # Sans coordonnées client on ne peut pas filtrer → on inclut avec score neutre
+        if not client.latitude or not client.longitude:
+            candidats.append({'date': jour, 'score': 30,
+                               'nb_inter': nb_inter, 'detour_km': None})
+            continue
+
+        # Distance au stop le plus proche (meilleure approximation du détour)
+        stops_geocodes = [
+            (i.client.latitude, i.client.longitude)
+            for i in inter_jour
+            if i.client.latitude and i.client.longitude
+        ]
+        if not stops_geocodes:
+            continue   # aucun stop géocodé ce jour → on ne peut pas évaluer
+
+        detour_km = min(
+            _haversine(client.latitude, client.longitude, lat, lon)
+            for lat, lon in stops_geocodes
+        )
+
+        # Filtrer : détour trop grand → date non proposée
+        if detour_km > DETOUR_MAX_KM:
+            continue
+
+        # Score : plus le détour est petit, meilleur est le score
+        score = max(0, round(100 - detour_km * (100 / DETOUR_MAX_KM)))
+        if nb_inter > 6:
+            score = max(0, score - (nb_inter - 6) * 5)
 
         candidats.append({
-            'date':     jour,
-            'score':    score,
-            'nb_inter': nb_inter,
-            'dist_km':  round(dist_km, 0) if dist_km is not None else None,
+            'date':      jour,
+            'score':     score,
+            'nb_inter':  nb_inter,
+            'detour_km': round(detour_km, 1),
         })
 
-    # Trier par score décroissant (plus proche = en premier), puis par date
     candidats.sort(key=lambda x: (-x['score'], x['date']))
     return candidats[:nb]
 

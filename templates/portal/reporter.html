@@ -121,7 +121,10 @@
             <span class="fit-secteur small"><i class="bi bi-geo-alt-fill"></i> Tournée dans votre secteur</span>
           </div>
           <div class="text-muted" style="font-size:.72rem;margin-top:4px">
-            <i class="bi bi-people me-1"></i>{{ s.nb_inter }} intervention{{ 's' if s.nb_inter > 1 else '' }} déjà prévue{{ 's' if s.nb_inter > 1 else '' }} ce jour
+            <i class="bi bi-people me-1"></i>{{ s.nb_inter }} intervention{{ 's' if s.nb_inter > 1 else '' }} prévue{{ 's' if s.nb_inter > 1 else '' }} ce jour
+            {% if s.detour_km is not none %}
+              · <i class="bi bi-sign-turn-right me-1"></i>~{{ s.detour_km }} km de détour
+            {% endif %}
           </div>
           <!-- Barre de proximité -->
           <div class="score-bar mt-2">
