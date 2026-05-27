@@ -17,9 +17,9 @@ try:
     from reportlab.lib import colors
     from reportlab.lib.units import cm
     from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
-                                    Paragraph, Spacer)
+                                    Paragraph, Spacer, Image as RLImage)
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     PDF_OK = True
 except ImportError:
     PDF_OK = False
@@ -273,15 +273,46 @@ def generer_pdf(bon):
     cli = inter.client
     elems = []
 
-    elems.append(Paragraph(soc, s_titre))
-    info_soc = ' | '.join(filter(None, [
-        get_param('adresse'), get_param('telephone'), get_param('email')]))
-    if info_soc: elems.append(Paragraph(info_soc, ParagraphStyle(
-        'si', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=4)))
-    if get_param('siret'):
-        elems.append(Paragraph(f"SIRET : {get_param('siret')}", ParagraphStyle(
-            'si2', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=10)))
+    # ── En-tête : logo HPS à gauche, infos société à droite ──
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    logo_hps_path = os.path.join(static_dir, 'logo.png')
 
+    s_soc_name = ParagraphStyle('sn', parent=styles['Normal'], fontSize=13,
+                                fontName='Helvetica-Bold', alignment=TA_RIGHT)
+    s_soc_info = ParagraphStyle('si', parent=styles['Normal'], fontSize=8,
+                                alignment=TA_RIGHT, spaceAfter=2)
+
+    info_soc = '\n'.join(filter(None, [
+        get_param('adresse'),
+        get_param('telephone'),
+        get_param('email'),
+        f"SIRET : {get_param('siret')}" if get_param('siret') else None,
+    ]))
+
+    if os.path.exists(logo_hps_path):
+        try:
+            logo_hps = RLImage(logo_hps_path, width=4.5*cm, height=2*cm, kind='proportional')
+            header_data = [[logo_hps, Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc.replace(chr(10), '<br/>')}</font>",
+                                                ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))]]
+            header_table = Table(header_data, colWidths=[6*cm, 11.5*cm])
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#1aabe3')),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ]))
+            elems.append(header_table)
+        except Exception:
+            elems.append(Paragraph(soc, s_titre))
+            if info_soc:
+                elems.append(Paragraph(info_soc.replace('\n', ' | '), ParagraphStyle(
+                    'si_fb', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=4)))
+    else:
+        elems.append(Paragraph(soc, s_titre))
+        if info_soc:
+            elems.append(Paragraph(info_soc.replace('\n', ' | '), ParagraphStyle(
+                'si_fb2', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=4)))
+
+    elems.append(Spacer(1, 0.4*cm))
     elems.append(Paragraph(f"BON D'INTERVENTION N° {bon.numero}", s_titre))
     elems.append(Spacer(1, 0.4*cm))
 
@@ -386,6 +417,70 @@ def generer_pdf(bon):
     elems.append(Paragraph(
         f"Document établi le {bon.date_creation.strftime('%d/%m/%Y')} — {bon.numero} — {soc}",
         s_sm))
+
+    # ── Pied de page : logos partenaires Prosane + CEPA ──
+    logo_prosane_path = os.path.join(static_dir, 'logo_prosane.png')
+    logo_cepa_path    = os.path.join(static_dir, 'logo_cepa.png')
+    # Essayer aussi les extensions .jpg
+    if not os.path.exists(logo_prosane_path):
+        logo_prosane_path = os.path.join(static_dir, 'logo_prosane.jpg')
+    if not os.path.exists(logo_cepa_path):
+        logo_cepa_path = os.path.join(static_dir, 'logo_cepa.jpg')
+
+    has_prosane = os.path.exists(logo_prosane_path)
+    has_cepa    = os.path.exists(logo_cepa_path)
+
+    if has_prosane or has_cepa:
+        elems.append(Spacer(1, 0.5*cm))
+        # Ligne séparatrice
+        sep_data = [['']]
+        sep = Table(sep_data, colWidths=[17.5*cm])
+        sep.setStyle(TableStyle([
+            ('LINEABOVE', (0, 0), (-1, 0), 0.8, colors.HexColor('#1aabe3')),
+        ]))
+        elems.append(sep)
+        elems.append(Spacer(1, 0.2*cm))
+
+        # Ligne "Produits utilisés / certifications"
+        elems.append(Paragraph("Produits homologués et certifications :",
+                               ParagraphStyle('lp', parent=styles['Normal'], fontSize=7,
+                                              textColor=colors.grey, spaceAfter=4)))
+
+        footer_cells = []
+        footer_widths = []
+
+        if has_prosane and has_cepa:
+            try:
+                img_p = RLImage(logo_prosane_path, width=3.5*cm, height=1.5*cm, kind='proportional')
+                img_c = RLImage(logo_cepa_path,    width=3.5*cm, height=1.5*cm, kind='proportional')
+                footer_cells  = [[img_p, img_c, '']]
+                footer_widths = [4*cm, 4*cm, 9.5*cm]
+            except Exception:
+                footer_cells  = [['Prosane', 'CEPA', '']]
+                footer_widths = [4*cm, 4*cm, 9.5*cm]
+        elif has_prosane:
+            try:
+                img_p = RLImage(logo_prosane_path, width=3.5*cm, height=1.5*cm, kind='proportional')
+                footer_cells  = [[img_p, '']]
+                footer_widths = [4*cm, 13.5*cm]
+            except Exception:
+                footer_cells  = [['Prosane', '']]
+                footer_widths = [4*cm, 13.5*cm]
+        else:
+            try:
+                img_c = RLImage(logo_cepa_path, width=3.5*cm, height=1.5*cm, kind='proportional')
+                footer_cells  = [[img_c, '']]
+                footer_widths = [4*cm, 13.5*cm]
+            except Exception:
+                footer_cells  = [['CEPA', '']]
+                footer_widths = [4*cm, 13.5*cm]
+
+        ft = Table(footer_cells, colWidths=footer_widths)
+        ft.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN',  (0, 0), (-1, -1), 'CENTER'),
+        ]))
+        elems.append(ft)
 
     doc.build(elems)
     buf.seek(0)
