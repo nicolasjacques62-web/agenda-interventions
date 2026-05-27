@@ -38,6 +38,19 @@
 
     <!-- Listes métier -->
     <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-map me-2"></i>Tournée & Optimisation</div>
+      <div class="card-body">
+        <div class="mb-0">
+          <label class="form-label fw-semibold">Adresse de départ (dépôt / bureau)</label>
+          <input type="text" name="adresse_depart" class="form-control"
+                 value="{{ params.get('adresse_depart', '6 rue d\'amiens 80110 thennes') }}"
+                 placeholder="6 rue d'Amiens 80110 Thennes">
+          <div class="form-text">Point de départ utilisé par défaut pour l'optimisation des tournées.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
       <div class="card-header"><i class="bi bi-list-ul me-2"></i>Listes personnalisées</div>
       <div class="card-body">
         <div class="mb-3">

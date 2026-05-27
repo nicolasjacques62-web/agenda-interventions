@@ -1553,7 +1553,7 @@ def tournee():
         db.func.date(Intervention.date_planifiee) == jour,
         Intervention.statut.in_(['planifiee', 'en_cours'])
     ).order_by(Intervention.date_planifiee).all()
-    adresse_depart = get_param('adresse', '')
+    adresse_depart = get_param('adresse_depart', '6 rue d\'amiens 80110 thennes')
     return render_template('tournee.html', interventions=interventions,
                            date_str=date_str, jour=jour,
                            adresse_depart=adresse_depart)
@@ -2220,7 +2220,8 @@ def parametres():
     if request.method == 'POST':
         for k in ['societe','adresse','telephone','email','siret',
                   'mail_server','mail_port','mail_username','mail_password',
-                  'mail_use_tls','base_url','techniciens','types_intervention']:
+                  'mail_use_tls','base_url','techniciens','types_intervention',
+                  'adresse_depart']:
             if k in request.form:
                 set_param(k, request.form[k])
         if request.form.get('nouveau_mdp'):
