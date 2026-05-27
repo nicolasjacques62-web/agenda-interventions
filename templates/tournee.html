@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Optimisation de tournée{% endblock %}
+{% block page_title %}<i class="bi bi-map me-2"></i>Optimisation de tournée{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  #map { height: 420px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .stop-card { border-left: 4px solid #1aabe3; transition: box-shadow .2s; }
+  .stop-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .stop-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center;
+              justify-content:center; font-weight:700; font-size:.85rem; flex-shrink:0; }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('agenda') }}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-calendar3 me-1"></i>Agenda
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Sélecteur de date -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small fw-semibold mb-1">Date de la tournée</label>
+        <input type="date" name="date" class="form-control form-control-sm" value="{{ date_str }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-search me-1"></i>Charger
+        </button>
+      </div>
+      <div class="col-auto ms-auto">
+        <small class="text-muted">{{ interventions|length }} intervention(s) ce jour</small>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if interventions %}
+<div class="row g-3">
+  <!-- Panneau gauche : paramètres + liste -->
+  <div class="col-lg-5">
+
+    <!-- Adresse de départ -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-geo-alt me-2"></i>Point de départ</div>
+      <div class="card-body py-2">
+        <div class="input-group input-group-sm">
+          <input type="text" id="input-depart" class="form-control"
+                 placeholder="Ex : 12 rue de la Paix, Amiens"
+                 value="{{ adresse_depart }}">
+          <button class="btn btn-success" onclick="lancerOptimisation()">
+            <i class="bi bi-lightning-charge me-1"></i>Optimiser
+          </button>
+        </div>
+        <div class="form-text">Laissez vide pour partir du premier client</div>
+      </div>
+    </div>
+
+    <!-- Interventions du jour -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-list-ol me-2"></i>Interventions <span id="badge-count" class="badge bg-secondary ms-1">{{ interventions|length }}</span></div>
+      <div class="card-body p-2" id="liste-stops">
+        {% for i in interventions %}
+        <div class="stop-card card mb-2 p-2" data-id="{{ i.id }}">
+          <div class="d-flex align-items-center gap-2">
+            <div class="stop-num bg-primary text-white">{{ loop.index }}</div>
+            <div class="flex-fill">
+              <div class="fw-semibold small">{{ i.client.nom_affichage }}</div>
+              <div class="text-muted" style="font-size:.75rem">
+                <i class="bi bi-clock me-1"></i>{{ i.date_planifiee.strftime('%H:%M') }}
+                {% if i.type_intervention %}— {{ i.type_intervention }}{% endif %}
+              </div>
+              <div class="text-muted" style="font-size:.75rem">
+                <i class="bi bi-geo me-1"></i>{{ i.client.adresse or '' }} {{ i.client.code_postal or '' }} {{ i.client.ville or '' }}
+              </div>
+            </div>
+            <div>
+              {% if i.client.telephone %}
+              <a href="tel:{{ i.client.telephone }}" class="btn btn-outline-secondary btn-sm py-0 px-1 me-1">
+                <i class="bi bi-telephone"></i>
+              </a>
+              {% endif %}
+              <a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-outline-primary btn-sm py-0 px-1">
+                <i class="bi bi-eye"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Résumé + navigation -->
+    <div id="panel-resultats" class="d-none">
+      <div class="card mb-3 border-success">
+        <div class="card-body py-2">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-semibold text-success"><i class="bi bi-check-circle me-1"></i>Tournée optimisée</span>
+            <span class="badge bg-info" id="badge-km">— km</span>
+          </div>
+          <div class="d-grid gap-2">
+            <a id="btn-gmaps" href="#" target="_blank" class="btn btn-sm btn-outline-danger">
+              <i class="bi bi-google me-1"></i>Ouvrir dans Google Maps
+            </a>
+            <a id="btn-waze" href="#" target="_blank" class="btn btn-sm btn-outline-primary">
+              <img src="https://www.waze.com/favicon.ico" width="14" class="me-1">Ouvrir dans Waze
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Carte -->
+  <div class="col-lg-7">
+    <div id="map"></div>
+    <div id="sans-adresse-alert" class="alert alert-warning mt-2 d-none small">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      <span id="sans-adresse-msg"></span>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="card">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-calendar-x fs-1 d-block mb-2"></i>
+    Aucune intervention planifiée le {{ jour.strftime('%d/%m/%Y') }}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialisation carte
+const map = L.map('map').setView([48.8566, 2.3522], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+let markersLayer = L.layerGroup().addTo(map);
+let routeLayer = L.layerGroup().addTo(map);
+
+// Couleurs par type de prestation
+function couleurType(type) {
+  const t = (type || '').toLowerCase();
+  if (t.includes('dératisation') && t.includes('désinsectisation') && t.includes('désinfection')) return '#c0392b';
+  if (t.includes('dératisation') && t.includes('désinsectisation')) return '#8e44ad';
+  if (t.includes('dératisation')) return '#e67e22';
+  if (t.includes('désinsectisation')) return '#1aabe3';
+  if (t.includes('désinfection')) return '#27ae60';
+  return '#1aabe3';
+}
+
+function markerIcon(num, color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${color};color:#fff;width:30px;height:30px;border-radius:50%;
+                display:flex;align-items:center;justify-content:center;font-weight:700;
+                font-size:13px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,.4)">${num}</div>`,
+    iconSize: [30, 30], iconAnchor: [15, 15]
+  });
+}
+
+function lancerOptimisation() {
+  const depart = document.getElementById('input-depart').value;
+  const date = '{{ date_str }}';
+
+  // Spinner
+  document.querySelector('[onclick="lancerOptimisation()"]').innerHTML =
+    '<span class="spinner-border spinner-border-sm me-1"></span>Calcul...';
+
+  fetch(`/tournee/api/optimiser?date=${date}&depart=${encodeURIComponent(depart)}`)
+    .then(r => r.json())
+    .then(data => {
+      afficherResultats(data, depart);
+      document.querySelector('[onclick="lancerOptimisation()"]').innerHTML =
+        '<i class="bi bi-lightning-charge me-1"></i>Optimiser';
+    })
+    .catch(() => {
+      alert('Erreur lors de l\'optimisation. Vérifiez les adresses.');
+      document.querySelector('[onclick="lancerOptimisation()"]').innerHTML =
+        '<i class="bi bi-lightning-charge me-1"></i>Optimiser';
+    });
+}
+
+function afficherResultats(data, depart) {
+  markersLayer.clearLayers();
+  routeLayer.clearLayers();
+
+  const route = data.route;
+  if (!route || route.length === 0) {
+    alert('Impossible de géocoder les adresses. Vérifiez que les clients ont une adresse complète.');
+    return;
+  }
+
+  // Mise à jour liste ordonnée
+  const liste = document.getElementById('liste-stops');
+  liste.innerHTML = '';
+  route.forEach((p, idx) => {
+    const color = couleurType(p.type);
+    liste.innerHTML += `
+      <div class="stop-card card mb-2 p-2">
+        <div class="d-flex align-items-center gap-2">
+          <div class="stop-num text-white" style="background:${color}">${idx+1}</div>
+          <div class="flex-fill">
+            <div class="fw-semibold small">${p.client}</div>
+            <div class="text-muted" style="font-size:.75rem">
+              <i class="bi bi-clock me-1"></i>${p.heure}
+              ${p.type ? '— ' + p.type : ''}
+            </div>
+            <div class="text-muted" style="font-size:.75rem">
+              <i class="bi bi-geo me-1"></i>${p.adresse}
+            </div>
+          </div>
+          <div>
+            ${p.telephone ? `<a href="tel:${p.telephone}" class="btn btn-outline-secondary btn-sm py-0 px-1 me-1"><i class="bi bi-telephone"></i></a>` : ''}
+            <a href="${p.url}" class="btn btn-outline-primary btn-sm py-0 px-1"><i class="bi bi-eye"></i></a>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  // Marqueurs sur la carte
+  const latlngs = [];
+
+  // Point de départ (marqueur maison)
+  if (data.depart_lat) {
+    const depIcon = L.divIcon({
+      className: '',
+      html: `<div style="background:#2c3e50;color:#fff;width:32px;height:32px;border-radius:50%;
+                  display:flex;align-items:center;justify-content:center;border:2px solid #fff;
+                  box-shadow:0 2px 4px rgba(0,0,0,.4);font-size:16px">🏠</div>`,
+      iconSize: [32, 32], iconAnchor: [16, 16]
+    });
+    L.marker([data.depart_lat, data.depart_lon], {icon: depIcon})
+      .bindPopup(`<b>Départ</b><br>${depart}`)
+      .addTo(markersLayer);
+    latlngs.push([data.depart_lat, data.depart_lon]);
+  }
+
+  route.forEach((p, idx) => {
+    const color = couleurType(p.type);
+    L.marker([p.lat, p.lon], {icon: markerIcon(idx+1, color)})
+      .bindPopup(`<b>${idx+1}. ${p.client}</b><br>${p.adresse}<br>
+                  <small class="text-muted">${p.heure}${p.type ? ' — ' + p.type : ''}</small><br>
+                  <a href="${p.url}" target="_blank">Voir intervention →</a>`)
+      .addTo(markersLayer);
+    latlngs.push([p.lat, p.lon]);
+  });
+
+  // Ligne de route
+  if (latlngs.length > 1) {
+    L.polyline(latlngs, {color: '#1aabe3', weight: 3, opacity: 0.7, dashArray: '8,6'})
+      .addTo(routeLayer);
+    map.fitBounds(L.latLngBounds(latlngs), {padding: [30, 30]});
+  } else if (latlngs.length === 1) {
+    map.setView(latlngs[0], 13);
+  }
+
+  // Résumé
+  document.getElementById('badge-km').textContent = `~${data.distance_km} km`;
+  document.getElementById('btn-gmaps').href = data.gmaps_url || '#';
+  document.getElementById('btn-waze').href = data.waze_url || '#';
+  document.getElementById('panel-resultats').classList.remove('d-none');
+
+  // Avertissement sans adresse
+  if (data.sans_adresse && data.sans_adresse.length > 0) {
+    document.getElementById('sans-adresse-msg').textContent =
+      `${data.sans_adresse.length} intervention(s) ignorée(s) : adresse manquante ou non géocodable.`;
+    document.getElementById('sans-adresse-alert').classList.remove('d-none');
+  }
+}
+</script>
+{% endblock %}

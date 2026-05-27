@@ -156,6 +156,9 @@
     <a href="{{ url_for('agenda') }}" class="nav-link {% if request.endpoint=='agenda' %}active{% endif %}">
       <i class="bi bi-calendar3"></i> Agenda
     </a>
+    <a href="{{ url_for('tournee') }}" class="nav-link {% if request.endpoint=='tournee' %}active{% endif %}">
+      <i class="bi bi-map"></i> Tournée
+    </a>
 
     <div class="nav-section">Gestion</div>
     <a href="{{ url_for('clients_liste') }}" class="nav-link {% if 'client' in request.endpoint %}active{% endif %}">

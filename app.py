@@ -90,6 +90,8 @@ class Client(db.Model):
     siret_client = db.Column(db.String(20))
     notes = db.Column(db.Text)
     actif = db.Column(db.Boolean, default=True)
+    latitude = db.Column(db.Float)   # coordonnées GPS (géocodage automatique)
+    longitude = db.Column(db.Float)
     access_token = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
     portal_password_hash = db.Column(db.String(256))
     portal_actif = db.Column(db.Boolean, default=False)
@@ -434,6 +436,58 @@ def envoyer_bon_email(bon):
         return False, f"Erreur Brevo {e.code} : {detail}"
     except Exception as e:
         return False, f"Erreur envoi : {e}"
+
+# ─── GÉOCODAGE & OPTIMISATION TOURNÉE ────────────────────────────────────────
+
+def _geocoder_client(client):
+    """Géocode l'adresse d'un client via Nominatim (OpenStreetMap). Met à jour lat/lng."""
+    if client.latitude and client.longitude:
+        return True  # déjà géocodé
+    adresse = ' '.join(filter(None, [client.adresse, client.code_postal, client.ville, 'France']))
+    try:
+        req = urllib.request.Request(
+            f"https://nominatim.openstreetmap.org/search?q={urllib.request.quote(adresse)}&format=json&limit=1",
+            headers={'User-Agent': 'AgendaHPS/1.0'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            if data:
+                client.latitude = float(data[0]['lat'])
+                client.longitude = float(data[0]['lon'])
+                db.session.commit()
+                return True
+    except Exception:
+        pass
+    return False
+
+def _haversine(lat1, lon1, lat2, lon2):
+    """Distance à vol d'oiseau en km entre deux points GPS."""
+    import math
+    R = 6371
+    d = math.radians
+    a = (math.sin((d(lat2)-d(lat1))/2)**2 +
+         math.cos(d(lat1)) * math.cos(d(lat2)) * math.sin((d(lon2)-d(lon1))/2)**2)
+    return R * 2 * math.asin(math.sqrt(a))
+
+def _optimiser_tournee(points, depart_lat=None, depart_lon=None):
+    """Algorithme du plus proche voisin (TSP heuristique)."""
+    if not points:
+        return []
+    remaining = list(points)
+    route = []
+    # Point de départ : adresse fournie ou premier point de la liste
+    if depart_lat and depart_lon:
+        cur_lat, cur_lon = depart_lat, depart_lon
+    else:
+        first = remaining.pop(0)
+        route.append(first)
+        cur_lat, cur_lon = first['lat'], first['lon']
+    while remaining:
+        nearest = min(remaining, key=lambda p: _haversine(cur_lat, cur_lon, p['lat'], p['lon']))
+        route.append(nearest)
+        cur_lat, cur_lon = nearest['lat'], nearest['lon']
+        remaining.remove(nearest)
+    return route
 
 # ─── ROUTES AUTH ──────────────────────────────────────────────────────────────
 
@@ -914,6 +968,107 @@ def bon_supprimer(id):
     db.session.commit()
     flash('Bon supprimé.', 'info')
     return redirect(url_for('intervention_detail', id=iid))
+
+# ─── TOURNÉE ──────────────────────────────────────────────────────────────────
+
+@app.route('/tournee')
+@login_required
+def tournee():
+    date_str = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    try:
+        jour = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        jour = datetime.now().date()
+    interventions = Intervention.query.filter(
+        db.func.date(Intervention.date_planifiee) == jour,
+        Intervention.statut.in_(['planifiee', 'en_cours'])
+    ).order_by(Intervention.date_planifiee).all()
+    adresse_depart = get_param('adresse', '')
+    return render_template('tournee.html', interventions=interventions,
+                           date_str=date_str, jour=jour,
+                           adresse_depart=adresse_depart)
+
+@app.route('/tournee/api/optimiser')
+@login_required
+def tournee_optimiser():
+    date_str = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    depart = request.args.get('depart', '').strip()
+    try:
+        jour = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Date invalide'}), 400
+
+    interventions = Intervention.query.filter(
+        db.func.date(Intervention.date_planifiee) == jour,
+        Intervention.statut.in_(['planifiee', 'en_cours'])
+    ).all()
+
+    points = []
+    sans_adresse = []
+    for inter in interventions:
+        cli = inter.client
+        if not cli.adresse and not cli.ville:
+            sans_adresse.append(inter.id)
+            continue
+        _geocoder_client(cli)
+        time.sleep(0.3)  # respecter la limite Nominatim
+        if cli.latitude and cli.longitude:
+            points.append({
+                'id': inter.id,
+                'client': cli.nom_affichage,
+                'adresse': f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip(),
+                'type': inter.type_intervention or '',
+                'heure': inter.date_planifiee.strftime('%H:%M'),
+                'telephone': cli.telephone or '',
+                'lat': cli.latitude,
+                'lon': cli.longitude,
+                'url': url_for('intervention_detail', id=inter.id),
+            })
+        else:
+            sans_adresse.append(inter.id)
+
+    # Géocoder le point de départ si fourni
+    depart_lat = depart_lon = None
+    if depart:
+        try:
+            req = urllib.request.Request(
+                f"https://nominatim.openstreetmap.org/search?q={urllib.request.quote(depart + ' France')}&format=json&limit=1",
+                headers={'User-Agent': 'AgendaHPS/1.0'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                if data:
+                    depart_lat = float(data[0]['lat'])
+                    depart_lon = float(data[0]['lon'])
+        except Exception:
+            pass
+
+    route_optimisee = _optimiser_tournee(points, depart_lat, depart_lon)
+
+    # Distance totale estimée
+    dist_total = 0
+    all_pts = ([{'lat': depart_lat, 'lon': depart_lon}] if depart_lat else []) + route_optimisee
+    for i in range(len(all_pts) - 1):
+        dist_total += _haversine(all_pts[i]['lat'], all_pts[i]['lon'],
+                                 all_pts[i+1]['lat'], all_pts[i+1]['lon'])
+
+    # Lien Google Maps avec tous les waypoints
+    if route_optimisee:
+        waypoints = '/'.join(f"{p['lat']},{p['lon']}" for p in route_optimisee)
+        gmaps_url = f"https://www.google.com/maps/dir/{waypoints}"
+        waze_first = f"https://waze.com/ul?ll={route_optimisee[0]['lat']},{route_optimisee[0]['lon']}&navigate=yes"
+    else:
+        gmaps_url = waze_first = ''
+
+    return jsonify({
+        'route': route_optimisee,
+        'sans_adresse': sans_adresse,
+        'distance_km': round(dist_total, 1),
+        'gmaps_url': gmaps_url,
+        'waze_url': waze_first,
+        'depart_lat': depart_lat,
+        'depart_lon': depart_lon,
+    })
 
 # ─── CONTRATS CLIENTS ────────────────────────────────────────────────────────
 
