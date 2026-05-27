@@ -207,8 +207,41 @@
           </div>
           {% if client.notifs_actives %}
           <div class="text-muted mb-2" style="font-size:.72rem">
-            <i class="bi bi-info-circle me-1"></i>Email automatique envoyé lors de :
+            <i class="bi bi-info-circle me-1"></i>Email automatique lors de :
             <strong>nouvelle intervention</strong>, <strong>bon finalisé</strong>, <strong>activation portail</strong>
+          </div>
+          {% endif %}
+
+          <!-- Alertes SMS -->
+          <div class="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-2
+                      {% if client.sms_actif %}bg-light{% else %}bg-white{% endif %}">
+            <div>
+              <i class="bi bi-phone{% if not client.sms_actif %} text-muted{% else %} text-success{% endif %} me-1"></i>
+              <span class="small fw-semibold">Alertes SMS</span>
+              <div style="font-size:.72rem">
+                {% if client.sms_actif %}
+                  <span class="text-success">Activées</span>
+                  {% set tel_fmt = client.telephone or client.telephone2 %}
+                  {% if tel_fmt %}<span class="text-muted"> — {{ tel_fmt }}</span>{% endif %}
+                {% else %}
+                  <span class="text-muted">Désactivées</span>
+                  {% if not client.telephone and not client.telephone2 %}
+                    <span class="text-danger"> — numéro requis</span>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+            <form method="POST" action="{{ url_for('client_sms_toggle', id=client.id) }}">
+              <button type="submit"
+                      class="btn btn-sm {% if client.sms_actif %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                      {% if not client.telephone and not client.telephone2 %}disabled title="Ajoutez un numéro de téléphone d'abord"{% endif %}>
+                <i class="bi bi-toggle-{% if client.sms_actif %}on{% else %}off{% endif %}"></i>
+              </button>
+            </form>
+          </div>
+          {% if client.sms_actif %}
+          <div class="text-muted mb-2" style="font-size:.72rem">
+            <i class="bi bi-info-circle me-1"></i>SMS envoyé lors des mêmes événements (via Brevo)
           </div>
           {% endif %}
 

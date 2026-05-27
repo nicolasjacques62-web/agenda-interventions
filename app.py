@@ -102,6 +102,7 @@ class Client(db.Model):
     portal_password_hash = db.Column(db.String(256))
     portal_actif = db.Column(db.Boolean, default=False)
     notifs_actives = db.Column(db.Boolean, default=True)  # alertes email portail
+    sms_actif = db.Column(db.Boolean, default=False)       # alertes SMS portail
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     interventions = db.relationship('Intervention', backref='client', lazy=True,
                                     cascade='all, delete-orphan')
@@ -518,6 +519,67 @@ def generer_pdf(bon):
     return buf
 
 
+def formater_telephone_international(tel):
+    """Convertit un numéro français en format international E.164 (+33...)."""
+    if not tel:
+        return None
+    # Nettoyage : supprimer espaces, tirets, points, parenthèses
+    t = ''.join(c for c in tel if c.isdigit() or c == '+')
+    if t.startswith('+33'):
+        pass  # déjà au bon format
+    elif t.startswith('33') and len(t) >= 11:
+        t = '+' + t
+    elif t.startswith('0') and len(t) == 10:
+        t = '+33' + t[1:]
+    else:
+        return None  # format non reconnu
+    # Vérification : doit faire 12 caractères (+33XXXXXXXXX)
+    if len(t) != 12:
+        return None
+    return t
+
+
+def envoyer_sms_client(client, message):
+    """Envoie un SMS au client via l'API SMS Brevo (même clé que les emails)."""
+    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+    if not api_key:
+        return False, "Clé API Brevo manquante."
+    tel = formater_telephone_international(client.telephone)
+    if not tel:
+        # Essayer le second numéro
+        tel = formater_telephone_international(client.telephone2) if client.telephone2 else None
+    if not tel:
+        return False, "Numéro de téléphone invalide ou manquant."
+    soc = get_param('societe', 'HPS')
+    # Sender : max 11 caractères alphanumériques, pas d'espaces
+    sender = ''.join(c for c in soc if c.isalnum())[:11] or 'HPS'
+    # Message : max 160 caractères pour un SMS simple
+    if len(message) > 160:
+        message = message[:157] + '...'
+    payload = json.dumps({
+        "sender": sender,
+        "recipient": tel,
+        "content": message,
+        "type": "transactional"
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        'https://api.brevo.com/v3/transactionalSMS/sms',
+        data=payload,
+        headers={'api-key': api_key, 'Content-Type': 'application/json'},
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status in (200, 201, 202):
+                return True, f"SMS envoyé à {tel}."
+            return False, f"Erreur Brevo SMS : statut {resp.status}"
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        return False, f"Erreur Brevo SMS {e.code} : {body}"
+    except Exception as e:
+        return False, str(e)
+
+
 def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=None):
     """Envoie une notification email au client via Brevo (dans un thread séparé)."""
     api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
@@ -583,14 +645,23 @@ def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=N
         return False, str(e)
 
 
-def _notif_async(client_id, sujet, titre, corps, lien=None):
-    """Lance l'envoi de notification dans un thread pour ne pas bloquer la réponse."""
+def _notif_async(client_id, sujet, titre, corps, lien=None, sms_court=None):
+    """Lance email + SMS dans un thread pour ne pas bloquer la réponse."""
     def _run():
         try:
             with app.app_context():
                 c = Client.query.get(client_id)
-                if c and c.portal_actif and c.notifs_actives and c.email:
+                if not c or not c.portal_actif:
+                    return
+                # Email
+                if c.notifs_actives and c.email:
                     envoyer_notif_client(c, sujet, titre, corps, lien)
+                # SMS
+                if c.sms_actif and (c.telephone or c.telephone2):
+                    msg = sms_court or f"{get_param('societe','HPS')} : {sujet}"
+                    if lien:
+                        msg += f" {lien}"
+                    envoyer_sms_client(c, msg)
         except Exception:
             pass
     threading.Thread(target=_run, daemon=True).start()
@@ -874,7 +945,8 @@ def portail_activer(id):
             f"Votre espace client personnel vient d'être activé.\n"
             f"Vous pouvez désormais consulter vos interventions, "
             f"télécharger vos bons et signer électroniquement depuis votre espace sécurisé.",
-            lien)
+            lien,
+            sms_court=f"Bonjour {c.prenom or c.nom}, votre espace client est pret ! Acces : {lien}")
     return redirect(url_for('client_detail', id=id))
 
 @app.route('/clients/<int:id>/portail/desactiver', methods=['POST'])
@@ -894,6 +966,19 @@ def client_notifs_toggle(id):
     db.session.commit()
     etat = "activées" if c.notifs_actives else "désactivées"
     flash(f'Notifications email {etat} pour {c.nom_affichage}.', 'success')
+    return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/<int:id>/sms/toggle', methods=['POST'])
+@login_required
+def client_sms_toggle(id):
+    c = Client.query.get_or_404(id)
+    if not c.telephone and not c.telephone2:
+        flash('Ce client n\'a pas de numéro de téléphone.', 'warning')
+        return redirect(url_for('client_detail', id=id))
+    c.sms_actif = not bool(c.sms_actif)
+    db.session.commit()
+    etat = "activées" if c.sms_actif else "désactivées"
+    flash(f'Alertes SMS {etat} pour {c.nom_affichage}.', 'success')
     return redirect(url_for('client_detail', id=id))
 
 @app.route('/clients/<int:id>/portail/regenerer', methods=['POST'])
@@ -1020,7 +1105,8 @@ def intervention_nouvelle():
             f"🔧 Type : {i.type_intervention or i.titre}\n"
             + (f"👷 Technicien : {i.technicien}\n" if i.technicien else "") +
             f"\nRetrouvez tous les détails dans votre espace client.",
-            lien_p)
+            lien_p,
+            sms_court=f"RDV planifie le {i.date_planifiee.strftime('%d/%m/%Y')} - {i.type_intervention or i.titre}. Consultez votre espace : {lien_p or ''}")
         if request.form.get('creer_bon'):
             b = BonIntervention(numero=next_bon_num(), intervention_id=i.id)
             db.session.add(b)
@@ -1131,7 +1217,8 @@ def bon_nouveau():
             f"Votre bon d'intervention N° {b.numero} du {inter.date_planifiee.strftime('%d/%m/%Y')} "
             f"est disponible dans votre espace client.\n\n"
             f"Vous pouvez le consulter, le télécharger en PDF et le signer électroniquement.",
-            lien_p)
+            lien_p,
+            sms_court=f"Bon {b.numero} disponible. Consultez et signez sur votre espace : {lien_p or ''}")
         return redirect(url_for('bon_detail', id=b.id))
 
     iid = request.args.get('intervention_id')
@@ -1195,7 +1282,8 @@ def bon_modifier(id):
                 f"Le compte-rendu de votre intervention du {inter.date_planifiee.strftime('%d/%m/%Y')} "
                 f"(bon N° {b.numero}) a été finalisé par votre technicien.\n\n"
                 f"Il est maintenant disponible dans votre espace client pour consultation et signature.",
-                lien_p)
+                lien_p,
+                sms_court=f"Compte-rendu {b.numero} finalise, pret a signer. Acces : {lien_p or ''}")
 
         # ── Gestion photo ajoutée depuis le formulaire modifier ──
         if request.form.get('ajouter_photo'):
@@ -1974,6 +2062,7 @@ def init_db():
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_image TEXT",
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_technicien TEXT",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notifs_actives BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_actif BOOLEAN DEFAULT FALSE",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),
