@@ -925,25 +925,34 @@ TYPES_PRESTATION = [
     'Dératisation + Désinsectisation + Désinfection',
 ]
 
-@app.route('/clients/<int:id>/contrats/nouveau', methods=['POST'])
+@app.route('/clients/<int:id>/contrats/sauvegarder', methods=['POST'])
 @login_required
-def contrat_nouveau(id):
+def contrats_sauvegarder(id):
+    """Sauvegarde tous les types de prestation en une fois."""
     Client.query.get_or_404(id)
     try:
         dd = datetime.strptime(request.form['date_debut'], '%Y-%m-%d').date() if request.form.get('date_debut') else None
         df = datetime.strptime(request.form['date_fin'], '%Y-%m-%d').date() if request.form.get('date_fin') else None
     except ValueError:
         dd = df = None
-    c = ContratClient(
-        client_id=id,
-        type_prestation=request.form.get('type_prestation', '').strip(),
-        passages_annuels=int(request.form.get('passages_annuels') or 1),
-        date_debut=dd, date_fin=df,
-        notes=request.form.get('notes', '').strip(),
-    )
-    db.session.add(c)
+    nb = int(request.form.get('nb_types', 0))
+    for i in range(1, nb + 1):
+        type_p = request.form.get(f'type_{i}', '').strip()
+        passages = int(request.form.get(f'passages_{i}') or 0)
+        if not type_p:
+            continue
+        existing = ContratClient.query.filter_by(client_id=id, type_prestation=type_p).first()
+        if existing:
+            existing.passages_annuels = passages
+            existing.date_debut = dd
+            existing.date_fin = df
+        else:
+            db.session.add(ContratClient(
+                client_id=id, type_prestation=type_p,
+                passages_annuels=passages, date_debut=dd, date_fin=df
+            ))
     db.session.commit()
-    flash('Contrat ajouté.', 'success')
+    flash('Contrats mis à jour.', 'success')
     return redirect(url_for('client_detail', id=id))
 
 @app.route('/contrats/<int:cid>/supprimer', methods=['POST'])
