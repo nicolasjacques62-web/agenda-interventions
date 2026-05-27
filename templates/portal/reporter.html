@@ -79,8 +79,8 @@
 
   <h5 class="fw-bold mb-1"><i class="bi bi-calendar-event me-2" style="color:var(--hps-blue)"></i>Demander un changement de date</h5>
   <p class="text-muted small mb-3">
-    Choisissez parmi les dates proposées — elles ont été sélectionnées en fonction de votre localisation
-    et des tournées déjà planifiées dans votre secteur.
+    Les dates ci-dessous correspondent aux jours où notre équipe passe déjà dans votre secteur.
+    Choisissez celle qui vous convient le mieux.
   </p>
 
   <!-- Intervention concernée -->
@@ -118,48 +118,26 @@
               <div class="fw-bold">{{ jour_nom }} {{ s.date.day }} {{ mois_nom }}</div>
               <div class="small text-muted">{{ s.date.strftime('%Y') }}</div>
             </div>
-            <div class="text-end">
-              {% if s.fit_label == 'secteur' %}
-                <span class="fit-secteur small"><i class="bi bi-geo-alt-fill"></i> Votre secteur</span>
-              {% elif s.fit_label == 'proche' %}
-                <span class="fit-proche small"><i class="bi bi-geo-alt"></i> Tournée proche</span>
-              {% elif s.fit_label == 'disponible' %}
-                <span class="fit-disponible small"><i class="bi bi-calendar-check"></i> Tournée dispo</span>
-              {% elif s.fit_label == 'possible' %}
-                <span class="fit-possible small"><i class="bi bi-calendar2"></i> Possible</span>
-              {% else %}
-                <span class="fit-libre small"><i class="bi bi-calendar2-plus"></i> Créneau libre</span>
-              {% endif %}
-            </div>
+            <span class="fit-secteur small"><i class="bi bi-geo-alt-fill"></i> Tournée dans votre secteur</span>
           </div>
-          {% if s.nb_inter > 0 %}
           <div class="text-muted" style="font-size:.72rem;margin-top:4px">
-            <i class="bi bi-people me-1"></i>{{ s.nb_inter }} intervention{{ 's' if s.nb_inter > 1 else '' }} prévue{{ 's' if s.nb_inter > 1 else '' }} ce jour
-            {% if s.dist_km is not none %} · {{ s.dist_km|int }} km du centroïde{% endif %}
+            <i class="bi bi-people me-1"></i>{{ s.nb_inter }} intervention{{ 's' if s.nb_inter > 1 else '' }} déjà prévue{{ 's' if s.nb_inter > 1 else '' }} ce jour
           </div>
-          {% endif %}
-          <!-- Barre de score visuelle -->
+          <!-- Barre de proximité -->
           <div class="score-bar mt-2">
             <div class="score-fill"
-                 style="width:{{ [s.score, 100]|min }}%;
-                        background:{{'#16a34a' if s.fit_label=='secteur' else '#d97706' if s.fit_label=='proche' else '#3b82f6' if s.fit_label=='disponible' else '#94a3b8'}};"></div>
+                 style="width:{{ [s.score, 100]|min }}%; background:#16a34a;"></div>
           </div>
         </label>
       </div>
       {% endfor %}
     </div>
 
-    <!-- Légende -->
-    <div class="d-flex flex-wrap gap-3 mb-4" style="font-size:.78rem;color:#64748b">
-      <span><span class="fit-secteur">●</span> Tournée déjà prévue dans votre secteur</span>
-      <span><span class="fit-proche">●</span> Passage à proximité</span>
-      <span><span class="fit-disponible">●</span> Tournée disponible</span>
-      <span><span class="fit-libre">●</span> Créneau libre</span>
-    </div>
-
     {% else %}
     <div class="alert alert-info">
-      Aucune date disponible dans les prochains jours. Contactez-nous directement.
+      <i class="bi bi-info-circle me-2"></i>
+      Aucune tournée n'est encore planifiée dans votre secteur dans les 60 prochains jours.
+      Contactez-nous directement pour convenir d'une date.
     </div>
     {% endif %}
 

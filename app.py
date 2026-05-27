@@ -912,10 +912,10 @@ def _optimiser_tournee(points, depart_lat=None, depart_lon=None):
         remaining.remove(nearest)
     return route
 
-def _suggerer_dates(client, nb=8, horizon=35):
-    """Retourne les meilleures dates (dans les <horizon> prochains jours) pour intégrer
-    ce client dans une tournée existante, triées par pertinence géographique."""
-    # S'assurer que le client est géocodé
+def _suggerer_dates(client, nb=8, horizon=60):
+    """Retourne les meilleures dates (dans les <horizon> prochains jours) où une tournée
+    est déjà planifiée dans le secteur du client, triées par proximité géographique.
+    Seuls les jours avec des interventions existantes sont proposés."""
     if not client.latitude or not client.longitude:
         _geocoder_client(client)
 
@@ -927,55 +927,38 @@ def _suggerer_dates(client, nb=8, horizon=35):
         if jour.weekday() == 6:          # dimanche → ignoré
             continue
 
-        # Interventions planifiées ce jour
+        # Uniquement les jours où une tournée est déjà planifiée
         inter_jour = Intervention.query.filter(
             db.func.date(Intervention.date_planifiee) == jour,
             Intervention.statut.in_(['planifiee', 'en_cours'])
         ).all()
 
-        nb_inter = len(inter_jour)
-        score = 0
-        fit_label = 'libre'
-        dist_km = None
+        if not inter_jour:
+            continue   # ← on ignore les jours sans tournée
 
-        if nb_inter > 0 and client.latitude and client.longitude:
-            # Centroïde géographique des clients déjà planifiés ce jour
+        nb_inter = len(inter_jour)
+        dist_km = None
+        score = 30     # valeur de base si pas de coordonnées disponibles
+
+        if client.latitude and client.longitude:
             lats = [i.client.latitude  for i in inter_jour if i.client.latitude]
             lons = [i.client.longitude for i in inter_jour if i.client.longitude]
             if lats and lons:
                 c_lat = sum(lats) / len(lats)
                 c_lon = sum(lons) / len(lons)
                 dist_km = _haversine(client.latitude, client.longitude, c_lat, c_lon)
-                # Score de proximité (max 100 à 0 km, ~0 à 80 km)
                 score = max(0, round(100 - dist_km * 1.25))
-                # Légère pénalité si la journée est déjà très chargée (>6 rdv)
                 if nb_inter > 6:
                     score = max(0, score - (nb_inter - 6) * 5)
-                if score >= 65:
-                    fit_label = 'secteur'      # tournée dans votre secteur
-                elif score >= 35:
-                    fit_label = 'proche'       # trajet optimisé possible
-                else:
-                    fit_label = 'possible'     # faisable mais détour
-            else:
-                score = 25
-                fit_label = 'disponible'
-        elif nb_inter > 0:
-            score = 25
-            fit_label = 'disponible'
-        else:
-            score = 15                         # jour sans tournée = créneau libre
-            fit_label = 'libre'
 
         candidats.append({
-            'date':       jour,
-            'score':      score,
-            'nb_inter':   nb_inter,
-            'fit_label':  fit_label,
-            'dist_km':    round(dist_km, 0) if dist_km is not None else None,
+            'date':     jour,
+            'score':    score,
+            'nb_inter': nb_inter,
+            'dist_km':  round(dist_km, 0) if dist_km is not None else None,
         })
 
-    # Trier : d'abord par score décroissant, puis par date croissante
+    # Trier par score décroissant (plus proche = en premier), puis par date
     candidats.sort(key=lambda x: (-x['score'], x['date']))
     return candidats[:nb]
 
