@@ -200,6 +200,18 @@ class BonPhoto(db.Model):
     bon = db.relationship('BonIntervention', backref='photos')
 
 
+class PlanAppatage(db.Model):
+    __tablename__ = 'plans_appatage'
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    nom = db.Column(db.String(200), default='Plan')   # nom/étiquette
+    notes = db.Column(db.Text)                         # remarques libres
+    data = db.Column(db.Text, nullable=False)          # contenu encodé en base64
+    mimetype = db.Column(db.String(80), default='image/jpeg')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship('Client', backref='plans_appatage')
+
+
 class ContratClient(db.Model):
     __tablename__ = 'contrats_clients'
     id = db.Column(db.Integer, primary_key=True)
@@ -1719,6 +1731,55 @@ def contrat_supprimer(cid):
     db.session.commit()
     flash('Contrat supprimé.', 'info')
     return redirect(url_for('client_detail', id=client_id))
+
+# ─── PLANS D'APPÂTAGE ────────────────────────────────────────────────────────
+
+@app.route('/clients/<int:id>/plans/ajouter', methods=['POST'])
+@login_required
+def plan_ajouter(id):
+    c = Client.query.get_or_404(id)
+    file = request.files.get('plan_file')
+    if not file or not file.filename:
+        flash('Aucun fichier sélectionné.', 'warning')
+        return redirect(url_for('client_detail', id=id))
+    mime = file.mimetype or 'application/octet-stream'
+    if not (mime.startswith('image/') or mime == 'application/pdf'):
+        flash('Format accepté : image (JPG, PNG, WEBP) ou PDF.', 'danger')
+        return redirect(url_for('client_detail', id=id))
+    file.seek(0, 2); size = file.tell(); file.seek(0)
+    if size > 15 * 1024 * 1024:
+        flash('Fichier trop lourd (max 15 Mo).', 'danger')
+        return redirect(url_for('client_detail', id=id))
+    nom = request.form.get('plan_nom', '').strip() or file.filename
+    notes = request.form.get('plan_notes', '').strip()
+    data_b64 = base64.b64encode(file.read()).decode('utf-8')
+    plan = PlanAppatage(client_id=id, nom=nom, notes=notes,
+                        data=data_b64, mimetype=mime)
+    db.session.add(plan)
+    db.session.commit()
+    flash(f'Plan « {nom} » ajouté.', 'success')
+    return redirect(url_for('client_detail', id=id) + '#plans-appatage')
+
+@app.route('/clients/plans/<int:plan_id>')
+@login_required
+def plan_voir(plan_id):
+    p = PlanAppatage.query.get_or_404(plan_id)
+    data = base64.b64decode(p.data)
+    ext = 'pdf' if p.mimetype == 'application/pdf' else p.nom.rsplit('.',1)[-1] if '.' in p.nom else 'jpg'
+    return send_file(io.BytesIO(data), mimetype=p.mimetype,
+                     download_name=f"plan_{p.client_id}_{p.id}.{ext}")
+
+@app.route('/clients/plans/<int:plan_id>/supprimer', methods=['POST'])
+@login_required
+def plan_supprimer(plan_id):
+    p = PlanAppatage.query.get_or_404(plan_id)
+    cid = p.client_id
+    nom = p.nom
+    db.session.delete(p)
+    db.session.commit()
+    flash(f'Plan « {nom} » supprimé.', 'info')
+    return redirect(url_for('client_detail', id=cid) + '#plans-appatage')
+
 
 # ─── PHOTOS BONS ─────────────────────────────────────────────────────────────
 

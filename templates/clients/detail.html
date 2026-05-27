@@ -244,7 +244,7 @@
     </div>
   </div>
 
-  <!-- Interventions -->
+  <!-- Interventions + Plans appâtage -->
   <div class="col-lg-8">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
@@ -299,6 +299,134 @@
         {% endif %}
       </div>
     </div>
+
+    <!-- Plans d'appâtage -->
+    <div class="card mt-3" id="plans-appatage">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-map me-2"></i>Plans d'appâtage ({{ client.plans_appatage|length }})</span>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-plan-upload">
+          <i class="bi bi-plus-lg me-1"></i>Ajouter
+        </button>
+      </div>
+
+      <!-- Formulaire d'ajout -->
+      <div class="collapse" id="form-plan-upload">
+        <div class="card-body border-bottom bg-light pb-3">
+          <form method="POST" action="{{ url_for('plan_ajouter', id=client.id) }}"
+                enctype="multipart/form-data">
+            <div class="row g-2 mb-2">
+              <div class="col-md-5">
+                <label class="form-label small fw-semibold mb-1">Étiquette du plan</label>
+                <input type="text" name="plan_nom" class="form-control form-control-sm"
+                       placeholder="Ex : RDC cuisine, Zone A extérieur…">
+              </div>
+              <div class="col-md-7">
+                <label class="form-label small fw-semibold mb-1">Notes / remarques</label>
+                <input type="text" name="plan_notes" class="form-control form-control-sm"
+                       placeholder="Ex : 4 postes actifs, renouveler tous les 2 mois">
+              </div>
+            </div>
+            <!-- Zone de sélection fichier / caméra -->
+            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+              <input type="file" id="plan-file-input" name="plan_file"
+                     accept="image/*,application/pdf" class="d-none"
+                     onchange="previewPlan(this)">
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      onclick="document.getElementById('plan-file-input').removeAttribute('capture');document.getElementById('plan-file-input').click()">
+                <i class="bi bi-folder2-open me-1"></i>Choisir un fichier
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm"
+                      onclick="var i=document.getElementById('plan-file-input');i.setAttribute('capture','environment');i.click()">
+                <i class="bi bi-camera me-1"></i>Prendre en photo
+              </button>
+              <span class="text-muted small">JPG, PNG, WEBP ou PDF — max 15 Mo</span>
+            </div>
+            <!-- Aperçu -->
+            <div id="plan-preview-zone" class="d-none mb-2">
+              <img id="plan-preview-img" src="" class="img-thumbnail" style="max-height:160px;max-width:100%">
+              <div id="plan-preview-pdf" class="d-none border rounded p-2 bg-white">
+                <i class="bi bi-file-earmark-pdf text-danger me-1" style="font-size:2rem"></i>
+                <span id="plan-preview-name" class="small fw-semibold"></span>
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-danger p-0 ms-1"
+                      onclick="annulerPlan()">
+                <i class="bi bi-x-circle"></i> Annuler
+              </button>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success btn-sm" id="btn-plan-submit" disabled>
+                <i class="bi bi-upload me-1"></i>Enregistrer le plan
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#form-plan-upload">
+                Annuler
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Galerie des plans -->
+      <div class="card-body p-2">
+        {% if client.plans_appatage %}
+        <div class="row g-2">
+          {% for plan in client.plans_appatage | sort(attribute='created_at', reverse=True) %}
+          <div class="col-sm-6 col-lg-4">
+            <div class="card h-100 border shadow-sm">
+              <!-- Vignette -->
+              <a href="{{ url_for('plan_voir', plan_id=plan.id) }}" target="_blank"
+                 class="d-block text-center bg-light" style="height:110px;overflow:hidden;border-radius:4px 4px 0 0">
+                {% if plan.mimetype == 'application/pdf' %}
+                  <div class="d-flex align-items-center justify-content-center h-100 text-danger">
+                    <i class="bi bi-file-earmark-pdf" style="font-size:3rem"></i>
+                  </div>
+                {% else %}
+                  <img src="data:{{ plan.mimetype }};base64,{{ plan.data }}"
+                       class="w-100 h-100" style="object-fit:cover" alt="{{ plan.nom }}">
+                {% endif %}
+              </a>
+              <div class="p-2">
+                <div class="fw-semibold small text-truncate" title="{{ plan.nom }}">
+                  {% if plan.mimetype == 'application/pdf' %}
+                    <i class="bi bi-file-earmark-pdf text-danger me-1"></i>
+                  {% else %}
+                    <i class="bi bi-image text-primary me-1"></i>
+                  {% endif %}
+                  {{ plan.nom }}
+                </div>
+                {% if plan.notes %}
+                <div class="text-muted mt-1" style="font-size:.72rem">{{ plan.notes }}</div>
+                {% endif %}
+                <div class="text-muted mt-1" style="font-size:.68rem">
+                  {{ plan.created_at.strftime('%d/%m/%Y') }}
+                </div>
+                <div class="d-flex gap-1 mt-2">
+                  <a href="{{ url_for('plan_voir', plan_id=plan.id) }}" target="_blank"
+                     class="btn btn-outline-primary btn-sm flex-fill py-0" style="font-size:.75rem">
+                    <i class="bi bi-eye me-1"></i>Voir
+                  </a>
+                  <form method="POST" action="{{ url_for('plan_supprimer', plan_id=plan.id) }}"
+                        onsubmit="return confirm('Supprimer ce plan ?')">
+                    <button class="btn btn-outline-danger btn-sm py-0" style="font-size:.75rem">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+          <div class="text-center py-4 text-muted">
+            <i class="bi bi-map fs-1 d-block mb-2"></i>
+            <span class="small">Aucun plan pour ce client.<br>
+            Ajoutez une photo ou un PDF du site pour aider les techniciens.</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
   </div>
 
 </div>
@@ -312,6 +440,41 @@ function copyLink() {
     btn.innerHTML = '<i class="bi bi-check2"></i>';
     setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i>', 2000);
   });
+}
+
+// ── Plans d'appâtage ──
+function previewPlan(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const zone  = document.getElementById('plan-preview-zone');
+  const img   = document.getElementById('plan-preview-img');
+  const pdfBox= document.getElementById('plan-preview-pdf');
+  const pdfNm = document.getElementById('plan-preview-name');
+  const btn   = document.getElementById('btn-plan-submit');
+  zone.classList.remove('d-none');
+  btn.disabled = false;
+  // Pré-remplir le nom si vide
+  const nomInput = document.querySelector('input[name="plan_nom"]');
+  if (!nomInput.value) nomInput.value = file.name.replace(/\.[^.]+$/, '');
+  if (file.type === 'application/pdf') {
+    img.classList.add('d-none');
+    pdfBox.classList.remove('d-none');
+    pdfNm.textContent = file.name;
+  } else {
+    pdfBox.classList.add('d-none');
+    img.classList.remove('d-none');
+    const reader = new FileReader();
+    reader.onload = e => img.src = e.target.result;
+    reader.readAsDataURL(file);
+  }
+}
+
+function annulerPlan() {
+  document.getElementById('plan-file-input').value = '';
+  document.getElementById('plan-preview-zone').classList.add('d-none');
+  document.getElementById('plan-preview-img').classList.remove('d-none');
+  document.getElementById('plan-preview-pdf').classList.add('d-none');
+  document.getElementById('btn-plan-submit').disabled = true;
 }
 </script>
 {% endblock %}
