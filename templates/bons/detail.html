@@ -468,7 +468,15 @@ function clearCanvas(who) {
 
 function resetSig(who) {
   const zone = document.getElementById(who + '-pad-zone');
-  if (zone) zone.style.display = 'block';
+  if (!zone) return;
+  zone.style.display = 'block';
+  // Recalcule la largeur du canvas maintenant qu'il est visible
+  const canvas = zone.querySelector('canvas');
+  if (canvas) {
+    canvas.width = canvas.offsetWidth || canvas.parentElement.offsetWidth || 400;
+    if (who === 'tech')   padTech.clear();
+    if (who === 'client') padClient.clear();
+  }
 }
 
 function collectSignatures() {

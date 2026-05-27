@@ -1,4 +1,5 @@
 import os, uuid, io, json, threading, time, base64, urllib.request, urllib.error
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -524,7 +525,7 @@ def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=N
         return False, "Clé API Brevo manquante."
     if not client.email:
         return False, "Pas d'email pour ce client."
-    if not getattr(client, 'notifs_actives', True) == True:
+    if client.notifs_actives is False:
         return False, "Notifications désactivées pour ce client."
     soc = get_param('societe', 'HPS')
     tel_soc = get_param('telephone', '')
@@ -891,7 +892,7 @@ def client_notifs_toggle(id):
     c = Client.query.get_or_404(id)
     c.notifs_actives = not bool(c.notifs_actives)
     db.session.commit()
-    etat = "activées ✅" if c.notifs_actives else "désactivées"
+    etat = "activées" if c.notifs_actives else "désactivées"
     flash(f'Notifications email {etat} pour {c.nom_affichage}.', 'success')
     return redirect(url_for('client_detail', id=id))
 
@@ -973,7 +974,6 @@ def interventions_liste():
     clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
 
     # Grouper par nom client (dict ordonné)
-    from collections import OrderedDict
     groupes = OrderedDict()
     for i in interventions:
         nom = i.client.nom_affichage
@@ -1254,6 +1254,7 @@ def bon_envoyer(id):
     return redirect(url_for('bon_detail', id=id))
 
 @app.route('/test-email')
+@login_required
 def test_email():
     env_vars = {k: ('***' if 'KEY' in k or 'PASSWORD' in k else v) for k, v in os.environ.items() if k.startswith('APP_')}
     raw_key = os.environ.get('APP_BREVO_API_KEY', '')
