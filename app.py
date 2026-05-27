@@ -133,8 +133,20 @@ class Intervention(db.Model):
     @property
     def couleur(self):
         if self.priorite == 'urgente': return '#e74c3c'
+        # Couleur par type de prestation (du plus spécifique au moins spécifique)
+        t = (self.type_intervention or '').lower()
+        if 'dératisation' in t and 'désinsectisation' in t and 'désinfection' in t:
+            return '#c0392b'   # rouge foncé — triple prestation
+        if 'dératisation' in t and 'désinsectisation' in t:
+            return '#8e44ad'   # violet — double prestation
+        if 'dératisation' in t:
+            return '#e67e22'   # orange
+        if 'désinsectisation' in t:
+            return '#1aabe3'   # bleu HPS
+        if 'désinfection' in t:
+            return '#27ae60'   # vert
         return {'planifiee': '#3788d8', 'en_cours': '#f39c12',
-                'terminee': '#27ae60', 'annulee': '#95a5a6'}.get(self.statut, '#3788d8')
+                'terminee': '#95a5a6', 'annulee': '#bdc3c7'}.get(self.statut, '#3788d8')
 
     @property
     def statut_label(self):
@@ -179,6 +191,36 @@ class BonPhoto(db.Model):
     mimetype = db.Column(db.String(50), default='image/jpeg')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     bon = db.relationship('BonIntervention', backref='photos')
+
+
+class ContratClient(db.Model):
+    __tablename__ = 'contrats_clients'
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    type_prestation = db.Column(db.String(100), nullable=False)
+    passages_annuels = db.Column(db.Integer, default=1)
+    date_debut = db.Column(db.Date)
+    date_fin = db.Column(db.Date)
+    actif = db.Column(db.Boolean, default=True)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship('Client', backref='contrats')
+
+    def passages_realises(self, annee=None):
+        annee = annee or datetime.now().year
+        return Intervention.query.filter(
+            Intervention.client_id == self.client_id,
+            Intervention.type_intervention.ilike(f'%{self.type_prestation}%'),
+            db.func.extract('year', Intervention.date_planifiee) == annee,
+            Intervention.statut == 'terminee'
+        ).count()
+
+    def passages_restants(self, annee=None):
+        return max(0, self.passages_annuels - self.passages_realises(annee))
+
+    def pct_realises(self, annee=None):
+        if not self.passages_annuels: return 0
+        return min(100, int(self.passages_realises(annee) * 100 / self.passages_annuels))
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -517,8 +559,10 @@ def client_detail(id):
         .order_by(Intervention.date_planifiee.desc()).all()
     base = get_param('base_url', request.host_url.rstrip('/'))
     lien = f"{base}/portail/{c.access_token}"
+    annee = datetime.now().year
     return render_template('clients/detail.html', client=c,
-                           interventions=interventions, lien_portail=lien)
+                           interventions=interventions, lien_portail=lien,
+                           types_prestation=TYPES_PRESTATION, annee=annee)
 
 @app.route('/clients/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
@@ -870,6 +914,47 @@ def bon_supprimer(id):
     db.session.commit()
     flash('Bon supprimé.', 'info')
     return redirect(url_for('intervention_detail', id=iid))
+
+# ─── CONTRATS CLIENTS ────────────────────────────────────────────────────────
+
+TYPES_PRESTATION = [
+    'Dératisation',
+    'Désinsectisation',
+    'Désinfection',
+    'Dératisation + Désinsectisation',
+    'Dératisation + Désinsectisation + Désinfection',
+]
+
+@app.route('/clients/<int:id>/contrats/nouveau', methods=['POST'])
+@login_required
+def contrat_nouveau(id):
+    Client.query.get_or_404(id)
+    try:
+        dd = datetime.strptime(request.form['date_debut'], '%Y-%m-%d').date() if request.form.get('date_debut') else None
+        df = datetime.strptime(request.form['date_fin'], '%Y-%m-%d').date() if request.form.get('date_fin') else None
+    except ValueError:
+        dd = df = None
+    c = ContratClient(
+        client_id=id,
+        type_prestation=request.form.get('type_prestation', '').strip(),
+        passages_annuels=int(request.form.get('passages_annuels') or 1),
+        date_debut=dd, date_fin=df,
+        notes=request.form.get('notes', '').strip(),
+    )
+    db.session.add(c)
+    db.session.commit()
+    flash('Contrat ajouté.', 'success')
+    return redirect(url_for('client_detail', id=id))
+
+@app.route('/contrats/<int:cid>/supprimer', methods=['POST'])
+@login_required
+def contrat_supprimer(cid):
+    c = ContratClient.query.get_or_404(cid)
+    client_id = c.client_id
+    db.session.delete(c)
+    db.session.commit()
+    flash('Contrat supprimé.', 'info')
+    return redirect(url_for('client_detail', id=client_id))
 
 # ─── PHOTOS BONS ─────────────────────────────────────────────────────────────
 

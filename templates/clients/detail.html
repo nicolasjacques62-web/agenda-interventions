@@ -51,6 +51,104 @@
       </div>
     </div>
 
+    <!-- Contrats & Suivi passages -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-file-earmark-check me-2"></i>Contrats {{ annee }}</span>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-contrat">
+          <i class="bi bi-plus-lg"></i>
+        </button>
+      </div>
+      <div class="card-body p-2">
+
+        <!-- Formulaire nouveau contrat -->
+        <div class="collapse mb-2" id="form-contrat">
+          <form method="POST" action="{{ url_for('contrat_nouveau', id=client.id) }}" class="border rounded p-2 bg-light">
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">Type de prestation</label>
+              <select name="type_prestation" class="form-select form-select-sm" required>
+                <option value="">— Choisir —</option>
+                {% for t in types_prestation %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Passages/an</label>
+                <input type="number" name="passages_annuels" class="form-control form-control-sm" value="4" min="1" max="52">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Début contrat</label>
+                <input type="date" name="date_debut" class="form-control form-control-sm">
+              </div>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">Fin contrat</label>
+              <input type="date" name="date_fin" class="form-control form-control-sm">
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success btn-sm">Enregistrer</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#form-contrat">Annuler</button>
+            </div>
+          </form>
+        </div>
+
+        {% if client.contrats %}
+          {% for contrat in client.contrats %}
+          {% set realises = contrat.passages_realises(annee) %}
+          {% set restants = contrat.passages_restants(annee) %}
+          {% set pct = contrat.pct_realises(annee) %}
+          <div class="mb-2 p-2 border rounded position-relative">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <span class="fw-semibold small">
+                {% if 'dératisation' in contrat.type_prestation.lower() and 'désinsectisation' in contrat.type_prestation.lower() and 'désinfection' in contrat.type_prestation.lower() %}
+                  <span class="badge me-1" style="background:#c0392b">●</span>
+                {% elif 'dératisation' in contrat.type_prestation.lower() and 'désinsectisation' in contrat.type_prestation.lower() %}
+                  <span class="badge me-1" style="background:#8e44ad">●</span>
+                {% elif 'dératisation' in contrat.type_prestation.lower() %}
+                  <span class="badge me-1" style="background:#e67e22">●</span>
+                {% elif 'désinsectisation' in contrat.type_prestation.lower() %}
+                  <span class="badge me-1" style="background:#1aabe3">●</span>
+                {% elif 'désinfection' in contrat.type_prestation.lower() %}
+                  <span class="badge me-1" style="background:#27ae60">●</span>
+                {% endif %}
+                {{ contrat.type_prestation }}
+              </span>
+              <form method="POST" action="{{ url_for('contrat_supprimer', cid=contrat.id) }}"
+                    onsubmit="return confirm('Supprimer ce contrat ?')">
+                <button class="btn btn-link btn-sm text-danger p-0 ms-2"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+            <div class="small text-muted mb-1">
+              {{ realises }} / {{ contrat.passages_annuels }} passages réalisés
+              {% if restants > 0 %}
+                — <span class="text-warning fw-semibold">{{ restants }} restant{{ 's' if restants > 1 }}</span>
+              {% else %}
+                — <span class="text-success fw-semibold">✓ Complet</span>
+              {% endif %}
+            </div>
+            <div class="progress" style="height:8px">
+              <div class="progress-bar {% if pct >= 100 %}bg-success{% elif pct >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                   style="width:{{ pct }}%"></div>
+            </div>
+            {% if contrat.date_debut or contrat.date_fin %}
+            <div class="text-muted" style="font-size:.7rem;margin-top:3px">
+              {% if contrat.date_debut %}Du {{ contrat.date_debut.strftime('%d/%m/%Y') }}{% endif %}
+              {% if contrat.date_fin %}au {{ contrat.date_fin.strftime('%d/%m/%Y') }}{% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-muted small fst-italic text-center py-2">
+            Aucun contrat — cliquez sur <strong>+</strong> pour en ajouter un
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Portail client -->
     <div class="card">
       <div class="card-header"><i class="bi bi-share me-2"></i>Portail client</div>
