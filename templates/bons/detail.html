@@ -155,30 +155,59 @@
         <span><i class="bi bi-camera me-2"></i>Photos d'intervention
           {% if bon.photos %}<span class="badge bg-secondary ms-1">{{ bon.photos|length }}</span>{% endif %}
         </span>
-        <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-photo">
-          <i class="bi bi-plus-lg me-1"></i>Ajouter
-        </button>
       </div>
       <div class="card-body">
-        <div class="collapse mb-3" id="form-photo">
-          <form method="POST" action="{{ url_for('bon_photo_ajouter', id=bon.id) }}" enctype="multipart/form-data">
-            <div class="mb-2">
-              <input type="file" name="photo" id="photo-input" class="form-control"
-                     accept="image/*" capture="environment" required>
-              <div class="form-text">📷 Sur mobile, votre caméra s'ouvrira. Max 8 Mo.</div>
+
+        <!-- Formulaire photo — toujours visible -->
+        <form method="POST" action="{{ url_for('bon_photo_ajouter', id=bon.id) }}"
+              enctype="multipart/form-data" id="form-photo">
+
+          <!-- Input unique (caméra ou galerie selon le bouton cliqué) -->
+          <input type="file" id="photo-input" name="photo"
+                 accept="image/*" class="d-none"
+                 onchange="previewPhoto(this)">
+
+          <!-- Boutons caméra / galerie bien visibles -->
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <button type="button" class="btn btn-primary w-100 py-3"
+                      onclick="ouvrirCamera()">
+                <i class="bi bi-camera-fill d-block fs-2 mb-1"></i>
+                <span class="fw-semibold">Prendre une photo</span>
+                <div style="font-size:.72rem;opacity:.85">Caméra de la tablette</div>
+              </button>
             </div>
-            <div id="preview-container" class="mb-2" style="display:none">
-              <img id="preview-img" src="" alt="Aperçu" class="img-thumbnail" style="max-height:200px;">
+            <div class="col-6">
+              <button type="button" class="btn btn-outline-primary w-100 py-3"
+                      onclick="ouvrirGalerie()">
+                <i class="bi bi-images d-block fs-2 mb-1"></i>
+                <span class="fw-semibold">Choisir une image</span>
+                <div style="font-size:.72rem;opacity:.85">Depuis la galerie</div>
+              </button>
             </div>
-            <button type="submit" class="btn btn-success btn-sm">
-              <i class="bi bi-cloud-upload me-1"></i>Enregistrer la photo
-            </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm"
-                    data-bs-toggle="collapse" data-bs-target="#form-photo">Annuler</button>
-          </form>
-        </div>
+          </div>
+
+          <!-- Aperçu + bouton enregistrer (apparaît après sélection) -->
+          <div id="preview-zone" style="display:none">
+            <div class="text-center mb-2">
+              <img id="preview-img" src="" alt="Aperçu"
+                   class="img-fluid rounded shadow-sm" style="max-height:280px;max-width:100%">
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success flex-fill">
+                <i class="bi bi-cloud-upload me-1"></i>Enregistrer la photo
+              </button>
+              <button type="button" class="btn btn-outline-secondary"
+                      onclick="annulerPhoto()">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+
+        </form>
 
         {% if bon.photos %}
+        <hr class="my-3">
         <div class="row g-2">
           {% for photo in bon.photos %}
           <div class="col-6 col-md-4 col-lg-3" id="photo-card-{{ photo.id }}">
@@ -188,23 +217,26 @@
                      class="img-thumbnail w-100" style="height:120px;object-fit:cover;">
               </a>
               <div class="position-absolute bottom-0 start-0 end-0 p-1"
-                   style="background:rgba(0,0,0,.5);font-size:.7rem;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+                   style="background:rgba(0,0,0,.55);font-size:.7rem;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
                 {{ photo.created_at.strftime('%d/%m %H:%M') }}
               </div>
               <form method="POST" action="{{ url_for('bon_photo_supprimer', photo_id=photo.id) }}"
                     onsubmit="return confirm('Supprimer cette photo ?')"
                     class="position-absolute top-0 end-0 m-1">
-                <button class="btn btn-danger btn-sm py-0 px-1"><i class="bi bi-trash" style="font-size:.75rem"></i></button>
+                <button class="btn btn-danger btn-sm py-0 px-1" title="Supprimer">
+                  <i class="bi bi-trash" style="font-size:.75rem"></i>
+                </button>
               </form>
             </div>
           </div>
           {% endfor %}
         </div>
         {% else %}
-        <div class="text-muted small fst-italic text-center py-2">
-          <i class="bi bi-camera me-1"></i>Aucune photo — cliquez sur "Ajouter"
+        <div class="text-muted small fst-italic text-center py-1">
+          <i class="bi bi-images me-1"></i>Aucune photo pour l'instant
         </div>
         {% endif %}
+
       </div>
     </div>
 
@@ -322,17 +354,37 @@
 
 {% block scripts %}
 <script>
-// ── Aperçu photo ──
-document.getElementById('photo-input')?.addEventListener('change', function() {
-  const file = this.files[0];
+// ── Caméra / Galerie ──
+function ouvrirCamera() {
+  const inp = document.getElementById('photo-input');
+  inp.setAttribute('capture', 'environment'); // force la caméra arrière
+  inp.value = '';
+  inp.click();
+}
+
+function ouvrirGalerie() {
+  const inp = document.getElementById('photo-input');
+  inp.removeAttribute('capture'); // ouvre la galerie
+  inp.value = '';
+  inp.click();
+}
+
+function previewPhoto(input) {
+  const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     document.getElementById('preview-img').src = e.target.result;
-    document.getElementById('preview-container').style.display = 'block';
+    document.getElementById('preview-zone').style.display = 'block';
   };
   reader.readAsDataURL(file);
-});
+}
+
+function annulerPhoto() {
+  document.getElementById('preview-zone').style.display = 'none';
+  document.getElementById('preview-img').src = '';
+  document.getElementById('photo-input').value = '';
+}
 
 // ══════════════════════════════════════════
 // PAD DE SIGNATURE — canvas tactile/souris
