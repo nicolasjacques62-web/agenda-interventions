@@ -1,4 +1,4 @@
-import os, uuid, io, json, threading, time, base64, urllib.request, urllib.error
+import os, uuid, io, json, threading, time, base64, urllib.request, urllib.error, secrets
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import wraps
@@ -13,6 +13,9 @@ from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -28,9 +31,14 @@ except ImportError:
 
 app = Flask(__name__)
 # Render / Gunicorn tournent derrière un reverse-proxy HTTPS.
-# ProxyFix lit les headers X-Forwarded-Proto/Host pour que Flask
-# génère correctement des URLs en https:// au lieu de http://
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# ── SECRET_KEY : génère une clé aléatoire si absente ou identique à la valeur par défaut ──
+_secret = os.environ.get('SECRET_KEY', '').strip()
+if not _secret or _secret == 'changez-cette-cle-en-production':
+    _secret = secrets.token_hex(32)
+    print("⚠️  SECRET_KEY non définie sur le serveur — clé temporaire utilisée.")
+    print("   → Ajoutez SECRET_KEY dans les variables d'environnement Render !")
 
 # Base de données : PostgreSQL en production, SQLite en local
 # On supprime TOUS les espaces/newlines autour de l'URL (copie Render parfois pollue)
@@ -45,10 +53,13 @@ elif _db_url.startswith('postgresql://'):
 _connect_args = {'check_same_thread': False} if _db_url.startswith('sqlite') else {}
 
 app.config.update(
-    SECRET_KEY=os.environ.get('SECRET_KEY', 'changez-cette-cle-en-production'),
+    SECRET_KEY=_secret,
     SQLALCHEMY_DATABASE_URI=_db_url,
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SQLALCHEMY_ENGINE_OPTIONS={'connect_args': _connect_args},
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,   # 16 Mo max par upload (rejeté par Flask avant traitement)
+    WTF_CSRF_TIME_LIMIT=3600,               # Token CSRF valide 1 heure
+    WTF_CSRF_SSL_STRICT=False,              # Render proxy : ne pas vérifier Referer strict
 )
 
 db = SQLAlchemy(app)
@@ -56,6 +67,34 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Veuillez vous connecter.'
 login_manager.login_message_category = 'warning'
+
+# ── Protection CSRF sur tous les formulaires POST ──
+csrf = CSRFProtect(app)
+
+# ── Rate limiting (anti brute-force) ──
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],           # pas de limite globale, uniquement sur les routes sensibles
+    storage_uri="memory://",     # mémoire partagée (convient pour 1 worker Gunicorn)
+    strategy="fixed-window"
+)
+
+# ── En-têtes de sécurité HTTP sur toutes les réponses ──
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Frame-Options']        = 'SAMEORIGIN'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-XSS-Protection']       = '1; mode=block'
+    response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy']     = 'geolocation=(), microphone=()'
+    return response
+
+# ── Gestionnaire d'erreur CSRF ──
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    flash('Session expirée ou requête invalide. Veuillez réessayer.', 'warning')
+    return redirect(request.referrer or url_for('dashboard'))
 
 # ─── MODÈLES ──────────────────────────────────────────────────────────────────
 
@@ -770,6 +809,7 @@ def index():
     return redirect(url_for('dashboard') if current_user.is_authenticated else url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
@@ -1920,6 +1960,7 @@ def bon_photo_supprimer(photo_id):
 # ─── PORTAIL CLIENT ───────────────────────────────────────────────────────────
 
 @app.route('/portail/<token>', methods=['GET', 'POST'])
+@limiter.limit("15 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_access(token):
     c = Client.query.filter_by(access_token=token, portal_actif=True).first()
     if not c: abort(404)
@@ -2034,21 +2075,26 @@ def parametres():
 
 @app.route('/healthz')
 def healthz():
-    import traceback
+    """Point de contrôle minimal — ne divulgue aucune information sensible."""
     try:
-        User.query.count()
-        db_ok = True
-        db_err = None
-    except Exception as e:
-        db_ok = False
-        db_err = traceback.format_exc()
-    return jsonify({
-        'status': 'ok' if db_ok else 'error',
-        'db': str(app.config['SQLALCHEMY_DATABASE_URI'])[:40] + '...',
-        'db_ok': db_ok,
-        'db_error': db_err,
-        'python': __import__('sys').version,
-    })
+        db.session.execute(db.text('SELECT 1'))
+        return jsonify({'status': 'ok'}), 200
+    except Exception:
+        return jsonify({'status': 'error'}), 503
+
+# ── Gestionnaires d'erreur personnalisés ──
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('errors/404.html'), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template('errors/500.html'), 500
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    flash('Trop de tentatives. Veuillez patienter une minute avant de réessayer.', 'warning')
+    return redirect(request.referrer or url_for('login'))
 
 # ─── INIT ─────────────────────────────────────────────────────────────────────
 
