@@ -11,6 +11,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -25,6 +26,10 @@ except ImportError:
     PDF_OK = False
 
 app = Flask(__name__)
+# Render / Gunicorn tournent derrière un reverse-proxy HTTPS.
+# ProxyFix lit les headers X-Forwarded-Proto/Host pour que Flask
+# génère correctement des URLs en https:// au lieu de http://
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # Base de données : PostgreSQL en production, SQLite en local
 # On supprime TOUS les espaces/newlines autour de l'URL (copie Render parfois pollue)
@@ -701,8 +706,7 @@ def client_detail(id):
     c = Client.query.get_or_404(id)
     interventions = Intervention.query.filter_by(client_id=id)\
         .order_by(Intervention.date_planifiee.desc()).all()
-    base = get_param('base_url', request.host_url.rstrip('/'))
-    lien = f"{base}/portail/{c.access_token}"
+    lien = url_for('portail_access', token=c.access_token, _external=True)
     annee = datetime.now().year
     return render_template('clients/detail.html', client=c,
                            interventions=interventions, lien_portail=lien,
