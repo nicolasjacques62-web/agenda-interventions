@@ -100,6 +100,7 @@ class Client(db.Model):
     access_token = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
     portal_password_hash = db.Column(db.String(256))
     portal_actif = db.Column(db.Boolean, default=False)
+    notifs_actives = db.Column(db.Boolean, default=True)  # alertes email portail
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     interventions = db.relationship('Intervention', backref='client', lazy=True,
                                     cascade='all, delete-orphan')
@@ -504,6 +505,84 @@ def generer_pdf(bon):
     return buf
 
 
+def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=None):
+    """Envoie une notification email au client via Brevo (dans un thread séparé)."""
+    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+    if not api_key:
+        return False, "Clé API Brevo manquante."
+    if not client.email:
+        return False, "Pas d'email pour ce client."
+    if not getattr(client, 'notifs_actives', True) == True:
+        return False, "Notifications désactivées pour ce client."
+    soc = get_param('societe', 'HPS')
+    tel_soc = get_param('telephone', '')
+    sender_email = get_param('mail_username') or get_param('email')
+    if not sender_email:
+        return False, "Email expéditeur manquant dans les Paramètres."
+    # Bouton portail
+    btn_html = ''
+    if lien_portail:
+        btn_html = f'''<div style="text-align:center;margin:24px 0">
+          <a href="{lien_portail}" style="background:#1aabe3;color:#fff;padding:12px 28px;
+             border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px">
+            Accéder à mon espace client →
+          </a></div>'''
+    # Corps HTML
+    html = f"""<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;color:#333">
+  <div style="background:#1aabe3;padding:16px 24px;border-radius:8px 8px 0 0">
+    <h2 style="color:#fff;margin:0;font-size:18px">{soc}</h2>
+  </div>
+  <div style="border:1px solid #e0e0e0;border-top:none;padding:24px;border-radius:0 0 8px 8px">
+    <p>Bonjour <strong>{client.prenom or client.nom}</strong>,</p>
+    <div style="background:#f8f9fa;border-left:4px solid #1aabe3;padding:12px 16px;border-radius:4px;margin:16px 0">
+      {corps_texte.replace(chr(10), '<br>')}
+    </div>
+    {btn_html}
+    <hr style="border:none;border-top:1px solid #eee;margin:20px 0">
+    <p style="color:#888;font-size:13px;margin:0">
+      {soc}{(' — ' + tel_soc) if tel_soc else ''}<br>
+      <small>Vous recevez cet email car vous avez un espace client actif.
+      Pour désactiver ces notifications, contactez-nous.</small>
+    </p>
+  </div>
+</body></html>"""
+    payload = json.dumps({
+        "sender": {"name": soc, "email": sender_email},
+        "to": [{"email": client.email, "name": client.nom_affichage}],
+        "subject": f"[{soc}] {sujet}",
+        "htmlContent": html,
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        'https://api.brevo.com/v3/smtp/email',
+        data=payload,
+        headers={'api-key': api_key, 'Content-Type': 'application/json'},
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status in (200, 201, 202):
+                return True, "Notification envoyée."
+            return False, f"Erreur Brevo : statut {resp.status}"
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        return False, f"Erreur Brevo {e.code} : {body}"
+    except Exception as e:
+        return False, str(e)
+
+
+def _notif_async(client_id, sujet, titre, corps, lien=None):
+    """Lance l'envoi de notification dans un thread pour ne pas bloquer la réponse."""
+    def _run():
+        try:
+            with app.app_context():
+                c = Client.query.get(client_id)
+                if c and c.portal_actif and c.notifs_actives and c.email:
+                    envoyer_notif_client(c, sujet, titre, corps, lien)
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def envoyer_bon_email(bon):
     api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
     if not api_key:
@@ -774,6 +853,15 @@ def portail_activer(id):
             c.access_token = str(uuid.uuid4())
         db.session.commit()
         flash('Portail client activé. Partagez le lien avec le client.', 'success')
+        # Notification de bienvenue
+        lien = url_for('portail_access', token=c.access_token, _external=True)
+        _notif_async(c.id,
+            "Votre espace client est prêt !",
+            "Bienvenue",
+            f"Votre espace client personnel vient d'être activé.\n"
+            f"Vous pouvez désormais consulter vos interventions, "
+            f"télécharger vos bons et signer électroniquement depuis votre espace sécurisé.",
+            lien)
     return redirect(url_for('client_detail', id=id))
 
 @app.route('/clients/<int:id>/portail/desactiver', methods=['POST'])
@@ -783,6 +871,16 @@ def portail_desactiver(id):
     c.portal_actif = False
     db.session.commit()
     flash('Portail client désactivé.', 'info')
+    return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/<int:id>/notifs/toggle', methods=['POST'])
+@login_required
+def client_notifs_toggle(id):
+    c = Client.query.get_or_404(id)
+    c.notifs_actives = not bool(c.notifs_actives)
+    db.session.commit()
+    etat = "activées ✅" if c.notifs_actives else "désactivées"
+    flash(f'Notifications email {etat} pour {c.nom_affichage}.', 'success')
     return redirect(url_for('client_detail', id=id))
 
 @app.route('/clients/<int:id>/portail/regenerer', methods=['POST'])
@@ -899,6 +997,18 @@ def intervention_nouvelle():
         db.session.add(i)
         db.session.commit()
         flash(f'Intervention {i.reference} planifiée.', 'success')
+        # Notification au client si portail actif
+        date_str = i.date_planifiee.strftime('%d/%m/%Y à %H:%M')
+        lien_p = url_for('portail_access', token=i.client.access_token, _external=True) if i.client.access_token else None
+        _notif_async(i.client_id,
+            f"Nouveau rendez-vous planifié le {i.date_planifiee.strftime('%d/%m/%Y')}",
+            "Nouveau rendez-vous",
+            f"Un nouveau rendez-vous a été planifié pour vous :\n\n"
+            f"📅 Date : {date_str}\n"
+            f"🔧 Type : {i.type_intervention or i.titre}\n"
+            + (f"👷 Technicien : {i.technicien}\n" if i.technicien else "") +
+            f"\nRetrouvez tous les détails dans votre espace client.",
+            lien_p)
         if request.form.get('creer_bon'):
             b = BonIntervention(numero=next_bon_num(), intervention_id=i.id)
             db.session.add(b)
@@ -1001,6 +1111,15 @@ def bon_nouveau():
         inter.statut = 'terminee'
         db.session.commit()
         flash(f'Bon N° {b.numero} créé.', 'success')
+        # Notification au client
+        lien_p = url_for('portail_access', token=inter.client.access_token, _external=True) if inter.client.access_token else None
+        _notif_async(inter.client_id,
+            f"Votre bon d'intervention N° {b.numero} est disponible",
+            "Bon d'intervention disponible",
+            f"Votre bon d'intervention N° {b.numero} du {inter.date_planifiee.strftime('%d/%m/%Y')} "
+            f"est disponible dans votre espace client.\n\n"
+            f"Vous pouvez le consulter, le télécharger en PDF et le signer électroniquement.",
+            lien_p)
         return redirect(url_for('bon_detail', id=b.id))
 
     iid = request.args.get('intervention_id')
@@ -1055,6 +1174,16 @@ def bon_modifier(id):
         if request.form.get('finaliser'):
             b.statut = 'finalise'
             b.date_finalisation = datetime.utcnow()
+            # Notification finalisation
+            inter = b.intervention
+            lien_p = url_for('portail_access', token=inter.client.access_token, _external=True) if inter.client.access_token else None
+            _notif_async(inter.client_id,
+                f"Votre compte-rendu d'intervention est prêt — N° {b.numero}",
+                "Compte-rendu finalisé",
+                f"Le compte-rendu de votre intervention du {inter.date_planifiee.strftime('%d/%m/%Y')} "
+                f"(bon N° {b.numero}) a été finalisé par votre technicien.\n\n"
+                f"Il est maintenant disponible dans votre espace client pour consultation et signature.",
+                lien_p)
 
         # ── Gestion photo ajoutée depuis le formulaire modifier ──
         if request.form.get('ajouter_photo'):
@@ -1782,6 +1911,7 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS longitude FLOAT",
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_image TEXT",
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_technicien TEXT",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notifs_actives BOOLEAN DEFAULT TRUE",
         ]
         for sql in migrations:
             try:

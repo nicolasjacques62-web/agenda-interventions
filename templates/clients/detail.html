@@ -183,6 +183,35 @@
               <i class="bi bi-clipboard"></i>
             </button>
           </div>
+
+          <!-- Notifications email -->
+          <div class="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-2
+                      {% if client.notifs_actives %}bg-light{% else %}bg-white{% endif %}">
+            <div>
+              <i class="bi bi-bell{% if not client.notifs_actives %}-slash text-muted{% else %} text-success{% endif %} me-1"></i>
+              <span class="small fw-semibold">Alertes email</span>
+              <div class="text-muted" style="font-size:.72rem">
+                {% if client.notifs_actives %}
+                  <span class="text-success">Activées</span> — le client est notifié automatiquement
+                {% else %}
+                  <span class="text-muted">Désactivées</span>
+                {% endif %}
+              </div>
+            </div>
+            <form method="POST" action="{{ url_for('client_notifs_toggle', id=client.id) }}">
+              <button type="submit" class="btn btn-sm {% if client.notifs_actives %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                      title="{% if client.notifs_actives %}Désactiver les alertes{% else %}Activer les alertes{% endif %}">
+                <i class="bi bi-toggle-{% if client.notifs_actives %}on{% else %}off{% endif %}"></i>
+              </button>
+            </form>
+          </div>
+          {% if client.notifs_actives %}
+          <div class="text-muted mb-2" style="font-size:.72rem">
+            <i class="bi bi-info-circle me-1"></i>Email automatique envoyé lors de :
+            <strong>nouvelle intervention</strong>, <strong>bon finalisé</strong>, <strong>activation portail</strong>
+          </div>
+          {% endif %}
+
           <div class="d-grid gap-1">
             <form method="POST" action="{{ url_for('portail_regenerer', id=client.id) }}"
                   onsubmit="return confirm('Régénérer invalidera l\'ancien lien. Continuer ?')">
@@ -206,6 +235,9 @@
                 <i class="bi bi-link-45deg me-1"></i>Activer et générer le lien
               </button>
             </form>
+            <div class="text-muted mt-2" style="font-size:.72rem">
+              <i class="bi bi-bell me-1"></i>Un email de bienvenue sera envoyé automatiquement avec le lien d'accès.
+            </div>
           {% endif %}
         {% endif %}
       </div>
