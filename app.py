@@ -93,7 +93,10 @@ def set_security_headers(response):
 # ── Gestionnaire d'erreur CSRF ──
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
-    flash('Session expirée ou requête invalide. Veuillez réessayer.', 'warning')
+    flash('Session expirée. Rechargez la page et réessayez.', 'warning')
+    # Si l'utilisateur n'est pas connecté → rediriger vers login
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
     return redirect(request.referrer or url_for('dashboard'))
 
 # ─── MODÈLES ──────────────────────────────────────────────────────────────────
