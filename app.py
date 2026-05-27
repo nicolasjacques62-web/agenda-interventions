@@ -1249,59 +1249,111 @@ TYPES_PRESTATION = [
 
 # Modèles de travaux effectués — groupés par type de prestation
 TRAVAUX_MODELES = [
-    # ── Dératisation ──
+    # ══════════════════ DÉRATISATION ══════════════════
     {"groupe": "Dératisation", "label": "Pose d'appâts rodenticides",
      "texte": "Pose d'appâts rodenticides sécurisés dans les zones d'activité rongeurs (dépôts de fèces, coulées, traces). Sécurisation des postes d'appâtage. Inspection des accès et points d'entrée potentiels. Recommandations transmises au client."},
     {"groupe": "Dératisation", "label": "Relevé et renouvellement des postes",
      "texte": "Relevé et renouvellement des postes d'appâtage. Consommation constatée : légère / moyenne / forte (à compléter). Ajustement du dispositif en fonction de l'activité rongeurs. Contrôle des accès."},
+    {"groupe": "Dératisation", "label": "Remplacement appâts",
+     "texte": "Remplacement des appâts rodenticides consommés ou dégradés. Vérification de l'état des postes d'appâtage. Consommation notée par poste. Activité rongeurs : active / en baisse / nulle (à compléter). Prochain passage planifié."},
+    {"groupe": "Dératisation", "label": "Audit infestation",
+     "texte": "Audit complet des locaux : inspection visuelle de l'ensemble des zones (caves, locaux techniques, périphérie bâtiment, faux plafonds, gaines). Identification des signes d'activité rongeurs (fèces, coulées, gnures, odeurs). Cartographie des zones à risque réalisée. Plan d'action proposé au client."},
+    {"groupe": "Dératisation", "label": "Contrôle mensuel",
+     "texte": "Visite de contrôle mensuelle. Relevé de l'ensemble des postes d'appâtage intérieurs et extérieurs. Consommation globale : à compléter. Aucune nouvelle activité détectée / Activité résiduelle constatée (à compléter). Renouvellement des postes consommés. Compte rendu transmis."},
+    {"groupe": "Dératisation", "label": "Mise en conformité HACCP",
+     "texte": "Intervention dans le cadre de la mise en conformité HACCP. Mise en place ou révision du plan de lutte antiparasitaire. Positionnement des postes d'appâtage conformément au plan de maîtrise sanitaire. Cartographie remise au client. Documentation conforme aux exigences réglementaires."},
+    {"groupe": "Dératisation", "label": "Contrôle extérieur",
+     "texte": "Contrôle des postes d'appâtage extérieurs (périphérie bâtiment, clôtures, zones de stockage, quais). Inspection des entrées de terriers et des coulées en périphérie. Renouvellement des appâts consommés. Aucune intrusion récente constatée / Points d'entrée identifiés (à compléter). Recommandations de colmatage transmises."},
+    {"groupe": "Dératisation", "label": "Contrôle faux plafonds",
+     "texte": "Inspection des faux plafonds et combles à la recherche de signes d'activité rongeurs (fèces, nids, gnures, odeurs). Zones contrôlées : à compléter. Activité détectée : oui / non (à compléter). Pose ou repositionnement de postes d'appâtage si nécessaire. Accès bouchés ou signalés pour intervention maçonnerie."},
+    {"groupe": "Dératisation", "label": "Inspection caméra",
+     "texte": "Inspection des réseaux, gaines et zones inaccessibles par caméra endoscopique. Localisation des coulées et passages empruntés par les rongeurs. Images transmises au client. Détection de points d'entrée ou de nids. Plan d'action établi en conséquence."},
     {"groupe": "Dératisation", "label": "Dépistage positif — mise en place du plan",
      "texte": "Dépistage positif rongeurs. Mise en place du plan d'action : pose de postes d'appâtage intérieurs et extérieurs. Localisation des terriers et coulées. Conseils de prévention transmis au client (stockage, obturations)."},
     {"groupe": "Dératisation", "label": "Fin de traitement — levée de doute",
      "texte": "Relevé final des postes d'appâtage. Aucune consommation constatée. Activité rongeurs nulle. Retrait des postes ou maintien préventif selon accord client. Bilan transmis."},
 
-    # ── Désinsectisation ──
-    {"groupe": "Désinsectisation", "label": "Traitement insecticide par pulvérisation",
+    # ══════════════════ DÉSINSECTISATION ══════════════════
+    {"groupe": "Désinsectisation", "label": "Traitement insecticide — pulvérisation",
      "texte": "Traitement insecticide par pulvérisation des zones infestées (plinthes, recoins, joints, passages). Produit homologué utilisé. Zone traitée laissée vide pendant 2h minimum. Aération recommandée avant retour."},
     {"groupe": "Désinsectisation", "label": "Pose de plaques engluantes",
      "texte": "Pose de pièges à insectes (plaques engluantes / phéromones) dans les zones sensibles. Inspection des zones de stockage, sanitaires et locaux techniques. Compte rendu de l'infestation transmis."},
-    {"groupe": "Désinsectisation", "label": "Traitement cafards / blattes",
-     "texte": "Traitement anti-cafards par application de gel insecticide (points stratégiques : cuisine, local déchets, sanitaires). Pose de pièges de contrôle. Résultat attendu sous 2 à 4 semaines. Visite de contrôle planifiée."},
-    {"groupe": "Désinsectisation", "label": "Traitement punaises de lit",
+    {"groupe": "Désinsectisation", "label": "Cafards cuisine",
+     "texte": "Traitement anti-cafards ciblé en cuisine professionnelle. Application de gel insecticide aux points stratégiques (dessous équipements, joints, prises, arrière mobilier). Traitement des évacuations et locaux déchets. Localisation des foyers d'infestation. Résultat attendu sous 2 à 3 semaines. Visite de contrôle planifiée."},
+    {"groupe": "Désinsectisation", "label": "Blattes germaniques",
+     "texte": "Traitement anti-blattes germaniques (Blattella germanica) par application de gel appât insecticide aux points d'infestation (meubles, électroménager, gaines). Pose de pièges de monitoring. Forte résistance possible aux pyréthrinoïdes — produit rotatif utilisé. Second passage prévu à J+21."},
+    {"groupe": "Désinsectisation", "label": "Punaises de lit",
      "texte": "Traitement anti-punaises de lit par application d'insecticide contact sur les zones de repos, sommiers, cadres de lit, plinthes. Mise en sac des textiles recommandée. Second traitement prévu à J+14."},
-    {"groupe": "Désinsectisation", "label": "Traitement fourmis",
+    {"groupe": "Désinsectisation", "label": "Fourmis",
      "texte": "Traitement anti-fourmis par pose d'appâts gel et pulvérisation des pistes et entrées de colonie. Traitement périphérique extérieur réalisé. Efficacité visible sous 5 à 10 jours."},
+    {"groupe": "Désinsectisation", "label": "Mouches",
+     "texte": "Traitement anti-mouches par pose de pièges lumineux UV et/ou application d'insecticide. Inspection des zones sources (déchets, évacuations, matières organiques). Traitement des zones de repos et d'accès. Recommandations d'hygiène transmises au client. Résultat visible sous 48h."},
+    {"groupe": "Désinsectisation", "label": "Traitement vapeur",
+     "texte": "Traitement thermique par vapeur sèche des zones infestées (matelas, sommiers, canapés, plinthes). Température appliquée : 120°C en surface — léthale pour tous les stades de développement. Aucun produit chimique. Zone traitée réutilisable immédiatement."},
+    {"groupe": "Désinsectisation", "label": "Traitement gel insecticide",
+     "texte": "Application de gel insecticide appât (attractif + insecticide) aux points d'infestation et de passage. Technique propre, sans odeur, sans évacuation des locaux. Action en réseau sur la colonie. Contrôle à J+15 recommandé."},
+    {"groupe": "Désinsectisation", "label": "Fumigation",
+     "texte": "Traitement par fumigation des locaux infestés. Mise en place du protocole de sécurité : évacuation des personnes et animaux, obturation des ouvertures. Diffusion du produit fumigène homologué. Aération de 4h minimum avant retour. Efficace sur l'ensemble des insectes présents."},
 
-    # ── Désinfection ──
+    # ══════════════════ DÉSINFECTION ══════════════════
     {"groupe": "Désinfection", "label": "Désinfection par nébulisation",
      "texte": "Désinfection générale des surfaces par nébulisation avec produit biocide homologué. Toutes les zones traitées (sol, murs, surfaces de contact). Aération obligatoire 2h minimum avant retour dans les locaux. Certificat de désinfection remis."},
     {"groupe": "Désinfection", "label": "Désinfection ciblée (zone contaminée)",
      "texte": "Désinfection ciblée des zones contaminées par projection de produit désinfectant. Ramassage et évacuation des déjections / cadavres dans des sacs hermétiques. Port des EPI adapté. Zone condamnée le temps du traitement."},
+    {"groupe": "Désinfection", "label": "Désinfection virus",
+     "texte": "Désinfection virale des locaux par nébulisation de produit biocide à spectre virucide homologué (norme EN 14476). Toutes les surfaces traitées. Temps de contact respecté. Aération 2h avant retour. Protocole conforme aux recommandations sanitaires en vigueur."},
+    {"groupe": "Désinfection", "label": "Désinfection bactérienne",
+     "texte": "Désinfection bactéricide des locaux et surfaces. Produit biocide bactéricide homologué (norme EN 1276 / EN 13697) appliqué par pulvérisation ou nébulisation. Surfaces de contact traitées en priorité. Locaux ventilés après intervention. Attestation remise."},
+    {"groupe": "Désinfection", "label": "Syndrome Diogène",
+     "texte": "Intervention dans le cadre d'un syndrome de Diogène. Évacuation et tri des déchets accumulés. Nettoyage en profondeur des surfaces, sols et murs. Désinfection et déodorisation de l'ensemble des pièces par nébulisation biocide. Port des EPI intégral. Déchets évacués selon réglementation. Rapport d'intervention transmis."},
+    {"groupe": "Désinfection", "label": "Désinfection après décès",
+     "texte": "Désinfection des locaux suite à découverte de corps / décès non assisté. Neutralisation des zones biologiquement contaminées. Application de produit biocide désinfectant et déodorisant. Évacuation des déchets biologiques dans des sacs conformes. Port des EPI de niveau 3. Intervention discrète et confidentielle."},
+    {"groupe": "Désinfection", "label": "Locaux médicaux",
+     "texte": "Désinfection de locaux médicaux, cabinet de soins ou établissement de santé. Protocole renforcé conforme aux exigences des établissements de santé. Produits biocides à spectre élargi (bactéricide, fongicide, virucide). Traitement de l'air et des surfaces. Traçabilité complète remise au responsable."},
+    {"groupe": "Désinfection", "label": "Désinfection alimentaire",
+     "texte": "Désinfection des locaux de production ou de stockage alimentaire. Produits biocides conformes aux normes agroalimentaires (sans rinçage / alimentaire). Traitement des surfaces de contact, équipements et zones de stockage. Respect des délais d'attente avant remise en production. Conforme aux exigences HACCP."},
 
-    # ── Dépigeonnage ──
+    # ══════════════════ DÉPIGEONNAGE ══════════════════
     {"groupe": "Dépigeonnage", "label": "Pose de pics anti-pigeons",
      "texte": "Pose de pics anti-pigeons en acier inoxydable sur les zones de posage et de nidification (corniches, rebords, appuis de fenêtres, toiture). Nettoyage et désinfection préalable des surfaces souillées. Surface traitée transmise au client."},
     {"groupe": "Dépigeonnage", "label": "Pose de filets anti-pigeons",
      "texte": "Pose de filets anti-pigeons sur les ouvertures et zones d'accès. Fixation mécanique sécurisée. Surface couverte : à compléter (m²). Nettoyage des fientes réalisé avant installation. Entretien annuel recommandé."},
     {"groupe": "Dépigeonnage", "label": "Nettoyage et désinfection fientes",
      "texte": "Ramassage, nettoyage et désinfection des zones souillées par les fientes de pigeons. Port des EPI (masque FFP3, combinaison). Décontamination des surfaces à l'aide de produit biocide. Déchets évacués conformément à la réglementation."},
+    {"groupe": "Dépigeonnage", "label": "Désinfection toiture",
+     "texte": "Désinfection de la toiture et des abords souillés par les déjections de pigeons. Application de produit biocide fongicide et bactéricide sur les zones impactées. Port des EPI complet. Nids retirés et évacués. Recommandation de traitement préventif sur l'ensemble de la toiture."},
+    {"groupe": "Dépigeonnage", "label": "Étanchéification des accès",
+     "texte": "Identification et obturation des points d'accès utilisés par les pigeons (ouvertures, joints, fissures, passages de gaines). Pose de grillages ou de mousse expansive sur les zones de pénétration. Recommandations pour travaux de maçonnerie transmises au client. Suivi dans 30 jours."},
 
-    # ── Taupe ──
+    # ══════════════════ TAUPE ══════════════════
     {"groupe": "Taupe", "label": "Pose de pièges taupiers",
      "texte": "Repérage des galeries actives par sondage. Pose de pièges taupiers aux galeries principales. Galeries traitées : à compléter. Retour prévu sous 48 à 72h pour relève des pièges. Remblayage des taupinières après traitement."},
     {"groupe": "Taupe", "label": "Relevé des pièges — résultat",
      "texte": "Relevé des pièges taupiers. Résultat : capture(s) constatée(s) / aucune capture (à compléter). Réajustement de la position des pièges si nécessaire. Surveillance recommandée sur les 15 jours suivants."},
 
-    # ── Nid frelons / Frelons asiatiques ──
+    # ══════════════════ NID FRELONS ══════════════════
     {"groupe": "Nid frelons", "label": "Destruction nid de frelons",
      "texte": "Destruction du nid de frelons par injection d'insecticide à action foudroyante dans le nid. Nid retiré et éliminé après neutralisation complète. Sécurisation de la zone. Port des EPI complet obligatoire."},
+
+    # ══════════════════ FRELONS ASIATIQUES ══════════════════
     {"groupe": "Frelons asiatiques", "label": "Destruction nid frelons asiatiques",
      "texte": "Traitement et destruction du nid de frelons asiatiques (Vespa velutina) par injection de produit insecticide homologué. Intervention réalisée en tenue de protection intégrale. Nid décroché et évacué. Aucun risque résiduel constaté."},
+    {"groupe": "Frelons asiatiques", "label": "Intervention nacelle",
+     "texte": "Destruction du nid de frelons asiatiques en hauteur, nécessitant l'utilisation d'une nacelle élévatrice. Traitement par injection d'insecticide homologué. Port des EPI intégral. Nid décroché et évacué après neutralisation complète. Zone sécurisée pendant l'intervention."},
+    {"groupe": "Frelons asiatiques", "label": "Nid en hauteur",
+     "texte": "Destruction du nid de frelons asiatiques situé en hauteur (arbre, façade, toiture). Accès sécurisé par échelle / perche télescopique / nacelle (à compléter). Injection d'insecticide dans le nid. Neutralisation complète avant décrochage. Nid éliminé. Zone dégagée."},
+    {"groupe": "Frelons asiatiques", "label": "Nid en toiture",
+     "texte": "Destruction du nid de frelons asiatiques installé en toiture / sous les tuiles / dans la charpente. Accès au comble sécurisé. Injection d'insecticide par les accès du nid. Neutralisation confirmée avant retrait. Obturation de l'entrée conseillée. Port des EPI complet."},
+    {"groupe": "Frelons asiatiques", "label": "Nid en arbre",
+     "texte": "Localisation et destruction du nid de frelons asiatiques dans un arbre. Traitement nocturne recommandé (moindre activité). Injection d'insecticide homologué dans le nid via perche ou directement. Nid décroché et éliminé après neutralisation. Zone sécurisée 24h."},
+    {"groupe": "Frelons asiatiques", "label": "Intervention urgence",
+     "texte": "Intervention d'urgence suite à signalement de nid de frelons asiatiques présentant un danger immédiat. Périmètre de sécurité mis en place. Traitement immédiat par injection d'insecticide. Nid neutralisé et retiré. Client informé des consignes de sécurité post-intervention."},
 
-    # ── Guêpes ──
+    # ══════════════════ GUÊPES ══════════════════
     {"groupe": "Guêpes", "label": "Destruction nid de guêpes",
      "texte": "Localisation et destruction du nid de guêpes par injection d'insecticide. Intervention en fin de journée (moindre activité). Port des EPI. Nid retiré et éliminé après neutralisation. Zone sécurisée."},
 
-    # ── Abeilles ──
+    # ══════════════════ ABEILLES ══════════════════
     {"groupe": "Abeilles", "label": "Récupération essaim d'abeilles",
      "texte": "Récupération de l'essaim d'abeilles en douceur et transfert vers un apiculteur partenaire. Aucun produit chimique utilisé. Intervention réalisée en tenue de protection apicole."},
     {"groupe": "Abeilles", "label": "Traitement colonie abeilles (bâtiment)",
