@@ -66,11 +66,15 @@
           <form method="POST" action="{{ url_for('contrats_sauvegarder', id=client.id) }}" class="border rounded p-2 bg-light">
             <div class="small fw-semibold text-muted mb-2">Renseignez le nombre de passages/an pour chaque prestation (0 = non contracté) :</div>
             {% for t in types_prestation %}
-            {% set couleur = '#e67e22' if 'dératisation' in t.lower() and 'désinsectisation' not in t.lower() and 'désinfection' not in t.lower()
-                        else '#1aabe3' if 'désinsectisation' in t.lower() and 'dératisation' not in t.lower()
-                        else '#27ae60' if 'désinfection' in t.lower() and 'dératisation' not in t.lower() and 'désinsectisation' not in t.lower()
-                        else '#8e44ad' if 'dératisation' in t.lower() and 'désinsectisation' in t.lower() and 'désinfection' not in t.lower()
-                        else '#c0392b' %}
+            {% set couleur = '#e67e22' if 'dératisation' in t.lower()
+                        else '#1aabe3' if 'désinsectisation' in t.lower()
+                        else '#27ae60' if 'désinfection' in t.lower()
+                        else '#9b59b6' if 'dépigeonnage' in t.lower()
+                        else '#795548' if 'taupe' in t.lower()
+                        else '#e74c3c' if 'frelon' in t.lower()
+                        else '#f39c12' if 'guêpe' in t.lower() or 'guepe' in t.lower()
+                        else '#f1c40f' if 'abeille' in t.lower()
+                        else '#3788d8' %}
             {% set existing = client.contrats | selectattr('type_prestation', 'equalto', t) | list | first %}
             <div class="row g-2 align-items-center mb-2">
               <div class="col-5">
@@ -128,11 +132,16 @@
           {% set realises = contrat.passages_realises(annee) %}
           {% set restants = contrat.passages_restants(annee) %}
           {% set pct = contrat.pct_realises(annee) %}
-          {% set couleur = '#e67e22' if 'dératisation' in contrat.type_prestation.lower() and 'désinsectisation' not in contrat.type_prestation.lower() and 'désinfection' not in contrat.type_prestation.lower()
-                      else '#1aabe3' if 'désinsectisation' in contrat.type_prestation.lower() and 'dératisation' not in contrat.type_prestation.lower()
-                      else '#27ae60' if 'désinfection' in contrat.type_prestation.lower() and 'dératisation' not in contrat.type_prestation.lower() and 'désinsectisation' not in contrat.type_prestation.lower()
-                      else '#8e44ad' if 'dératisation' in contrat.type_prestation.lower() and 'désinsectisation' in contrat.type_prestation.lower() and 'désinfection' not in contrat.type_prestation.lower()
-                      else '#c0392b' %}
+          {% set cp = contrat.type_prestation.lower() %}
+          {% set couleur = '#e67e22' if 'dératisation' in cp
+                      else '#1aabe3' if 'désinsectisation' in cp
+                      else '#27ae60' if 'désinfection' in cp
+                      else '#9b59b6' if 'dépigeonnage' in cp
+                      else '#795548' if 'taupe' in cp
+                      else '#e74c3c' if 'frelon' in cp
+                      else '#f39c12' if 'guêpe' in cp or 'guepe' in cp
+                      else '#f1c40f' if 'abeille' in cp
+                      else '#3788d8' %}
           <div class="mb-2 p-2 border rounded">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="small fw-semibold">

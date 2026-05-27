@@ -135,18 +135,15 @@ class Intervention(db.Model):
     @property
     def couleur(self):
         if self.priorite == 'urgente': return '#e74c3c'
-        # Couleur par type de prestation (du plus spécifique au moins spécifique)
         t = (self.type_intervention or '').lower()
-        if 'dératisation' in t and 'désinsectisation' in t and 'désinfection' in t:
-            return '#c0392b'   # rouge foncé — triple prestation
-        if 'dératisation' in t and 'désinsectisation' in t:
-            return '#8e44ad'   # violet — double prestation
-        if 'dératisation' in t:
-            return '#e67e22'   # orange
-        if 'désinsectisation' in t:
-            return '#1aabe3'   # bleu HPS
-        if 'désinfection' in t:
-            return '#27ae60'   # vert
+        if 'dératisation' in t:    return '#e67e22'   # orange
+        if 'désinsectisation' in t: return '#1aabe3'  # bleu HPS
+        if 'désinfection' in t:    return '#27ae60'   # vert
+        if 'dépigeonnage' in t:    return '#9b59b6'   # violet
+        if 'taupe' in t:           return '#795548'   # marron
+        if 'frelon' in t:          return '#e74c3c'   # rouge
+        if 'guêpe' in t or 'guepe' in t: return '#f39c12'  # jaune-orange
+        if 'abeille' in t:         return '#f1c40f'   # jaune
         return {'planifiee': '#3788d8', 'en_cours': '#f39c12',
                 'terminee': '#95a5a6', 'annulee': '#bdc3c7'}.get(self.statut, '#3788d8')
 
@@ -1149,8 +1146,12 @@ TYPES_PRESTATION = [
     'Dératisation',
     'Désinsectisation',
     'Désinfection',
-    'Dératisation + Désinsectisation',
-    'Dératisation + Désinsectisation + Désinfection',
+    'Dépigeonnage',
+    'Taupe',
+    'Nid frelons',
+    'Frelons asiatiques',
+    'Guêpes',
+    'Abeilles',
 ]
 
 def _planifier_passages_auto(client, type_prestation, passages_annuels, date_debut, date_fin):

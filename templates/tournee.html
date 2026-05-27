@@ -152,12 +152,15 @@ let routeLayer = L.layerGroup().addTo(map);
 // Couleurs par type de prestation
 function couleurType(type) {
   const t = (type || '').toLowerCase();
-  if (t.includes('dératisation') && t.includes('désinsectisation') && t.includes('désinfection')) return '#c0392b';
-  if (t.includes('dératisation') && t.includes('désinsectisation')) return '#8e44ad';
-  if (t.includes('dératisation')) return '#e67e22';
+  if (t.includes('dératisation'))    return '#e67e22';
   if (t.includes('désinsectisation')) return '#1aabe3';
-  if (t.includes('désinfection')) return '#27ae60';
-  return '#1aabe3';
+  if (t.includes('désinfection'))    return '#27ae60';
+  if (t.includes('dépigeonnage'))    return '#9b59b6';
+  if (t.includes('taupe'))           return '#795548';
+  if (t.includes('frelon'))          return '#e74c3c';
+  if (t.includes('guêpe') || t.includes('guepe')) return '#f39c12';
+  if (t.includes('abeille'))         return '#f1c40f';
+  return '#3788d8';
 }
 
 function markerIcon(num, color) {
