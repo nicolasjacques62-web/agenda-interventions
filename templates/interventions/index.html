@@ -2,6 +2,35 @@
 {% block title %}Interventions{% endblock %}
 {% block page_title %}<i class="bi bi-wrench me-2"></i>Interventions{% endblock %}
 
+{% block head %}
+<style>
+  .vue-btn.active { background: var(--hps-blue); color: #fff; border-color: var(--hps-blue); }
+
+  /* Dossiers client */
+  .dossier-header {
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+  }
+  .dossier-header:hover { background: #f0f6fa; }
+  .dossier-header.open   { background: var(--hps-blue); color: #fff; border-radius: 8px 8px 0 0 !important; }
+  .dossier-header.open .text-muted { color: rgba(255,255,255,.75) !important; }
+  .dossier-header.open .badge-statut { opacity: .9; }
+  .dossier-arrow { transition: transform .2s; }
+  .dossier-header.open .dossier-arrow { transform: rotate(90deg); }
+
+  /* Couleurs barre latérale par type */
+  .row-derat    { border-left: 3px solid #e67e22; }
+  .row-desinsect{ border-left: 3px solid #1aabe3; }
+  .row-desinfect{ border-left: 3px solid #27ae60; }
+  .row-multi    { border-left: 3px solid #8e44ad; }
+  .row-urgente  { border-left: 3px solid #e74c3c; }
+  .row-normale  { border-left: 3px solid var(--hps-blue); }
+  .row-faible   { border-left: 3px solid #95a5a6; }
+</style>
+{% endblock %}
+
 {% block topbar_actions %}
 <a href="{{ url_for('agenda') }}" class="btn btn-outline-primary btn-sm">
   <i class="bi bi-calendar3 me-1"></i>Agenda
@@ -12,26 +41,29 @@
 {% endblock %}
 
 {% block content %}
+
+<!-- Filtres -->
 <div class="card mb-3">
   <div class="card-body py-2">
     <form class="row g-2 align-items-end" method="GET">
+      <input type="hidden" name="vue" value="{{ vue }}">
       <div class="col-md-3">
         <label class="form-label small mb-1">Statut</label>
         <select name="statut" class="form-select form-select-sm">
           <option value="">Tous les statuts</option>
           <option value="planifiee" {% if statut=='planifiee' %}selected{% endif %}>Planifiée</option>
-          <option value="en_cours" {% if statut=='en_cours' %}selected{% endif %}>En cours</option>
-          <option value="terminee" {% if statut=='terminee' %}selected{% endif %}>Terminée</option>
-          <option value="annulee" {% if statut=='annulee' %}selected{% endif %}>Annulée</option>
+          <option value="en_cours"  {% if statut=='en_cours'  %}selected{% endif %}>En cours</option>
+          <option value="terminee"  {% if statut=='terminee'  %}selected{% endif %}>Terminée</option>
+          <option value="annulee"   {% if statut=='annulee'   %}selected{% endif %}>Annulée</option>
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label class="form-label small mb-1">Priorité</label>
         <select name="priorite" class="form-select form-select-sm">
           <option value="">Toutes</option>
           <option value="urgente" {% if priorite=='urgente' %}selected{% endif %}>Urgente</option>
           <option value="normale" {% if priorite=='normale' %}selected{% endif %}>Normale</option>
-          <option value="faible" {% if priorite=='faible' %}selected{% endif %}>Faible</option>
+          <option value="faible"  {% if priorite=='faible'  %}selected{% endif %}>Faible</option>
         </select>
       </div>
       <div class="col-md-4">
@@ -44,16 +76,167 @@
         </select>
       </div>
       <div class="col-auto">
-        <button class="btn btn-outline-secondary btn-sm">Filtrer</button>
-        <a href="{{ url_for('interventions_liste') }}" class="btn btn-outline-danger btn-sm">Reset</a>
+        <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-funnel me-1"></i>Filtrer</button>
+        <a href="{{ url_for('interventions_liste', vue=vue) }}" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-x me-1"></i>Reset
+        </a>
+      </div>
+
+      <!-- Toggle vue -->
+      <div class="col-auto ms-auto">
+        <div class="btn-group btn-group-sm" role="group">
+          <a href="{{ url_for('interventions_liste', vue='liste', statut=statut, priorite=priorite, client_id=cid) }}"
+             class="btn btn-outline-secondary vue-btn {% if vue=='liste' %}active{% endif %}">
+            <i class="bi bi-list-ul me-1"></i>Liste
+          </a>
+          <a href="{{ url_for('interventions_liste', vue='dossiers', statut=statut, priorite=priorite, client_id=cid) }}"
+             class="btn btn-outline-secondary vue-btn {% if vue=='dossiers' %}active{% endif %}">
+            <i class="bi bi-folder2-open me-1"></i>Par client
+          </a>
+        </div>
       </div>
     </form>
   </div>
 </div>
 
+{% if not interventions %}
+<div class="card">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-calendar-x fs-1 d-block mb-2"></i>Aucune intervention trouvée
+  </div>
+</div>
+
+{% elif vue == 'dossiers' %}
+<!-- ════════════════════════════════════════
+     VUE PAR CLIENT (dossiers accordéon)
+     ════════════════════════════════════════ -->
+
+{# Grouper par client (tri déjà fait dans la route : par nom client) #}
+{% set ns = namespace(current_client=None, idx=0) %}
+
+<div class="mb-2 text-muted small">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ interventions|length }} intervention(s) — {{ groupes|length }} client(s)
+  <span class="ms-3"><i class="bi bi-hand-point-up me-1"></i>Cliquez sur un dossier pour l'ouvrir</span>
+</div>
+
+<div id="accordion-dossiers">
+{% for client_nom, items in groupes.items() %}
+{% set dossier_id = "dossier-" ~ loop.index %}
+{% set items_list = items %}
+
+{# Compter les statuts #}
+{% set nb_planifiees = items_list | selectattr('statut','equalto','planifiee') | list | length %}
+{% set nb_en_cours   = items_list | selectattr('statut','equalto','en_cours')  | list | length %}
+{% set nb_terminees  = items_list | selectattr('statut','equalto','terminee')  | list | length %}
+
+<div class="card mb-2" style="border-radius:10px;overflow:hidden;">
+
+  <!-- En-tête dossier -->
+  <div class="dossier-header p-3 d-flex align-items-center gap-3"
+       onclick="toggleDossier('{{ dossier_id }}')"
+       id="head-{{ dossier_id }}">
+    <i class="bi bi-folder2 fs-5 dossier-arrow" id="arrow-{{ dossier_id }}"></i>
+    <div class="flex-fill">
+      <div class="fw-semibold">{{ client_nom }}</div>
+      <div class="text-muted small mt-1 d-flex gap-2 flex-wrap" id="badges-{{ dossier_id }}">
+        {% if nb_planifiees > 0 %}
+          <span class="badge" style="background:#3788d8">{{ nb_planifiees }} planifiée{{ 's' if nb_planifiees > 1 }}</span>
+        {% endif %}
+        {% if nb_en_cours > 0 %}
+          <span class="badge" style="background:#f39c12">{{ nb_en_cours }} en cours</span>
+        {% endif %}
+        {% if nb_terminees > 0 %}
+          <span class="badge" style="background:#27ae60">{{ nb_terminees }} terminée{{ 's' if nb_terminees > 1 }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-secondary rounded-pill">{{ items_list|length }}</span>
+      <a href="{{ url_for('client_detail', id=items_list[0].client_id) }}"
+         class="btn btn-sm btn-outline-light" onclick="event.stopPropagation()" title="Fiche client">
+        <i class="bi bi-person"></i>
+      </a>
+      <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ items_list[0].client_id }}"
+         class="btn btn-sm btn-outline-light" onclick="event.stopPropagation()" title="Planifier">
+        <i class="bi bi-plus-lg"></i>
+      </a>
+    </div>
+  </div>
+
+  <!-- Corps dossier (masqué par défaut) -->
+  <div class="dossier-body" id="{{ dossier_id }}" style="display:none;">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:90px">Date</th>
+            <th>Titre / Type</th>
+            <th style="width:90px">Priorité</th>
+            <th style="width:100px">Statut</th>
+            <th style="width:70px">Bon</th>
+            <th style="width:50px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in items_list %}
+          {% set row_class = 'row-urgente' if i.priorite=='urgente'
+                        else 'row-derat' if 'dératisation' in (i.type_intervention or '').lower() and 'désinsectisation' not in (i.type_intervention or '').lower()
+                        else 'row-desinsect' if 'désinsectisation' in (i.type_intervention or '').lower() and 'dératisation' not in (i.type_intervention or '').lower()
+                        else 'row-desinfect' if 'désinfection' in (i.type_intervention or '').lower() and 'dératisation' not in (i.type_intervention or '').lower()
+                        else 'row-multi' if (i.type_intervention or '') != ''
+                        else 'row-normale' %}
+          <tr class="{{ row_class }}">
+            <td class="small text-nowrap">
+              <div>{{ i.date_planifiee.strftime('%d/%m/%Y') }}</div>
+              <div class="text-muted">{{ i.date_planifiee.strftime('%H:%M') }}</div>
+            </td>
+            <td>
+              <div class="small fw-semibold">{{ i.titre }}</div>
+              {% if i.type_intervention %}
+                <div class="text-muted" style="font-size:.72rem">{{ i.type_intervention }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if i.priorite=='urgente' %}<span class="badge bg-danger">Urgente</span>
+              {% elif i.priorite=='normale' %}<span class="badge bg-primary">Normale</span>
+              {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}
+            </td>
+            <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+            <td>
+              {% if i.bon %}
+                <a href="{{ url_for('bon_detail', id=i.bon.id) }}" class="badge bg-{{ i.bon.statut_couleur }} text-decoration-none small">
+                  {{ i.bon.statut_label }}
+                </a>
+              {% else %}
+                <a href="{{ url_for('bon_nouveau') }}?intervention_id={{ i.id }}"
+                   class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:1px 5px">
+                  <i class="bi bi-file-plus"></i>
+                </a>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endfor %}
+</div>
+
+{% else %}
+<!-- ════════════════════════════════════════
+     VUE LISTE (tableau classique)
+     ════════════════════════════════════════ -->
 <div class="card">
   <div class="card-body p-0">
-    {% if interventions %}
     <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead class="table-light">
@@ -92,12 +275,35 @@
         </tbody>
       </table>
     </div>
-    {% else %}
-    <div class="text-center py-5 text-muted">
-      <i class="bi bi-calendar-x fs-1 d-block mb-2"></i>Aucune intervention trouvée
-    </div>
-    {% endif %}
   </div>
   <div class="card-footer text-muted small">{{ interventions|length }} intervention(s)</div>
 </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleDossier(id) {
+  const body  = document.getElementById(id);
+  const head  = document.getElementById('head-' + id);
+  const arrow = document.getElementById('arrow-' + id);
+  const isOpen = body.style.display !== 'none';
+
+  if (isOpen) {
+    body.style.display = 'none';
+    head.classList.remove('open');
+    arrow.className = arrow.className.replace('bi-folder2-open','bi-folder2');
+  } else {
+    body.style.display = 'block';
+    head.classList.add('open');
+    arrow.className = arrow.className.replace('bi-folder2','bi-folder2-open');
+  }
+}
+
+// Si un seul client filtre → ouvrir automatiquement
+{% if groupes and groupes|length == 1 %}
+document.addEventListener('DOMContentLoaded', () => toggleDossier('dossier-1'));
+{% endif %}
+</script>
 {% endblock %}

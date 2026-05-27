@@ -719,17 +719,36 @@ def agenda_events():
 @app.route('/interventions')
 @login_required
 def interventions_liste():
-    statut = request.args.get('statut','')
-    priorite = request.args.get('priorite','')
-    cid = request.args.get('client_id','')
+    statut   = request.args.get('statut', '')
+    priorite = request.args.get('priorite', '')
+    cid      = request.args.get('client_id', '')
+    vue      = request.args.get('vue', 'liste')   # 'liste' ou 'dossiers'
+
     q = Intervention.query
-    if statut: q = q.filter_by(statut=statut)
+    if statut:   q = q.filter_by(statut=statut)
     if priorite: q = q.filter_by(priorite=priorite)
-    if cid: q = q.filter_by(client_id=int(cid))
-    interventions = q.order_by(Intervention.date_planifiee.desc()).all()
+    if cid:      q = q.filter_by(client_id=int(cid))
+
+    # Tri : par nom client puis par date pour la vue dossiers
+    interventions = (q.join(Client)
+                      .order_by(Client.nom.asc(), Intervention.date_planifiee.desc())
+                      .all())
+
     clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
-    return render_template('interventions/index.html', interventions=interventions,
-                           clients=clients, statut=statut, priorite=priorite, cid=cid)
+
+    # Grouper par nom client (dict ordonné)
+    from collections import OrderedDict
+    groupes = OrderedDict()
+    for i in interventions:
+        nom = i.client.nom_affichage
+        groupes.setdefault(nom, []).append(i)
+
+    return render_template('interventions/index.html',
+                           interventions=interventions,
+                           groupes=groupes,
+                           clients=clients,
+                           statut=statut, priorite=priorite, cid=cid,
+                           vue=vue)
 
 @app.route('/interventions/nouvelle', methods=['GET', 'POST'])
 @login_required
@@ -1255,10 +1274,26 @@ def portail_dashboard(token):
     c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
-    interventions = Intervention.query.filter_by(client_id=c.id)\
+    now = datetime.now()
+    a_venir = Intervention.query.filter_by(client_id=c.id)\
+        .filter(Intervention.date_planifiee >= now,
+                Intervention.statut.in_(['planifiee', 'en_cours']))\
+        .order_by(Intervention.date_planifiee.asc()).all()
+    passes = Intervention.query.filter_by(client_id=c.id)\
+        .filter(db.or_(Intervention.date_planifiee < now,
+                       Intervention.statut.in_(['terminee', 'annulee'])))\
         .order_by(Intervention.date_planifiee.desc()).all()
+    bons = BonIntervention.query.join(Intervention)\
+        .filter(Intervention.client_id == c.id,
+                BonIntervention.statut.in_(['finalise', 'envoye', 'signe']))\
+        .order_by(BonIntervention.date_creation.desc()).all()
+    soc = get_param('societe', 'HPS')
+    tel_soc = get_param('telephone', '')
+    email_soc = get_param('email', '')
     return render_template('portal/dashboard.html', client=c,
-                           interventions=interventions, token=token)
+                           a_venir=a_venir, passes=passes, bons=bons,
+                           token=token, soc=soc, tel_soc=tel_soc,
+                           email_soc=email_soc)
 
 @app.route('/portail/<token>/bon/<int:bid>/pdf')
 def portail_bon_pdf(token, bid):
