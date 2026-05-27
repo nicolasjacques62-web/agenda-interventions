@@ -702,18 +702,25 @@ def agenda_events():
     if end: q = q.filter(Intervention.date_planifiee <= end)
     events = []
     for i in q.all():
-        fin = i.date_planifiee + timedelta(minutes=i.duree_estimee)
-        events.append({
-            'id': i.id,
-            'title': f"[{i.client.nom_affichage}] {i.titre}",
-            'start': i.date_planifiee.isoformat(),
-            'end': fin.isoformat(),
-            'color': i.couleur,
-            'url': url_for('intervention_detail', id=i.id),
-            'extendedProps': {'statut': i.statut_label, 'priorite': i.priorite,
-                              'client': i.client.nom_affichage,
-                              'technicien': i.technicien or ''},
-        })
+        try:
+            duree = int(i.duree_estimee) if i.duree_estimee else 60
+            fin = i.date_planifiee + timedelta(minutes=duree)
+            events.append({
+                'id': i.id,
+                'title': f"[{i.client.nom_affichage}] {i.titre}",
+                'start': i.date_planifiee.isoformat(),
+                'end': fin.isoformat(),
+                'color': i.couleur,
+                'url': url_for('intervention_detail', id=i.id),
+                'extendedProps': {
+                    'statut': i.statut_label,
+                    'priorite': i.priorite,
+                    'client': i.client.nom_affichage,
+                    'technicien': i.technicien or '',
+                },
+            })
+        except Exception:
+            pass  # ignorer les interventions corrompues
     return jsonify(events)
 
 @app.route('/interventions')
