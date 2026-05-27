@@ -142,6 +142,8 @@ class Client(db.Model):
     portal_actif = db.Column(db.Boolean, default=False)
     notifs_actives = db.Column(db.Boolean, default=True)  # alertes email portail
     sms_actif = db.Column(db.Boolean, default=False)       # alertes SMS portail
+    reset_token = db.Column(db.String(64))                 # token réinitialisation MDP portail
+    reset_token_expiry = db.Column(db.DateTime)            # expiration du token (1h)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     interventions = db.relationship('Intervention', backref='client', lazy=True,
                                     cascade='all, delete-orphan')
@@ -702,6 +704,67 @@ def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=N
         with urllib.request.urlopen(req, timeout=30) as resp:
             if resp.status in (200, 201, 202):
                 return True, "Notification envoyée."
+            return False, f"Erreur Brevo : statut {resp.status}"
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        return False, f"Erreur Brevo {e.code} : {body}"
+    except Exception as e:
+        return False, str(e)
+
+
+def envoyer_email_reset_portail(client, reset_url):
+    """Envoie un email de réinitialisation de mot de passe portail client."""
+    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+    if not api_key:
+        return False, "Clé API Brevo manquante."
+    if not client.email:
+        return False, "Pas d'email pour ce client."
+    soc = get_param('societe', 'HPS')
+    email_exp = get_param('email', '')
+    prenom = client.prenom or client.nom
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+      <div style="background:#1e293b;padding:20px 24px;border-radius:10px 10px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:18px">{soc}</h2>
+        <p style="color:#94a3b8;margin:4px 0 0;font-size:13px">Espace client sécurisé</p>
+      </div>
+      <div style="background:#fff;padding:28px 24px;border:1px solid #e2e8f0;border-top:none">
+        <p style="font-size:15px">Bonjour <strong>{prenom}</strong>,</p>
+        <p style="font-size:14px;color:#475569">
+          Vous avez demandé la réinitialisation de votre mot de passe.<br>
+          Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.
+          <br><strong>Ce lien est valable 1 heure.</strong>
+        </p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="{reset_url}"
+             style="background:#1aabe3;color:#fff;padding:13px 32px;border-radius:8px;
+                    text-decoration:none;font-weight:600;font-size:15px;display:inline-block">
+            🔑 Réinitialiser mon mot de passe
+          </a>
+        </div>
+        <p style="font-size:12px;color:#94a3b8">
+          Si vous n'avez pas fait cette demande, ignorez cet email.<br>
+          Lien : <a href="{reset_url}" style="color:#1aabe3">{reset_url}</a>
+        </p>
+      </div>
+      <div style="background:#f8fafc;padding:12px 24px;border-radius:0 0 10px 10px;
+                  font-size:11px;color:#94a3b8;text-align:center">
+        {soc}{f' — {email_exp}' if email_exp else ''} — Ne pas répondre à cet email
+      </div>
+    </div>"""
+    payload = json.dumps({
+        "subject": f"Réinitialisation de votre mot de passe — {soc}",
+        "htmlContent": html,
+        "sender": {"name": soc, "email": email_exp or "no-reply@hps-interventions.fr"},
+        "to": [{"email": client.email, "name": client.nom_affichage}],
+    }).encode('utf-8')
+    try:
+        req = urllib.request.Request(
+            'https://api.brevo.com/v3/smtp/email', data=payload,
+            headers={'api-key': api_key, 'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201, 202):
+                return True, "Email de réinitialisation envoyé."
             return False, f"Erreur Brevo : statut {resp.status}"
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8', errors='replace')
@@ -2012,7 +2075,53 @@ def portail_access(token):
                 return redirect(url_for('portail_dashboard', token=token))
             flash('Mot de passe incorrect.', 'danger')
     return render_template('portal/access.html', client=c, token=token,
-                           is_registered=bool(c.portal_password_hash))
+                           is_registered=bool(c.portal_password_hash), mode='default')
+
+@app.route('/portail/<token>/mot-de-passe-oublie', methods=['GET', 'POST'])
+@limiter.limit("5 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
+def portail_reset_request(token):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
+    if not c: abort(404)
+    if request.method == 'POST':
+        email_saisi = request.form.get('email', '').strip().lower()
+        # Vérifier sans révéler si l'email existe ou non (sécurité)
+        if c.email and email_saisi == c.email.lower():
+            reset_tok = secrets.token_urlsafe(48)
+            c.reset_token = reset_tok
+            c.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+            db.session.commit()
+            reset_url = url_for('portail_reset_confirm', reset_token=reset_tok, _external=True)
+            threading.Thread(target=lambda: envoyer_email_reset_portail(c, reset_url), daemon=True).start()
+        # Message neutre dans tous les cas
+        flash('Si cette adresse correspond à votre compte, vous recevrez un email sous quelques minutes.', 'info')
+        return redirect(url_for('portail_access', token=token))
+    return render_template('portal/access.html', client=c, token=token,
+                           is_registered=True, mode='reset_request')
+
+@app.route('/portail/reset/<reset_token>', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
+def portail_reset_confirm(reset_token):
+    c = Client.query.filter_by(reset_token=reset_token).first()
+    if not c or not c.reset_token_expiry or c.reset_token_expiry < datetime.utcnow():
+        flash('Ce lien de réinitialisation est invalide ou expiré. Veuillez refaire une demande.', 'danger')
+        return render_template('portal/access.html', client=None, token=None,
+                               is_registered=True, mode='reset_expired')
+    if request.method == 'POST':
+        pwd  = request.form.get('password', '')
+        cpwd = request.form.get('confirm_password', '')
+        if len(pwd) < 6:
+            flash('Mot de passe trop court (6 caractères minimum).', 'danger')
+        elif pwd != cpwd:
+            flash('Les mots de passe ne correspondent pas.', 'danger')
+        else:
+            c.set_portal_password(pwd)
+            c.reset_token = None
+            c.reset_token_expiry = None
+            db.session.commit()
+            flash('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.', 'success')
+            return redirect(url_for('portail_access', token=c.access_token))
+    return render_template('portal/access.html', client=c, token=c.access_token,
+                           is_registered=True, mode='reset_confirm', reset_token=reset_token)
 
 @app.route('/portail/<token>/dashboard')
 def portail_dashboard(token):
@@ -2135,6 +2244,8 @@ def init_db():
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_technicien TEXT",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notifs_actives BOOLEAN DEFAULT TRUE",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_actif BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),
