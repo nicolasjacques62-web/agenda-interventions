@@ -301,9 +301,10 @@
     </div>
 
     <!-- Plans d'appâtage -->
+    {% set plans = client.plans_appatage if client.plans_appatage is defined else [] %}
     <div class="card mt-3" id="plans-appatage">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-map me-2"></i>Plans d'appâtage ({{ client.plans_appatage|length }})</span>
+        <span><i class="bi bi-map me-2"></i>Plans d'appâtage ({{ plans|length }})</span>
         <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-plan-upload">
           <i class="bi bi-plus-lg me-1"></i>Ajouter
         </button>
@@ -368,9 +369,9 @@
 
       <!-- Galerie des plans -->
       <div class="card-body p-2">
-        {% if client.plans_appatage %}
+        {% if plans %}
         <div class="row g-2">
-          {% for plan in client.plans_appatage | sort(attribute='created_at', reverse=True) %}
+          {% for plan in plans | sort(attribute='created_at', reverse=True) %}
           <div class="col-sm-6 col-lg-4">
             <div class="card h-100 border shadow-sm">
               <!-- Vignette -->

@@ -1973,6 +1973,15 @@ def init_db():
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_image TEXT",
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_technicien TEXT",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notifs_actives BOOLEAN DEFAULT TRUE",
+            """CREATE TABLE IF NOT EXISTS plans_appatage (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER NOT NULL REFERENCES clients(id),
+                nom VARCHAR(200) DEFAULT 'Plan',
+                notes TEXT,
+                data TEXT NOT NULL,
+                mimetype VARCHAR(80) DEFAULT 'image/jpeg',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
         ]
         for sql in migrations:
             try:
