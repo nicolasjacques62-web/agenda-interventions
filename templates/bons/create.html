@@ -40,10 +40,58 @@
 
     <!-- Travaux effectués -->
     <div class="card mb-3">
-      <div class="card-header">Travaux effectués</div>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Travaux effectués</span>
+        <span class="badge bg-primary">Modèles disponibles</span>
+      </div>
       <div class="card-body">
-        <textarea name="travaux_effectues" class="form-control" rows="5"
-                  placeholder="Décrire les travaux réalisés…">{{ bon.travaux_effectues if bon else '' }}</textarea>
+
+        <!-- Menu déroulant des modèles -->
+        <div class="mb-2">
+          <div class="input-group">
+            <select id="select-modele" class="form-select form-select-sm"
+                    onchange="insererModele()">
+              <option value="">📋 Choisir un modèle de travaux…</option>
+              {% set ns = namespace(groupe_actuel='') %}
+              {% for m in travaux_modeles %}
+                {% if m.groupe != ns.groupe_actuel %}
+                  {% if ns.groupe_actuel != '' %}</optgroup>{% endif %}
+                  <optgroup label="── {{ m.groupe }} ──">
+                  {% set ns.groupe_actuel = m.groupe %}
+                {% endif %}
+                <option value="{{ m.texte | e }}">{{ m.label }}</option>
+              {% endfor %}
+              {% if travaux_modeles %}</optgroup>{% endif %}
+            </select>
+            <button type="button" class="btn btn-outline-secondary btn-sm"
+                    onclick="viderTexte()" title="Vider le champ">
+              <i class="bi bi-eraser"></i>
+            </button>
+          </div>
+          <div class="form-text">
+            <i class="bi bi-info-circle me-1"></i>
+            Sélectionnez un modèle pour le copier dans la zone de texte, puis modifiez-le à votre convenance.
+          </div>
+        </div>
+
+        <textarea name="travaux_effectues" id="travaux-textarea" class="form-control" rows="6"
+                  placeholder="Décrire les travaux réalisés… ou choisissez un modèle ci-dessus.">{{ bon.travaux_effectues if bon else '' }}</textarea>
+
+        <!-- Bouton ajouter (append) -->
+        <div class="mt-2 d-flex gap-2 align-items-center">
+          <small class="text-muted">Mode d'insertion :</small>
+          <div class="btn-group btn-group-sm" id="mode-insertion">
+            <button type="button" class="btn btn-outline-primary active" id="btn-remplacer"
+                    onclick="setMode('remplacer')">
+              <i class="bi bi-arrow-repeat me-1"></i>Remplacer
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btn-ajouter"
+                    onclick="setMode('ajouter')">
+              <i class="bi bi-plus-lg me-1"></i>Ajouter à la suite
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -230,6 +278,39 @@
 </form>
 
 <script>
+// ── Modèles de travaux ──
+let modeInsertion = 'remplacer'; // 'remplacer' ou 'ajouter'
+
+function setMode(mode) {
+  modeInsertion = mode;
+  document.getElementById('btn-remplacer').classList.toggle('active', mode === 'remplacer');
+  document.getElementById('btn-ajouter').classList.toggle('active', mode === 'ajouter');
+}
+
+function insererModele() {
+  const sel = document.getElementById('select-modele');
+  const texte = sel.value;
+  if (!texte) return;
+  const ta = document.getElementById('travaux-textarea');
+  if (modeInsertion === 'remplacer') {
+    ta.value = texte;
+  } else {
+    ta.value = ta.value ? ta.value.trimEnd() + '\n\n' + texte : texte;
+  }
+  // Remettre le select sur la valeur vide
+  sel.value = '';
+  // Focus sur le textarea pour modifier directement
+  ta.focus();
+  ta.scrollTop = ta.scrollHeight;
+}
+
+function viderTexte() {
+  if (confirm('Vider le champ travaux effectués ?')) {
+    document.getElementById('travaux-textarea').value = '';
+    document.getElementById('select-modele').value = '';
+  }
+}
+
 function ajouterLigne() {
   document.getElementById('matEmpty').classList.add('d-none');
   const tr = document.createElement('tr');
