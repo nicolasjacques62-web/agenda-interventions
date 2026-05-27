@@ -939,10 +939,8 @@ def _suggerer_dates(client, nb=8, horizon=60):
 
         nb_inter = len(inter_jour)
 
-        # Sans coordonnées client on ne peut pas filtrer → on inclut avec score neutre
+        # Sans coordonnées client → règle des 30 km non vérifiable → date non proposée
         if not client.latitude or not client.longitude:
-            candidats.append({'date': jour, 'score': 30,
-                               'nb_inter': nb_inter, 'detour_km': None})
             continue
 
         # Distance au stop le plus proche (meilleure approximation du détour)
@@ -952,7 +950,7 @@ def _suggerer_dates(client, nb=8, horizon=60):
             if i.client.latitude and i.client.longitude
         ]
         if not stops_geocodes:
-            continue   # aucun stop géocodé ce jour → on ne peut pas évaluer
+            continue   # stops non géocodés → règle des 30 km non vérifiable → ignoré
 
         detour_km = min(
             _haversine(client.latitude, client.longitude, lat, lon)
