@@ -230,6 +230,22 @@ class ContratClient(db.Model):
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
+# Noms français des jours et mois (indépendant de la locale système)
+_JOURS_FR  = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche']
+_MOIS_FR   = ['janvier','février','mars','avril','mai','juin',
+               'juillet','août','septembre','octobre','novembre','décembre']
+
+@app.template_filter('date_fr')
+def date_fr_filter(dt, fmt='%d/%m/%Y'):
+    """Formate une date en remplaçant %A/%a (jour) et %B/%b (mois) par leur équivalent français."""
+    if not dt:
+        return ''
+    fmt = fmt.replace('%A', _JOURS_FR[dt.weekday()])
+    fmt = fmt.replace('%a', _JOURS_FR[dt.weekday()][:3])
+    fmt = fmt.replace('%B', _MOIS_FR[dt.month - 1])
+    fmt = fmt.replace('%b', _MOIS_FR[dt.month - 1][:3])
+    return dt.strftime(fmt)
+
 @login_manager.user_loader
 def load_user(uid): return User.query.get(int(uid))
 
