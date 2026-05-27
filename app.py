@@ -844,10 +844,23 @@ def envoyer_bon_email(bon):
 
 # ─── GÉOCODAGE & OPTIMISATION TOURNÉE ────────────────────────────────────────
 
-def _geocoder_client(client):
-    """Géocode l'adresse d'un client via Nominatim (OpenStreetMap). Met à jour lat/lng."""
-    if client.latitude and client.longitude:
+def _geocoder_avec_ctx(client_id):
+    """Lance le géocodage d'un client dans un app_context (pour les threads)."""
+    try:
+        with app.app_context():
+            c = Client.query.get(client_id)
+            if c:
+                _geocoder_client(c)
+    except Exception:
+        pass
+
+def _geocoder_client(client, force=False):
+    """Géocode l'adresse d'un client via Nominatim (OpenStreetMap). Met à jour lat/lng.
+    force=True : recalcule même si des coordonnées existent déjà (ex. adresse modifiée)."""
+    if client.latitude and client.longitude and not force:
         return True  # déjà géocodé
+    if not client.adresse and not client.ville:
+        return False  # pas d'adresse à géocoder
     adresse = ' '.join(filter(None, [client.adresse, client.code_postal, client.ville, 'France']))
     try:
         req = urllib.request.Request(
@@ -982,6 +995,9 @@ def client_nouveau():
         )
         db.session.add(c)
         db.session.commit()
+        # Géocoder l'adresse en arrière-plan dès la création
+        if c.adresse or c.ville:
+            threading.Thread(target=lambda: _geocoder_avec_ctx(c.id), daemon=True).start()
 
         if request.form.get('planif_auto') and request.form.get('date_inter'):
             try:
@@ -1028,6 +1044,8 @@ def client_detail(id):
 def client_modifier(id):
     c = Client.query.get_or_404(id)
     if request.method == 'POST':
+        # Détecter si l'adresse change (pour forcer le recalcul GPS)
+        adresse_avant = (c.adresse or '') + (c.ville or '') + (c.code_postal or '')
         c.nom = request.form['nom'].strip()
         c.prenom = request.form.get('prenom','').strip()
         c.email = request.form.get('email','').strip()
@@ -1040,6 +1058,11 @@ def client_modifier(id):
         c.societe = request.form.get('societe','').strip()
         c.siret_client = request.form.get('siret_client','').strip()
         c.notes = request.form.get('notes','').strip()
+        adresse_apres = (c.adresse or '') + (c.ville or '') + (c.code_postal or '')
+        if adresse_avant != adresse_apres:
+            # Adresse modifiée → effacer les anciennes coordonnées pour recalcul à la prochaine tournée
+            c.latitude = None
+            c.longitude = None
         db.session.commit()
         flash('Fiche client mise à jour.', 'success')
         return redirect(url_for('client_detail', id=id))
@@ -1599,10 +1622,13 @@ def tournee_optimiser():
         dist_total += _haversine(all_pts[i]['lat'], all_pts[i]['lon'],
                                  all_pts[i+1]['lat'], all_pts[i+1]['lon'])
 
-    # Lien Google Maps avec tous les waypoints
+    # Lien Google Maps avec tous les waypoints (départ inclus si fourni)
     if route_optimisee:
-        waypoints = '/'.join(f"{p['lat']},{p['lon']}" for p in route_optimisee)
-        gmaps_url = f"https://www.google.com/maps/dir/{waypoints}"
+        stops = '/'.join(f"{p['lat']},{p['lon']}" for p in route_optimisee)
+        if depart_lat and depart_lon:
+            gmaps_url = f"https://www.google.com/maps/dir/{depart_lat},{depart_lon}/{stops}"
+        else:
+            gmaps_url = f"https://www.google.com/maps/dir/{stops}"
         waze_first = f"https://waze.com/ul?ll={route_optimisee[0]['lat']},{route_optimisee[0]['lon']}&navigate=yes"
     else:
         gmaps_url = waze_first = ''
