@@ -991,7 +991,8 @@ def bon_nouveau():
     ).order_by(Intervention.date_planifiee.desc()).all()
     return render_template('bons/create.html', bon=None, interventions=interventions,
                            iid=int(iid) if iid else None, materiaux=[],
-                           travaux_modeles=TRAVAUX_MODELES)
+                           travaux_modeles=TRAVAUX_MODELES,
+                           preconisations_modeles=PRECONISATIONS_MODELES)
 
 @app.route('/bons/<int:id>')
 @login_required
@@ -1056,7 +1057,8 @@ def bon_modifier(id):
     mats = json.loads(b.materiaux_utilises) if b.materiaux_utilises else []
     return render_template('bons/create.html', bon=b, intervention=b.intervention,
                            interventions=[], iid=b.intervention_id, materiaux=mats,
-                           travaux_modeles=TRAVAUX_MODELES)
+                           travaux_modeles=TRAVAUX_MODELES,
+                           preconisations_modeles=PRECONISATIONS_MODELES)
 
 def _extract_mats(req):
     desig = req.form.getlist('mat_designation[]')
@@ -1358,6 +1360,80 @@ TRAVAUX_MODELES = [
      "texte": "Récupération de l'essaim d'abeilles en douceur et transfert vers un apiculteur partenaire. Aucun produit chimique utilisé. Intervention réalisée en tenue de protection apicole."},
     {"groupe": "Abeilles", "label": "Traitement colonie abeilles (bâtiment)",
      "texte": "Traitement de la colonie d'abeilles installée dans les parois/toiture. Injection d'insecticide dans les accès de la ruche sauvage. Obturation des entrées après traitement. Recommandation de contacter un apiculteur en amont si essaim récent."},
+]
+
+PRECONISATIONS_MODELES = [
+    # ══ Dératisation ══
+    {"groupe": "Dératisation", "label": "Colmatage des points d'entrée",
+     "texte": "Colmatage urgent des points d'entrée identifiés (gaines, fissures, passages de tuyauteries). Intervention maçonnerie ou pose de grillage anti-rongeurs recommandée. Sans cette action, le traitement restera insuffisant."},
+    {"groupe": "Dératisation", "label": "Amélioration stockage alimentaire",
+     "texte": "Améliorer les conditions de stockage : produits alimentaires dans des contenants hermétiques (inox ou plastique rigide), surélevés du sol (minimum 15 cm). Supprimer tout accès à la nourriture et à l'eau pour les rongeurs."},
+    {"groupe": "Dératisation", "label": "Plan de contrôle mensuel",
+     "texte": "Mise en place d'un plan de contrôle mensuel recommandée. Passage régulier du technicien pour relevé des postes et ajustement du dispositif. Indispensable pour maintenir le site sous contrôle et répondre aux exigences HACCP."},
+    {"groupe": "Dératisation", "label": "Formation du personnel",
+     "texte": "Formation du personnel à la détection des signes d'activité rongeurs (fèces, gnures, traces, bruits nocturnes). Signalement immédiat à la direction en cas de constat. Tenue d'un registre des observations recommandée."},
+    {"groupe": "Dératisation", "label": "Nettoyage zones de stockage",
+     "texte": "Nettoyage en profondeur des zones de stockage et locaux techniques recommandé. Élimination des déchets, cartons et matériaux accumulés qui constituent des sites de nidification. Fréquence : minimum mensuelle."},
+    {"groupe": "Dératisation", "label": "Inspection des réseaux",
+     "texte": "Inspection des réseaux d'évacuation et siphons de sol recommandée. Pose de clapets anti-refoulement sur les évacuations si remontée de rongeurs par les canalisations suspectée."},
+
+    # ══ Désinsectisation ══
+    {"groupe": "Désinsectisation", "label": "Renforcement hygiène locaux",
+     "texte": "Renforcement de l'hygiène des locaux indispensable : nettoyage quotidien des plans de travail, évacuations et joints. Élimination des résidus alimentaires. Sans amélioration des conditions d'hygiène, le risque de réinfestation est élevé."},
+    {"groupe": "Désinsectisation", "label": "Traitement préventif trimestriel",
+     "texte": "Traitement préventif trimestriel recommandé pour maintenir le site sous contrôle. Un passage régulier permet d'agir avant tout développement de foyer d'infestation."},
+    {"groupe": "Désinsectisation", "label": "Remplacement des joints cuisine",
+     "texte": "Remplacement des joints de cuisine et de plomberie endommagés ou décollés recommandé. Les joints dégradés constituent des refuges idéaux pour les cafards et blattes. Intervention plombier / carreleur conseillée."},
+    {"groupe": "Désinsectisation", "label": "Nettoyage des évacuations",
+     "texte": "Nettoyage régulier des évacuations, siphons et grilles d'égout recommandé (minimum mensuel). Les dépôts organiques favorisent la prolifération des insectes. Utilisation d'un désinfectant adapté."},
+    {"groupe": "Désinsectisation", "label": "Remplacement des pièges de contrôle",
+     "texte": "Remplacement régulier des pièges de contrôle (plaques engluantes) tous les 2 mois ou dès saturation. Ces pièges permettent de détecter précocement toute réapparition d'infestation."},
+    {"groupe": "Désinsectisation", "label": "Lavage des textiles (punaises)",
+     "texte": "Lavage de l'ensemble des textiles à 60°C minimum (draps, taies, rideaux, vêtements). Passage de l'aspirateur sur les matelas, sommiers et plinthes. Mise en sac hermétique des textiles non lavables pendant 72h minimum."},
+
+    # ══ Désinfection ══
+    {"groupe": "Désinfection", "label": "Renouvellement traitement",
+     "texte": "Renouvellement du traitement de désinfection recommandé dans 3 mois. Mise en place d'un protocole de désinfection régulière des surfaces de contact (journalier ou hebdomadaire selon usage)."},
+    {"groupe": "Désinfection", "label": "Protocole désinfection quotidienne",
+     "texte": "Mise en place d'un protocole de désinfection quotidienne des surfaces de contact recommandée. Utilisation d'un produit désinfectant homologué. Formation du personnel aux bonnes pratiques d'hygiène."},
+    {"groupe": "Désinfection", "label": "Aération et ventilation",
+     "texte": "Amélioration de la ventilation des locaux recommandée. Une bonne aération réduit le développement bactérien et fongique. Vérification et entretien des grilles de ventilation et VMC."},
+    {"groupe": "Désinfection", "label": "Suivi médical (après décès)",
+     "texte": "Suivi médical recommandé pour toute personne ayant été exposée à la zone avant désinfection. Consultation d'un médecin en cas de symptômes (nausées, fièvre, troubles respiratoires). Conservation du rapport d'intervention pour dossier."},
+
+    # ══ Dépigeonnage ══
+    {"groupe": "Dépigeonnage", "label": "Inspection annuelle des dispositifs",
+     "texte": "Inspection annuelle des dispositifs anti-pigeons recommandée. Vérification de l'état des pics, filets et fixations. Remplacement des éléments endommagés. Nettoyage préventif des zones traitées."},
+    {"groupe": "Dépigeonnage", "label": "Traitement toiture complet",
+     "texte": "Traitement anti-pigeon complet de la toiture recommandé. L'intervention ponctuelle n'empêche pas les pigeons de se redéployer sur d'autres zones. Un traitement global assure une protection durable."},
+    {"groupe": "Dépigeonnage", "label": "Nettoyage trimestriel",
+     "texte": "Nettoyage trimestriel des zones souillées par les fientes recommandé. Les fientes de pigeon sont corrosives et présentent un risque sanitaire (histoplasmose). Désinfection systématique après chaque nettoyage."},
+    {"groupe": "Dépigeonnage", "label": "Obturation des accès toiture",
+     "texte": "Obturation de l'ensemble des accès à la toiture (lucanes, chatières, joints de rives) recommandée pour empêcher la nidification. Intervention couvreur / maçon à prévoir. Devis sur demande."},
+
+    # ══ Taupe ══
+    {"groupe": "Taupe", "label": "Surveillance sur 30 jours",
+     "texte": "Surveillance du terrain sur 30 jours recommandée. Signalement immédiat de toute nouvelle taupinière. En cas de réactivité, nouveau cycle de pièges à programmer rapidement."},
+    {"groupe": "Taupe", "label": "Traitement préventif de la pelouse",
+     "texte": "Traitement préventif recommandé en période d'activité intense (printemps / automne). Un suivi saisonnier permet de limiter les dégâts sur les espaces verts."},
+
+    # ══ Frelons / Guêpes ══
+    {"groupe": "Frelons asiatiques", "label": "Surveillance du secteur",
+     "texte": "Surveillance du secteur recommandée : les frelons asiatiques construisent généralement plusieurs nids secondaires dans un périmètre de 500m. Signalement de tout nid suspect au technicien."},
+    {"groupe": "Frelons asiatiques", "label": "Signalement à la mairie",
+     "texte": "Signalement à la mairie ou à la DDT recommandé (Vespa velutina est une espèce invasive). Certaines communes disposent d'un service de traitement gratuit ou subventionné."},
+    {"groupe": "Frelons asiatiques", "label": "Ne pas obstruer l'entrée du nid",
+     "texte": "Ne pas obstruer l'entrée du nid avant traitement complet. Les frelons enfermés deviennent agressifs et peuvent percer les cloisons. Périmètre de sécurité de 5m à respecter jusqu'à neutralisation confirmée."},
+    {"groupe": "Guêpes", "label": "Obturation du site après traitement",
+     "texte": "Obturation du site de nidification recommandée après confirmation de la neutralisation du nid (48h). Empêche toute réinstallation dans le même endroit la saison suivante."},
+    {"groupe": "Guêpes", "label": "Éviter les odeurs sucrées",
+     "texte": "Éviter de laisser des aliments sucrés ou boissons à l'air libre en extérieur. Les guêpes sont attirées par les odeurs sucrées et les protéines. Couvrir les poubelles et nettoyer les zones de repas."},
+
+    # ══ Abeilles ══
+    {"groupe": "Abeilles", "label": "Contact apiculteur recommandé",
+     "texte": "Contact avec un apiculteur local fortement recommandé avant toute intervention chimique sur un essaim d'abeilles. Les abeilles sont des espèces protégées et utiles. La récupération par un apiculteur est préférable au traitement."},
+    {"groupe": "Abeilles", "label": "Obturation après traitement",
+     "texte": "Obturation de l'accès à la cavité après traitement (minimum 72h après intervention). Risque de réinstallation d'un nouvel essaim si l'entrée reste ouverte. Restes de cire à retirer si accessible (risque de fusion en été et dégâts aux parois)."},
 ]
 
 def _planifier_passages_auto(client, type_prestation, passages_annuels, date_debut, date_fin):

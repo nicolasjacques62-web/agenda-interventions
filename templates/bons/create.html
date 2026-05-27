@@ -127,25 +127,76 @@
       </div>
     </div>
 
-    <!-- Observations & recommandations -->
+    <!-- Observations -->
     <div class="card mb-3">
-      <div class="card-header">Observations & recommandations</div>
+      <div class="card-header"><i class="bi bi-eye me-2"></i>Observations</div>
       <div class="card-body row g-3">
         <div class="col-12">
-          <label class="form-label fw-semibold">Observations</label>
           <textarea name="observations" class="form-control" rows="3"
-                    placeholder="Anomalies constatées, remarques…">{{ bon.observations if bon else '' }}</textarea>
-        </div>
-        <div class="col-12">
-          <label class="form-label fw-semibold">Recommandations</label>
-          <textarea name="recommandations" class="form-control" rows="3"
-                    placeholder="Actions préventives à prévoir, suivi…">{{ bon.recommandations if bon else '' }}</textarea>
+                    placeholder="Anomalies constatées, remarques sur l'état des lieux…">{{ bon.observations if bon else '' }}</textarea>
         </div>
         <div class="col-md-4">
-          <label class="form-label fw-semibold">Temps passé (minutes)</label>
+          <label class="form-label fw-semibold small">Temps passé (minutes)</label>
           <input type="number" name="temps_passe" class="form-control" min="0" step="15"
                  value="{{ bon.temps_passe if bon else '' }}" placeholder="Ex : 90">
         </div>
+      </div>
+    </div>
+
+    <!-- Préconisations -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-lightbulb me-2"></i>Préconisations</span>
+        <span class="badge bg-warning text-dark">Modèles disponibles</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Menu déroulant modèles préconisations -->
+        <div class="mb-2">
+          <div class="input-group">
+            <select id="select-preco" class="form-select form-select-sm"
+                    onchange="insererPreco()">
+              <option value="">💡 Choisir une préconisation…</option>
+              {% set ns2 = namespace(groupe_preco='') %}
+              {% for p in preconisations_modeles %}
+                {% if p.groupe != ns2.groupe_preco %}
+                  {% if ns2.groupe_preco != '' %}</optgroup>{% endif %}
+                  <optgroup label="── {{ p.groupe }} ──">
+                  {% set ns2.groupe_preco = p.groupe %}
+                {% endif %}
+                <option value="{{ p.texte | e }}">{{ p.label }}</option>
+              {% endfor %}
+              {% if preconisations_modeles %}</optgroup>{% endif %}
+            </select>
+            <button type="button" class="btn btn-outline-secondary btn-sm"
+                    onclick="viderPreco()" title="Vider le champ">
+              <i class="bi bi-eraser"></i>
+            </button>
+          </div>
+          <div class="form-text">
+            <i class="bi bi-info-circle me-1"></i>
+            Sélectionnez une préconisation ou rédigez librement. Mode :
+            <span id="mode-preco-label" class="fw-semibold text-primary">Remplacer</span>
+          </div>
+        </div>
+
+        <textarea name="recommandations" id="preco-textarea" class="form-control" rows="5"
+                  placeholder="Préconisations, actions correctives à mettre en place, suivi recommandé…">{{ bon.recommandations if bon else '' }}</textarea>
+
+        <div class="mt-2 d-flex gap-2 align-items-center">
+          <small class="text-muted">Mode :</small>
+          <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-warning active" id="btn-preco-remplacer"
+                    onclick="setModePreco('remplacer')">
+              <i class="bi bi-arrow-repeat me-1"></i>Remplacer
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="btn-preco-ajouter"
+                    onclick="setModePreco('ajouter')">
+              <i class="bi bi-plus-lg me-1"></i>Ajouter à la suite
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -308,6 +359,38 @@ function viderTexte() {
   if (confirm('Vider le champ travaux effectués ?')) {
     document.getElementById('travaux-textarea').value = '';
     document.getElementById('select-modele').value = '';
+  }
+}
+
+// ── Préconisations ──
+let modePreco = 'remplacer';
+
+function setModePreco(mode) {
+  modePreco = mode;
+  document.getElementById('btn-preco-remplacer').classList.toggle('active', mode === 'remplacer');
+  document.getElementById('btn-preco-ajouter').classList.toggle('active', mode === 'ajouter');
+  document.getElementById('mode-preco-label').textContent = mode === 'remplacer' ? 'Remplacer' : 'Ajouter à la suite';
+}
+
+function insererPreco() {
+  const sel = document.getElementById('select-preco');
+  const texte = sel.value;
+  if (!texte) return;
+  const ta = document.getElementById('preco-textarea');
+  if (modePreco === 'remplacer') {
+    ta.value = texte;
+  } else {
+    ta.value = ta.value ? ta.value.trimEnd() + '\n\n' + texte : texte;
+  }
+  sel.value = '';
+  ta.focus();
+  ta.scrollTop = ta.scrollHeight;
+}
+
+function viderPreco() {
+  if (confirm('Vider le champ préconisations ?')) {
+    document.getElementById('preco-textarea').value = '';
+    document.getElementById('select-preco').value = '';
   }
 }
 
