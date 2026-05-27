@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Changer de date — {{ client.nom_affichage }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root { --hps-blue: #1aabe3; --hps-dark: #1e293b; }
+    body { background: #f0f4f8; font-family: 'Segoe UI', sans-serif; }
+    .portal-header {
+      background: var(--hps-dark); color: #fff;
+      padding: .75rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .portal-header img { max-height:45px; background:#fff; border-radius:6px; padding:4px 8px; }
+    .card { border:none; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .card-header { border-radius:12px 12px 0 0 !important; font-weight:600; }
+    .date-card {
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: all .15s;
+      background: #fff;
+      position: relative;
+    }
+    .date-card:hover { border-color: var(--hps-blue); background: #f0faff; }
+    .date-card.selected { border-color: var(--hps-blue); background: #e8f6fc; }
+    .date-card input[type="radio"] { position: absolute; opacity: 0; }
+    .fit-secteur  { color: #16a34a; font-weight:600; }
+    .fit-proche   { color: #d97706; font-weight:600; }
+    .fit-possible { color: #64748b; }
+    .fit-disponible { color: #3b82f6; }
+    .fit-libre    { color: #94a3b8; }
+    .score-bar {
+      height: 6px; border-radius: 3px;
+      background: #e2e8f0; margin-top: 8px; overflow: hidden;
+    }
+    .score-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+    .inter-info-box {
+      background: #f8fafc; border-left: 4px solid var(--hps-blue);
+      border-radius: 0 8px 8px 0; padding: 12px 16px; margin-bottom: 1.5rem;
+    }
+    .section-title {
+      font-weight:700; font-size:1rem; color:var(--hps-dark);
+      margin-bottom:.75rem; display:flex; align-items:center; gap:.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="portal-header">
+  <img src="{{ url_for('static', filename='logo.png') }}" alt="HPS" onerror="this.style.display='none'">
+  <div class="text-end">
+    <div style="font-size:.7rem;color:#94a3b8">Espace client sécurisé</div>
+    <div class="fw-semibold">{{ client.nom_affichage }}</div>
+  </div>
+</div>
+
+<div class="container py-4" style="max-width:680px">
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Retour -->
+  <a href="{{ url_for('portail_dashboard', token=token) }}"
+     class="btn btn-sm btn-outline-secondary mb-3">
+    <i class="bi bi-arrow-left me-1"></i>Retour à mon espace
+  </a>
+
+  <h5 class="fw-bold mb-1"><i class="bi bi-calendar-event me-2" style="color:var(--hps-blue)"></i>Demander un changement de date</h5>
+  <p class="text-muted small mb-3">
+    Choisissez parmi les dates proposées — elles ont été sélectionnées en fonction de votre localisation
+    et des tournées déjà planifiées dans votre secteur.
+  </p>
+
+  <!-- Intervention concernée -->
+  <div class="inter-info-box mb-4">
+    <div class="fw-semibold">{{ inter.type_intervention or inter.titre }}</div>
+    <div class="text-muted small mt-1">
+      <i class="bi bi-calendar3 me-1"></i>
+      Actuellement prévu le <strong>{{ inter.date_planifiee | date_fr('%A %d %B %Y') }} à {{ inter.date_planifiee.strftime('%H:%M') }}</strong>
+    </div>
+    {% if inter.technicien %}
+    <div class="text-muted small"><i class="bi bi-person me-1"></i>Technicien : {{ inter.technicien }}</div>
+    {% endif %}
+  </div>
+
+  <form method="POST" id="form-reporter">
+    <!-- Sélection de date -->
+    <div class="section-title">
+      <i class="bi bi-calendar-week" style="color:var(--hps-blue)"></i>
+      Dates disponibles
+    </div>
+
+    {% if suggestions %}
+    <div class="row g-2 mb-4" id="date-grid">
+      {% for s in suggestions %}
+      {% set jours_fr = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'] %}
+      {% set mois_fr  = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+      {% set jour_nom = jours_fr[s.date.weekday()] %}
+      {% set mois_nom = mois_fr[s.date.month - 1] %}
+
+      <div class="col-12 col-sm-6">
+        <label class="date-card w-100" onclick="selectDate(this, '{{ s.date.strftime('%Y-%m-%d') }}')">
+          <input type="radio" name="date_souhaitee" value="{{ s.date.strftime('%Y-%m-%d') }}" required>
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="fw-bold">{{ jour_nom }} {{ s.date.day }} {{ mois_nom }}</div>
+              <div class="small text-muted">{{ s.date.strftime('%Y') }}</div>
+            </div>
+            <div class="text-end">
+              {% if s.fit_label == 'secteur' %}
+                <span class="fit-secteur small"><i class="bi bi-geo-alt-fill"></i> Votre secteur</span>
+              {% elif s.fit_label == 'proche' %}
+                <span class="fit-proche small"><i class="bi bi-geo-alt"></i> Tournée proche</span>
+              {% elif s.fit_label == 'disponible' %}
+                <span class="fit-disponible small"><i class="bi bi-calendar-check"></i> Tournée dispo</span>
+              {% elif s.fit_label == 'possible' %}
+                <span class="fit-possible small"><i class="bi bi-calendar2"></i> Possible</span>
+              {% else %}
+                <span class="fit-libre small"><i class="bi bi-calendar2-plus"></i> Créneau libre</span>
+              {% endif %}
+            </div>
+          </div>
+          {% if s.nb_inter > 0 %}
+          <div class="text-muted" style="font-size:.72rem;margin-top:4px">
+            <i class="bi bi-people me-1"></i>{{ s.nb_inter }} intervention{{ 's' if s.nb_inter > 1 else '' }} prévue{{ 's' if s.nb_inter > 1 else '' }} ce jour
+            {% if s.dist_km is not none %} · {{ s.dist_km|int }} km du centroïde{% endif %}
+          </div>
+          {% endif %}
+          <!-- Barre de score visuelle -->
+          <div class="score-bar mt-2">
+            <div class="score-fill"
+                 style="width:{{ [s.score, 100]|min }}%;
+                        background:{{'#16a34a' if s.fit_label=='secteur' else '#d97706' if s.fit_label=='proche' else '#3b82f6' if s.fit_label=='disponible' else '#94a3b8'}};"></div>
+          </div>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Légende -->
+    <div class="d-flex flex-wrap gap-3 mb-4" style="font-size:.78rem;color:#64748b">
+      <span><span class="fit-secteur">●</span> Tournée déjà prévue dans votre secteur</span>
+      <span><span class="fit-proche">●</span> Passage à proximité</span>
+      <span><span class="fit-disponible">●</span> Tournée disponible</span>
+      <span><span class="fit-libre">●</span> Créneau libre</span>
+    </div>
+
+    {% else %}
+    <div class="alert alert-info">
+      Aucune date disponible dans les prochains jours. Contactez-nous directement.
+    </div>
+    {% endif %}
+
+    <!-- Message optionnel -->
+    <div class="mb-4">
+      <label class="form-label fw-semibold">
+        <i class="bi bi-chat-text me-1"></i>Message (optionnel)
+      </label>
+      <textarea name="message" class="form-control" rows="3"
+                placeholder="Ex : Je suis disponible plutôt en matinée, avant 12h…"></textarea>
+      <div class="form-text">Précisez vos préférences horaires ou contraintes particulières.</div>
+    </div>
+
+    <!-- Bouton envoyer -->
+    <div class="d-grid">
+      <button type="submit" class="btn btn-primary py-2 fw-semibold"
+              style="background:var(--hps-blue);border-color:var(--hps-blue)"
+              id="btn-submit" disabled>
+        <i class="bi bi-send me-2"></i>Envoyer ma demande
+      </button>
+    </div>
+    <p class="text-muted text-center small mt-2">
+      Votre rendez-vous actuel reste confirmé jusqu'à validation par notre équipe.
+    </p>
+  </form>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function selectDate(label, dateVal) {
+  // Déselectionner tous
+  document.querySelectorAll('.date-card').forEach(c => c.classList.remove('selected'));
+  // Sélectionner celui cliqué
+  label.classList.add('selected');
+  label.querySelector('input[type="radio"]').checked = true;
+  document.getElementById('btn-submit').disabled = false;
+}
+// Injection CSRF
+(function() {
+  var t = document.querySelector('meta[name="csrf-token"]');
+  if (!t) return;
+  var v = t.getAttribute('content');
+  document.querySelectorAll('form').forEach(function(f) {
+    if ((f.getAttribute('method')||'get').toLowerCase() === 'post'
+        && !f.querySelector('input[name="csrf_token"]')) {
+      var i = document.createElement('input');
+      i.type='hidden'; i.name='csrf_token'; i.value=v;
+      f.appendChild(i);
+    }
+  });
+})();
+</script>
+</body>
+</html>

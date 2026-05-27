@@ -181,6 +181,11 @@ class Intervention(db.Model):
     technicien = db.Column(db.String(100))
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Demande de report par le client depuis son portail
+    demande_report_date    = db.Column(db.DateTime)       # date souhaitée par le client
+    demande_report_statut  = db.Column(db.String(20))     # en_attente / approuvee / refusee
+    demande_report_message = db.Column(db.Text)           # message libre du client
+    demande_report_at      = db.Column(db.DateTime)       # horodatage de la demande
     bon = db.relationship('BonIntervention', backref='intervention', uselist=False,
                           cascade='all, delete-orphan')
 
@@ -906,6 +911,73 @@ def _optimiser_tournee(points, depart_lat=None, depart_lon=None):
         cur_lat, cur_lon = nearest['lat'], nearest['lon']
         remaining.remove(nearest)
     return route
+
+def _suggerer_dates(client, nb=8, horizon=35):
+    """Retourne les meilleures dates (dans les <horizon> prochains jours) pour intégrer
+    ce client dans une tournée existante, triées par pertinence géographique."""
+    # S'assurer que le client est géocodé
+    if not client.latitude or not client.longitude:
+        _geocoder_client(client)
+
+    today = datetime.now().date()
+    candidats = []
+
+    for delta in range(1, horizon + 1):
+        jour = today + timedelta(days=delta)
+        if jour.weekday() == 6:          # dimanche → ignoré
+            continue
+
+        # Interventions planifiées ce jour
+        inter_jour = Intervention.query.filter(
+            db.func.date(Intervention.date_planifiee) == jour,
+            Intervention.statut.in_(['planifiee', 'en_cours'])
+        ).all()
+
+        nb_inter = len(inter_jour)
+        score = 0
+        fit_label = 'libre'
+        dist_km = None
+
+        if nb_inter > 0 and client.latitude and client.longitude:
+            # Centroïde géographique des clients déjà planifiés ce jour
+            lats = [i.client.latitude  for i in inter_jour if i.client.latitude]
+            lons = [i.client.longitude for i in inter_jour if i.client.longitude]
+            if lats and lons:
+                c_lat = sum(lats) / len(lats)
+                c_lon = sum(lons) / len(lons)
+                dist_km = _haversine(client.latitude, client.longitude, c_lat, c_lon)
+                # Score de proximité (max 100 à 0 km, ~0 à 80 km)
+                score = max(0, round(100 - dist_km * 1.25))
+                # Légère pénalité si la journée est déjà très chargée (>6 rdv)
+                if nb_inter > 6:
+                    score = max(0, score - (nb_inter - 6) * 5)
+                if score >= 65:
+                    fit_label = 'secteur'      # tournée dans votre secteur
+                elif score >= 35:
+                    fit_label = 'proche'       # trajet optimisé possible
+                else:
+                    fit_label = 'possible'     # faisable mais détour
+            else:
+                score = 25
+                fit_label = 'disponible'
+        elif nb_inter > 0:
+            score = 25
+            fit_label = 'disponible'
+        else:
+            score = 15                         # jour sans tournée = créneau libre
+            fit_label = 'libre'
+
+        candidats.append({
+            'date':       jour,
+            'score':      score,
+            'nb_inter':   nb_inter,
+            'fit_label':  fit_label,
+            'dist_km':    round(dist_km, 0) if dist_km is not None else None,
+        })
+
+    # Trier : d'abord par score décroissant, puis par date croissante
+    candidats.sort(key=lambda x: (-x['score'], x['date']))
+    return candidats[:nb]
 
 # ─── ROUTES AUTH ──────────────────────────────────────────────────────────────
 
@@ -2212,6 +2284,154 @@ def portail_deconnexion(token):
     flask_session.pop('portal_cid', None)
     return redirect(url_for('portail_access', token=token))
 
+# ─── PORTAIL : DEMANDE DE REPORT ─────────────────────────────────────────────
+
+@app.route('/portail/<token>/intervention/<int:iid>/reporter', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"])
+def portail_reporter(token, iid):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    inter = Intervention.query.filter_by(id=iid, client_id=c.id).first_or_404()
+    # Seules les interventions planifiées peuvent être reportées
+    if inter.statut not in ('planifiee', 'en_cours'):
+        flash('Cette intervention ne peut plus être reportée.', 'warning')
+        return redirect(url_for('portail_dashboard', token=token))
+    # Une demande déjà en attente → pas de doublon
+    if inter.demande_report_statut == 'en_attente':
+        flash('Une demande de report est déjà en cours pour cette intervention.', 'info')
+        return redirect(url_for('portail_dashboard', token=token))
+
+    if request.method == 'POST':
+        date_str = request.form.get('date_souhaitee', '').strip()
+        message  = request.form.get('message', '').strip()
+        try:
+            date_souhaitee = datetime.strptime(date_str, '%Y-%m-%d')
+        except ValueError:
+            flash('Date invalide.', 'danger')
+            return redirect(url_for('portail_reporter', token=token, iid=iid))
+
+        inter.demande_report_date    = date_souhaitee
+        inter.demande_report_statut  = 'en_attente'
+        inter.demande_report_message = message
+        inter.demande_report_at      = datetime.utcnow()
+        db.session.commit()
+
+        # Notifier l'admin par email
+        def _notif_admin():
+            try:
+                with app.app_context():
+                    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+                    email_admin = get_param('email')
+                    soc = get_param('societe', 'HPS')
+                    if not api_key or not email_admin:
+                        return
+                    lien_admin = url_for('intervention_detail', id=inter.id, _external=True)
+                    html = f"""
+                    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+                      <div style="background:#1e293b;padding:16px 24px;border-radius:8px 8px 0 0">
+                        <h3 style="color:#fff;margin:0">📅 Demande de report — {soc}</h3>
+                      </div>
+                      <div style="background:#fff;padding:24px;border:1px solid #e2e8f0;border-top:none">
+                        <p>Le client <strong>{c.nom_affichage}</strong> souhaite reporter son intervention.</p>
+                        <table style="width:100%;border-collapse:collapse;font-size:14px">
+                          <tr><td style="padding:6px 0;color:#64748b">Intervention :</td>
+                              <td><strong>{inter.titre}</strong> ({inter.reference})</td></tr>
+                          <tr><td style="padding:6px 0;color:#64748b">Date actuelle :</td>
+                              <td>{inter.date_planifiee.strftime('%d/%m/%Y à %H:%M')}</td></tr>
+                          <tr><td style="padding:6px 0;color:#64748b">Date souhaitée :</td>
+                              <td><strong style="color:#1aabe3">{date_souhaitee.strftime('%d/%m/%Y')}</strong></td></tr>
+                          {"<tr><td style='padding:6px 0;color:#64748b'>Message :</td><td><em>" + message + "</em></td></tr>" if message else ""}
+                        </table>
+                        <div style="margin-top:20px;text-align:center">
+                          <a href="{lien_admin}" style="background:#1aabe3;color:#fff;padding:11px 28px;
+                             border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">
+                            Voir l'intervention et répondre
+                          </a>
+                        </div>
+                      </div>
+                    </div>"""
+                    payload = json.dumps({
+                        "subject": f"[{soc}] Demande de report — {c.nom_affichage}",
+                        "htmlContent": html,
+                        "sender": {"name": soc, "email": email_admin},
+                        "to": [{"email": email_admin}],
+                    }).encode('utf-8')
+                    req = urllib.request.Request(
+                        'https://api.brevo.com/v3/smtp/email', data=payload,
+                        headers={'api-key': api_key, 'Content-Type': 'application/json'}, method='POST')
+                    urllib.request.urlopen(req, timeout=10)
+            except Exception:
+                pass
+        threading.Thread(target=_notif_admin, daemon=True).start()
+
+        flash('Votre demande de report a été envoyée. Nous vous confirmerons la nouvelle date rapidement.', 'success')
+        return redirect(url_for('portail_dashboard', token=token))
+
+    suggestions = _suggerer_dates(c)
+    return render_template('portal/reporter.html',
+                           client=c, token=token, inter=inter, suggestions=suggestions)
+
+
+# ─── ADMIN : TRAITEMENT DES DEMANDES DE REPORT ───────────────────────────────
+
+@app.route('/interventions/<int:id>/reporter/approuver', methods=['POST'])
+@login_required
+def intervention_reporter_approuver(id):
+    inter = Intervention.query.get_or_404(id)
+    if inter.demande_report_statut != 'en_attente':
+        flash('Aucune demande en attente.', 'warning')
+        return redirect(url_for('intervention_detail', id=id))
+    # Nouvelle date = date souhaitée, en conservant l'heure d'origine
+    heure_orig = inter.date_planifiee.time()
+    nouvelle_date = datetime.combine(inter.demande_report_date.date(), heure_orig)
+    inter.date_planifiee       = nouvelle_date
+    inter.demande_report_statut = 'approuvee'
+    db.session.commit()
+    # Notifier le client
+    soc = get_param('societe', 'HPS')
+    lien_p = url_for('portail_access', token=inter.client.access_token, _external=True)
+    _notif_async(
+        inter.client_id,
+        sujet=f"Votre rendez-vous a été reporté au {nouvelle_date.strftime('%d/%m/%Y')}",
+        titre="Changement de date confirmé ✅",
+        corps=(f"Votre demande de report a été acceptée.\n"
+               f"Votre nouveau rendez-vous est fixé au "
+               f"{nouvelle_date.strftime('%d/%m/%Y à %H:%M')}."),
+        lien=lien_p,
+        sms_court=f"RDV reporté au {nouvelle_date.strftime('%d/%m/%Y')}. Accès : {lien_p}"
+    )
+    flash(f'Demande approuvée — intervention déplacée au {nouvelle_date.strftime("%d/%m/%Y à %H:%M")}.', 'success')
+    return redirect(url_for('intervention_detail', id=id))
+
+
+@app.route('/interventions/<int:id>/reporter/refuser', methods=['POST'])
+@login_required
+def intervention_reporter_refuser(id):
+    inter = Intervention.query.get_or_404(id)
+    if inter.demande_report_statut != 'en_attente':
+        flash('Aucune demande en attente.', 'warning')
+        return redirect(url_for('intervention_detail', id=id))
+    motif = request.form.get('motif', '').strip()
+    inter.demande_report_statut = 'refusee'
+    db.session.commit()
+    # Notifier le client
+    soc = get_param('societe', 'HPS')
+    lien_p = url_for('portail_access', token=inter.client.access_token, _external=True)
+    corps = "Votre demande de report n'a pas pu être acceptée."
+    if motif:
+        corps += f"\n\nMotif : {motif}"
+    corps += f"\n\nVotre rendez-vous reste fixé au {inter.date_planifiee.strftime('%d/%m/%Y à %H:%M')}.\nN'hésitez pas à nous contacter si vous souhaitez en discuter."
+    _notif_async(
+        inter.client_id,
+        sujet="Votre demande de report n'a pas pu être acceptée",
+        titre="Demande de report — Réponse",
+        corps=corps,
+        lien=lien_p,
+    )
+    flash('Demande refusée. Le client a été notifié.', 'info')
+    return redirect(url_for('intervention_detail', id=id))
+
 # ─── PARAMÈTRES ───────────────────────────────────────────────────────────────
 
 @app.route('/parametres', methods=['GET', 'POST'])
@@ -2276,6 +2496,10 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_actif BOOLEAN DEFAULT FALSE",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_date TIMESTAMP",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_statut VARCHAR(20)",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_message TEXT",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_at TIMESTAMP",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),

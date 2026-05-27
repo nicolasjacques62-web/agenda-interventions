@@ -109,7 +109,25 @@
             <div class="text-muted small"><i class="bi bi-clock me-1"></i>Durée estimée : {{ i.duree_estimee }} min</div>
             {% endif %}
           </div>
-          <span class="badge badge-{{ i.statut }} px-2 py-1">{{ i.statut_label }}</span>
+          <div class="d-flex flex-column align-items-end gap-1">
+            <span class="badge badge-{{ i.statut }} px-2 py-1">{{ i.statut_label }}</span>
+            {% if i.statut in ('planifiee', 'en_cours') %}
+              {% if i.demande_report_statut == 'en_attente' %}
+                <span class="badge bg-warning text-dark" style="font-size:.7rem">
+                  <i class="bi bi-hourglass-split me-1"></i>Report en attente
+                </span>
+              {% elif i.demande_report_statut == 'approuvee' %}
+                <span class="badge bg-success" style="font-size:.7rem">
+                  <i class="bi bi-check-circle me-1"></i>Report accepté
+                </span>
+              {% else %}
+                <a href="{{ url_for('portail_reporter', token=token, iid=i.id) }}"
+                   class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.75rem">
+                  <i class="bi bi-calendar2-week me-1"></i>Changer la date
+                </a>
+              {% endif %}
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>

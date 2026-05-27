@@ -50,6 +50,63 @@
       </div>
     </div>
 
+    <!-- Demande de report client -->
+    {% if intervention.demande_report_statut == 'en_attente' %}
+    <div class="card mb-3 border-warning">
+      <div class="card-header bg-warning bg-opacity-10 text-warning">
+        <i class="bi bi-calendar2-week me-2"></i>Demande de report client
+        <span class="badge bg-warning text-dark ms-2">En attente</span>
+      </div>
+      <div class="card-body">
+        <p class="small mb-1">
+          <strong>{{ intervention.client.nom_affichage }}</strong> souhaite reporter au
+          <strong class="text-primary">{{ intervention.demande_report_date.strftime('%d/%m/%Y') }}</strong>
+        </p>
+        {% if intervention.demande_report_message %}
+        <p class="small text-muted fst-italic mb-2">"{{ intervention.demande_report_message }}"</p>
+        {% endif %}
+        <p class="small text-muted mb-3">Demande reçue le {{ intervention.demande_report_at.strftime('%d/%m/%Y à %H:%M') }}</p>
+        <div class="d-grid gap-2">
+          <form method="POST" action="{{ url_for('intervention_reporter_approuver', id=intervention.id) }}">
+            <button class="btn btn-success btn-sm w-100">
+              <i class="bi bi-check-lg me-1"></i>Accepter — déplacer au {{ intervention.demande_report_date.strftime('%d/%m/%Y') }}
+            </button>
+          </form>
+          <button class="btn btn-outline-danger btn-sm" data-bs-toggle="collapse" data-bs-target="#refus-form">
+            <i class="bi bi-x-lg me-1"></i>Refuser
+          </button>
+          <div id="refus-form" class="collapse">
+            <form method="POST" action="{{ url_for('intervention_reporter_refuser', id=intervention.id) }}">
+              <div class="mb-2">
+                <input type="text" name="motif" class="form-control form-control-sm"
+                       placeholder="Motif du refus (optionnel, transmis au client)">
+              </div>
+              <button class="btn btn-danger btn-sm w-100">Confirmer le refus</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% elif intervention.demande_report_statut == 'approuvee' %}
+    <div class="card mb-3 border-success">
+      <div class="card-header bg-success bg-opacity-10 text-success">
+        <i class="bi bi-check-circle me-2"></i>Report accepté
+      </div>
+      <div class="card-body small text-muted">
+        La date a été modifiée suite à la demande du client.
+      </div>
+    </div>
+    {% elif intervention.demande_report_statut == 'refusee' %}
+    <div class="card mb-3 border-secondary">
+      <div class="card-header text-secondary">
+        <i class="bi bi-x-circle me-2"></i>Report refusé
+      </div>
+      <div class="card-body small text-muted">
+        La demande de report a été refusée.
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Changer statut -->
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-arrow-repeat me-2"></i>Changer le statut</div>
