@@ -32,6 +32,7 @@
           <tr><td class="text-muted small fw-semibold">Date audit</td><td>{{ audit.date_audit.strftime('%d/%m/%Y') }}</td></tr>
           {% if audit.technicien %}<tr><td class="text-muted small fw-semibold">Technicien</td><td>{{ audit.technicien }}</td></tr>{% endif %}
           {% if audit.type_site %}<tr><td class="text-muted small fw-semibold">Type site</td><td>{{ audit.type_site }}</td></tr>{% endif %}
+          {% if audit.batiment %}<tr><td class="text-muted small fw-semibold">Bâtiment</td><td>{{ audit.batiment }}</td></tr>{% endif %}
           {% if audit.niveau_risque %}
           <tr><td class="text-muted small fw-semibold">Risque</td>
               <td><span class="badge bg-{{ audit.niveau_couleur }}">{{ audit.niveau_label }}</span></td></tr>
@@ -73,57 +74,113 @@
   <!-- Contenu principal -->
   <div class="col-lg-9">
 
-    <!-- Nuisibles détectés -->
+    <!-- §4 Diagnostic d'infestation -->
     <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-bug me-2"></i>Nuisibles détectés</div>
+      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>§4 — Diagnostic d'infestation <small class="fw-normal opacity-75">(§5.3)</small></div>
       <div class="card-body">
+
+        <!-- Checklist -->
+        {% set ck = audit.checklist %}
+        {% if ck %}
+        {% set ck_items = [
+          ('especes_identifiees',    'Identification des espèces détectées'),
+          ('localisation_niveau',    'Localisation et niveau de l\'infestation'),
+          ('facteurs_favorisants',   'Facteurs locaux favorisant la prolifération'),
+          ('mesures_preventives',    'Mesures préventives pour éviter les proliférations'),
+          ('causes_profondes',       'Analyse des causes profondes et recommandations'),
+          ('evaluation_prestations', 'Évaluation des prestations précédentes'),
+        ] %}
+        <div class="mb-3">
+          <div class="fw-semibold small text-muted mb-2">Éléments obligatoires du diagnostic :</div>
+          <div class="row g-1">
+            {% for field, label in ck_items %}
+            <div class="col-md-6">
+              <span class="{% if ck.get(field) %}text-success{% else %}text-muted{% endif %} small">
+                <i class="bi bi-{% if ck.get(field) %}check-square-fill{% else %}square{% endif %} me-1"></i>{{ label }}
+              </span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Nuisibles -->
         {% if audit.nuisibles %}
-        <div class="table-responsive">
+        <div class="fw-semibold small mb-2">Nuisibles détectés :</div>
+        <div class="table-responsive mb-3">
           <table class="table table-sm table-hover">
-            <thead class="table-dark"><tr><th>Nuisible</th><th>Niveau</th><th>Zones</th><th>Preuves / Observations</th></tr></thead>
+            <thead class="table-dark">
+              <tr><th>Nuisible</th><th>Localisation & Niveau</th><th>Facteurs défav.</th><th>Risque</th><th>Actions préc.</th></tr>
+            </thead>
             <tbody>
               {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
               {% for n in audit.nuisibles %}
               <tr>
-                <td class="fw-semibold">{{ n.label }}</td>
-                <td><span class="badge bg-{{ niv_c.get(n.niveau, 'secondary') }}">{{ n.niveau|capitalize }}</span></td>
-                <td class="small">{{ n.zones or '—' }}</td>
-                <td class="small">{{ n.preuves or '—' }}</td>
+                <td class="fw-semibold small">{{ n.label }}</td>
+                <td class="small">{{ n.zones or '—' }}<br><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
+                <td class="small text-muted">{{ n.facteurs or '—' }}</td>
+                <td><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
+                <td class="small text-muted">{{ n.actions_prec or '—' }}</td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
         {% else %}
-        <p class="text-muted mb-0">Aucun nuisible détecté lors de cet audit.</p>
+        <p class="text-muted small mb-3">Aucun nuisible détecté lors de cet audit.</p>
         {% endif %}
+
+        <div class="row g-3 small">
+          {% if audit.causes_profondes %}
+          <div class="col-12">
+            <div class="fw-semibold mb-1">Causes profondes identifiées</div>
+            <p class="mb-0">{{ audit.causes_profondes }}</p>
+          </div>{% endif %}
+          {% if audit.communication_labels %}
+          <div class="col-12">
+            <div class="fw-semibold mb-1">Communication client (§5.3)</div>
+            {% for lbl in audit.communication_labels %}
+            <span class="badge bg-info text-dark me-1">{{ lbl }}</span>
+            {% endfor %}
+          </div>{% endif %}
+        </div>
       </div>
     </div>
 
-    <!-- Analyse du site -->
-    {% if audit.points_entree or audit.facteurs_favorisants or audit.observations or audit.niveau_risque %}
+    <!-- §5 Plan de gestion -->
     <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-search me-2"></i>Analyse du site</div>
+      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>§5 — Plan de gestion des nuisibles <small class="fw-normal opacity-75">(§5.4, 5.5, 5.6)</small></div>
       <div class="card-body">
-        <div class="row g-3">
+
+        <!-- Situation sur site -->
+        {% if audit.situation_site %}
+        <div class="mb-3">
+          <div class="fw-semibold small text-muted mb-1">Situation sur site (§5.4)</div>
+          <span class="badge {% if audit.situation_site == 'infestation_active' %}bg-danger{% elif audit.situation_site == 'risque_significatif' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+            {{ audit.situation_site_label }}
+          </span>
+        </div>{% endif %}
+
+        <!-- Obs / points d'entrée / eval -->
+        <div class="row g-3 small mb-3">
           {% if audit.points_entree %}
           <div class="col-md-6">
-            <div class="fw-semibold small mb-1">Points d'entrée identifiés</div>
-            <p class="small mb-0">{{ audit.points_entree }}</p>
+            <div class="fw-semibold mb-1">Points d'entrée identifiés</div>
+            <p class="mb-0">{{ audit.points_entree }}</p>
           </div>{% endif %}
           {% if audit.facteurs_favorisants %}
           <div class="col-md-6">
-            <div class="fw-semibold small mb-1">Facteurs favorisants</div>
-            <p class="small mb-0">{{ audit.facteurs_favorisants }}</p>
+            <div class="fw-semibold mb-1">Observations terrain</div>
+            <p class="mb-0">{{ audit.facteurs_favorisants }}</p>
           </div>{% endif %}
-          {% if audit.observations %}
+          {% if audit.evaluation_prestations %}
           <div class="col-12">
-            <div class="fw-semibold small mb-1">Observations terrain</div>
-            <p class="small mb-0">{{ audit.observations }}</p>
+            <div class="fw-semibold mb-1">Évaluation des prestations précédentes</div>
+            <p class="mb-0">{{ audit.evaluation_prestations }}</p>
           </div>{% endif %}
           {% if audit.conformite_haccp and audit.conformite_haccp != 'na' %}
           <div class="col-12">
-            <div class="fw-semibold small mb-1">Conformité HACCP</div>
+            <div class="fw-semibold mb-1">Conformité HACCP (§5.5)</div>
             {% if audit.conformite_haccp == 'conforme' %}
               <span class="badge bg-success">✔ Conforme</span>
             {% else %}
@@ -132,20 +189,15 @@
             {% endif %}
           </div>{% endif %}
         </div>
-      </div>
-    </div>
-    {% endif %}
 
-    <!-- Plan de gestion -->
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>Plan de gestion des nuisibles</div>
-      <div class="card-body">
         {% if audit.mesures_immediates %}
         <div class="alert alert-warning py-2 small mb-3">
           <strong><i class="bi bi-exclamation-triangle me-1"></i>Mesures immédiates :</strong> {{ audit.mesures_immediates }}
         </div>{% endif %}
+
+        <!-- Traitements -->
         {% if audit.traitements %}
-        <div class="fw-semibold small mb-2">Traitements préconisés</div>
+        <div class="fw-semibold small mb-2">Traitements préconisés (§5.6)</div>
         <div class="table-responsive mb-3">
           <table class="table table-sm table-bordered">
             <thead class="table-secondary"><tr><th>Traitement</th><th>Zones</th><th>Fréquence</th><th>Produit / Méthode</th></tr></thead>
@@ -156,13 +208,30 @@
             </tbody>
           </table>
         </div>{% endif %}
+
+        <!-- Mesures préventives PCO / CLIENT -->
+        {% if audit.mesures %}
+        <div class="fw-semibold small mb-2">Mesures préventives — Responsabilité PCO / Client</div>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered">
+            <thead style="background:#1e293b;color:#fff"><tr><th>Mesure préventive</th><th class="text-center">PCO</th><th class="text-center">Client</th></tr></thead>
+            <tbody>
+              {% for m in audit.mesures %}{% set i = loop.index %}
+              <tr class="small">
+                <td>{{ i }}. {{ m.mesure }}</td>
+                <td class="text-center">{% if m.pco %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
+                <td class="text-center">{% if m.client %}<i class="bi bi-check-circle-fill text-primary"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>{% endif %}
+
         <div class="row g-2 small">
-          {% if audit.mesures_preventives %}
-          <div class="col-12"><strong>Mesures préventives client :</strong> {{ audit.mesures_preventives }}</div>{% endif %}
           {% if audit.frequence %}
           <div class="col-sm-6"><strong>Fréquence recommandée :</strong> {{ audit.frequence }}</div>{% endif %}
           {% if audit.prochaine_visite %}
-          <div class="col-sm-6"><strong>Prochaine visite :</strong> {{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</div>{% endif %}
+          <div class="col-sm-6"><strong>Prochaine visite :</strong> <span class="text-primary fw-semibold">{{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</span></div>{% endif %}
         </div>
       </div>
     </div>

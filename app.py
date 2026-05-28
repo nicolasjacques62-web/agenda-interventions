@@ -262,17 +262,25 @@ class AuditClient(db.Model):
     date_audit = db.Column(db.Date, nullable=False)
     technicien = db.Column(db.String(100))
     type_site = db.Column(db.String(100))
-    # Diagnostic
+    batiment = db.Column(db.String(100))
+    # §5.3 Diagnostic d'infestation
+    checklist_json = db.Column(db.Text, default='{}')
     nuisibles_json = db.Column(db.Text, default='[]')
+    causes_profondes = db.Column(db.Text)
+    evaluation_prestations = db.Column(db.Text)
+    niveau_risque = db.Column(db.String(20))
+    communication_client = db.Column(db.String(50))
+    # §5.4 Analyse de la situation
+    situation_site = db.Column(db.String(30))
     points_entree = db.Column(db.Text)
     facteurs_favorisants = db.Column(db.Text)
     observations = db.Column(db.Text)
-    niveau_risque = db.Column(db.String(20))
     conformite_haccp = db.Column(db.String(20), default='na')
     non_conformites = db.Column(db.Text)
-    # Plan de gestion
+    # §5.5/5.6 Plan de gestion
     mesures_immediates = db.Column(db.Text)
     traitements_json = db.Column(db.Text, default='[]')
+    mesures_json = db.Column(db.Text, default='[]')
     mesures_preventives = db.Column(db.Text)
     frequence = db.Column(db.String(50))
     prochaine_visite = db.Column(db.Date)
@@ -284,6 +292,11 @@ class AuditClient(db.Model):
     client = db.relationship('Client', backref='audits')
 
     @property
+    def checklist(self):
+        try: return json.loads(self.checklist_json or '{}')
+        except: return {}
+
+    @property
     def nuisibles(self):
         try: return json.loads(self.nuisibles_json or '[]')
         except: return []
@@ -291,6 +304,11 @@ class AuditClient(db.Model):
     @property
     def traitements(self):
         try: return json.loads(self.traitements_json or '[]')
+        except: return []
+
+    @property
+    def mesures(self):
+        try: return json.loads(self.mesures_json or '[]')
         except: return []
 
     @property
@@ -308,6 +326,19 @@ class AuditClient(db.Model):
     @property
     def niveau_couleur(self):
         return {'faible': 'success', 'moyen': 'warning', 'eleve': 'danger', 'critique': 'danger'}.get(self.niveau_risque or '', 'secondary')
+
+    @property
+    def situation_site_label(self):
+        return {
+            'infestation_active':  'Infestation active détectée',
+            'risque_significatif': 'Pas d\'infestation — risque significatif → Appâtage permanent préconisé',
+            'risque_faible':       'Pas d\'infestation — risque faible → Surveillance régulière',
+        }.get(self.situation_site or '', '')
+
+    @property
+    def communication_labels(self):
+        labels = {'oral': 'Réalisée oralement', 'document': 'Document remis au client'}
+        return [labels[v] for v in (self.communication_client or '').split(',') if v.strip() in labels]
 
 
 class BonPhoto(db.Model):
@@ -413,16 +444,21 @@ def next_audit_ref():
     return f"AUD{datetime.now().year}{n:04d}"
 
 def _parse_audit_form(form):
-    """Extrait et structure les données du formulaire d'audit."""
+    """Extrait et structure les données du formulaire d'audit (§5.3–5.6)."""
+    # ── Nuisibles (§5.3 + §5.4) ──
     nuisibles = []
     for key, label in NUISIBLES_TYPES:
         if form.get(f'nuis_{key}_present'):
             nuisibles.append({
-                'type': key, 'label': label,
-                'niveau':  form.get(f'nuis_{key}_niveau', 'faible'),
-                'zones':   form.get(f'nuis_{key}_zones', '').strip(),
-                'preuves': form.get(f'nuis_{key}_preuves', '').strip(),
+                'type':         key,
+                'label':        label,
+                'niveau':       form.get(f'nuis_{key}_niveau', 'faible'),
+                'zones':        form.get(f'nuis_{key}_zones',       '').strip(),
+                'preuves':      form.get(f'nuis_{key}_preuves',     '').strip(),
+                'facteurs':     form.get(f'nuis_{key}_facteurs',    '').strip(),
+                'actions_prec': form.get(f'nuis_{key}_actions_prec','').strip(),
             })
+    # ── Traitements préconisés ──
     traitements = []
     for t, z, f2, p in zip(
         form.getlist('tr_type[]'), form.getlist('tr_zones[]'),
@@ -431,6 +467,24 @@ def _parse_audit_form(form):
         if t.strip():
             traitements.append({'type': t.strip(), 'zones': z.strip(),
                                  'frequence': f2.strip(), 'produit': p.strip()})
+    # ── Mesures préventives PCO / CLIENT ──
+    mesures = []
+    mp_mesures = form.getlist('mp_mesure[]')
+    mp_pcos    = form.getlist('mp_pco[]')
+    mp_clients = form.getlist('mp_client[]')
+    for m, pco, cli in zip(mp_mesures, mp_pcos, mp_clients):
+        if m.strip():
+            mesures.append({'mesure': m.strip(), 'pco': pco == '1', 'client': cli == '1'})
+    # ── Checklist §5.3 ──
+    checklist = {
+        'especes_identifiees':    bool(form.get('ck_especes')),
+        'localisation_niveau':    bool(form.get('ck_localisation')),
+        'facteurs_favorisants':   bool(form.get('ck_facteurs')),
+        'mesures_preventives':    bool(form.get('ck_preventives')),
+        'causes_profondes':       bool(form.get('ck_causes')),
+        'evaluation_prestations': bool(form.get('ck_evaluation')),
+    }
+    # ── Dates ──
     try:
         date_audit = datetime.strptime(form.get('date_audit', ''), '%Y-%m-%d').date()
     except ValueError:
@@ -444,16 +498,22 @@ def _parse_audit_form(form):
         date_audit=date_audit,
         technicien=form.get('technicien', '').strip(),
         type_site=form.get('type_site', '').strip(),
+        batiment=form.get('batiment', '').strip(),
+        checklist_json=json.dumps(checklist, ensure_ascii=False),
         nuisibles_json=json.dumps(nuisibles, ensure_ascii=False),
+        causes_profondes=form.get('causes_profondes', '').strip(),
+        evaluation_prestations=form.get('evaluation_prestations', '').strip(),
+        niveau_risque=form.get('niveau_risque', '').strip(),
+        communication_client=','.join(v for v in form.getlist('communication_client') if v),
+        situation_site=form.get('situation_site', '').strip(),
         points_entree=form.get('points_entree', '').strip(),
         facteurs_favorisants=form.get('facteurs_favorisants', '').strip(),
         observations=form.get('observations', '').strip(),
-        niveau_risque=form.get('niveau_risque', '').strip(),
         conformite_haccp=form.get('conformite_haccp', 'na'),
         non_conformites=form.get('non_conformites', '').strip(),
         mesures_immediates=form.get('mesures_immediates', '').strip(),
         traitements_json=json.dumps(traitements, ensure_ascii=False),
-        mesures_preventives=form.get('mesures_preventives', '').strip(),
+        mesures_json=json.dumps(mesures, ensure_ascii=False),
         frequence=form.get('frequence', '').strip(),
         prochaine_visite=prochaine_visite,
         recommandations=form.get('recommandations', '').strip(),
@@ -1015,16 +1075,19 @@ def generer_pdf_audit(audit):
     elems.append(Paragraph(f"Référence : <b>{audit.reference}</b>", ParagraphStyle('ref', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, spaceAfter=6)))
     elems.append(Spacer(1, 0.3*cm))
 
-    # ── Infos générales ──
+    # ── Identification du site ──
+    niv_couleur_hex = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}.get(audit.niveau_risque or '', '#1aabe3')
+    adresse_cli = f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip()
     info_data = [
-        ['CLIENT', cli.nom_affichage, 'DATE AUDIT', audit.date_audit.strftime('%d/%m/%Y')],
-        ['ADRESSE', f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip(), 'TECHNICIEN', audit.technicien or '—'],
-        ['TYPE DE SITE', audit.type_site or '—', 'NIVEAU DE RISQUE',
+        ['SOCIÉTÉ / CLIENT', cli.nom_affichage,           'DATE DIAGNOSTIC', audit.date_audit.strftime('%d/%m/%Y')],
+        ['ADRESSE DU SITE',  adresse_cli or '—',          'RÉDACTEUR',        audit.technicien or '—'],
+        ['TYPE DE SITE',     audit.type_site or '—',      'BÂTIMENT',         audit.batiment or '—'],
+        ['N° CONTRAT',       cli.reference or '—',        'NIVEAU DE RISQUE',
          Paragraph(f"<b>{audit.niveau_label}</b>",
                    ParagraphStyle('nr', parent=styles['Normal'], fontSize=9,
-                                  textColor=colors.HexColor(titre_couleur)))],
+                                  textColor=colors.HexColor(niv_couleur_hex)))],
     ]
-    ti = Table(info_data, colWidths=[3*cm, 7.5*cm, 3.5*cm, 3.5*cm])
+    ti = Table(info_data, colWidths=[3.5*cm, 7*cm, 3.5*cm, 3.5*cm])
     ti.setStyle(TableStyle([
         ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'), ('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
         ('FONTSIZE',(0,0),(-1,-1),8), ('BACKGROUND',(0,0),(0,-1),colors.HexColor('#f0f6fa')),
@@ -1035,58 +1098,133 @@ def generer_pdf_audit(audit):
     elems.append(ti)
     elems.append(Spacer(1, 0.5*cm))
 
-    # ── Section 1 : Nuisibles détectés ──
-    elems.append(Paragraph("1. NUISIBLES DÉTECTÉS", s_h1))
+    # ── §4 — DIAGNOSTIC D'INFESTATION (§5.3) ──
+    elems.append(Paragraph("4. DIAGNOSTIC D'INFESTATION — §5.3", s_h1))
+
+    # Checklist des éléments obligatoires
+    ck = audit.checklist
+    ck_items = [
+        ('especes_identifiees',    'Identification des espèces détectées sur site'),
+        ('localisation_niveau',    'Localisation et niveau de l\'infestation'),
+        ('facteurs_favorisants',   'Facteurs locaux favorisant la prolifération'),
+        ('mesures_preventives',    'Mesures préventives pour éviter les proliférations futures'),
+        ('causes_profondes',       'Analyse des causes profondes et recommandations client'),
+        ('evaluation_prestations', 'Évaluation des prestations précédentes et actions du client'),
+    ]
+    ck_data = [['✓', 'Élément du diagnostic (§5.3)']]
+    for field, label in ck_items:
+        checked = ck.get(field, False)
+        ck_data.append([
+            Paragraph('<b>☑</b>' if checked else '☐',
+                      ParagraphStyle('ck', parent=styles['Normal'], fontSize=10, alignment=TA_CENTER)),
+            label
+        ])
+    tck = Table(ck_data, colWidths=[1*cm, 16.5*cm])
+    tck.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e293b')),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+        ('PADDING',(0,0),(-1,-1),4), ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
+    ]))
+    elems.append(tck)
+    elems.append(Spacer(1, 0.3*cm))
+
+    # Nuisibles détectés
+    elems.append(Paragraph("Nuisibles détectés sur site :", s_h2))
     if audit.nuisibles:
         niv_couleurs = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}
-        nuis_data = [['Nuisible', 'Niveau', 'Zones touchées', 'Preuves / Observations']]
+        nuis_data = [['Nuisible', 'Localisation & Niveau', 'Facteurs défav.', 'Risque', 'Actions préc.']]
         for n in audit.nuisibles:
             niv_c = niv_couleurs.get(n.get('niveau',''), '#666')
+            loc_niv = f"{n.get('zones','—')}"
+            if n.get('preuves'): loc_niv += f"\n({n.get('preuves','')})"
             nuis_data.append([
                 n.get('label', ''),
-                Paragraph(f"<b>{n.get('niveau','').capitalize()}</b>",
-                          ParagraphStyle('nv', parent=styles['Normal'], fontSize=8,
-                                         textColor=colors.HexColor(niv_c))),
-                n.get('zones', ''),
-                n.get('preuves', ''),
+                Paragraph(f"{loc_niv}<br/><b><font color='{niv_c}'>{n.get('niveau','').capitalize()}</font></b>",
+                          ParagraphStyle('nv', parent=styles['Normal'], fontSize=7)),
+                n.get('facteurs', '—') or '—',
+                Paragraph(f"<b><font color='{niv_c}'>{n.get('niveau','').capitalize()}</font></b>",
+                          ParagraphStyle('nr2', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER)),
+                n.get('actions_prec', '—') or '—',
             ])
-        tn = Table(nuis_data, colWidths=[4*cm, 2.2*cm, 5*cm, 6.3*cm])
+        tn = Table(nuis_data, colWidths=[3.5*cm, 4*cm, 3.5*cm, 1.8*cm, 4.7*cm])
         tn.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#2c3e50')),
             ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-            ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('FONTSIZE',(0,0),(-1,-1),7.5), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
             ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
-            ('PADDING',(0,0),(-1,-1),5), ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('PADDING',(0,0),(-1,-1),4), ('VALIGN',(0,0),(-1,-1),'TOP'),
         ]))
         elems.append(tn)
     else:
         elems.append(Paragraph("Aucun nuisible détecté lors de cet audit.", s_n))
+    elems.append(Spacer(1, 0.3*cm))
+
+    # Causes profondes
+    if audit.causes_profondes:
+        elems.append(Paragraph("<b>Causes profondes identifiées :</b>", s_h2))
+        elems.append(Paragraph(audit.causes_profondes.replace('\n','<br/>'), s_n))
+
+    # Évaluation des prestations précédentes
+    if audit.evaluation_prestations:
+        elems.append(Paragraph("<b>Évaluation des prestations précédentes :</b>", s_h2))
+        elems.append(Paragraph(audit.evaluation_prestations.replace('\n','<br/>'), s_n))
+
+    # Communication client
+    if audit.communication_labels:
+        elems.append(Paragraph(
+            f"<b>Communication client (§5.3) :</b> {' — '.join(audit.communication_labels)}", s_n))
     elems.append(Spacer(1, 0.4*cm))
 
-    # ── Section 2 : Analyse du site ──
-    elems.append(Paragraph("2. ANALYSE DU SITE", s_h1))
+    # ── §5 — PLAN DE GESTION DES NUISIBLES (§5.4, 5.5, 5.6) ──
+    elems.append(Paragraph("5. PLAN DE GESTION DES NUISIBLES — §5.4, 5.5, 5.6", s_h1))
+
+    # Situation sur site (§5.4)
+    elems.append(Paragraph("<b>Analyse de la situation (§5.4) :</b>", s_h2))
+    sit_labels = {
+        'infestation_active':  '☑  Infestation active détectée',
+        'risque_significatif': '☑  Pas d\'infestation — risque significatif → Appâtage permanent préconisé',
+        'risque_faible':       '☑  Pas d\'infestation — risque faible → Surveillance régulière',
+    }
+    all_sits = [
+        ('infestation_active',  'Infestation active détectée'),
+        ('risque_significatif', 'Pas d\'infestation — risque significatif → Appâtage permanent préconisé'),
+        ('risque_faible',       'Pas d\'infestation — risque faible → Surveillance régulière'),
+    ]
+    for val, lbl in all_sits:
+        checked = (audit.situation_site == val)
+        elems.append(Paragraph(
+            f"{'<b>☑</b>' if checked else '☐'}  {lbl}",
+            ParagraphStyle('sit', parent=styles['Normal'], fontSize=8.5,
+                           spaceAfter=2,
+                           textColor=colors.black if not checked else colors.HexColor('#1e293b'))
+        ))
+    elems.append(Spacer(1, 0.25*cm))
+
+    # Points d'entrée / facteurs / observations
     for label, val in [("Points d'entrée identifiés", audit.points_entree),
-                        ("Facteurs favorisants", audit.facteurs_favorisants),
-                        ("Observations terrain", audit.observations)]:
+                        ("Facteurs favorisants",       audit.facteurs_favorisants),
+                        ("Observations terrain",       audit.observations)]:
         if val:
             elems.append(Paragraph(f"<b>{label} :</b>", s_h2))
             elems.append(Paragraph(val.replace('\n','<br/>'), s_n))
 
-    # HACCP
+    # HACCP (§5.5)
     haccp_map = {'conforme': '✔ Conforme', 'non_conforme': '✘ Non conforme', 'na': 'N/A'}
     haccp_lbl = haccp_map.get(audit.conformite_haccp or 'na', 'N/A')
-    elems.append(Paragraph(f"<b>Conformité HACCP :</b> {haccp_lbl}", s_n))
+    elems.append(Paragraph(f"<b>Conformité HACCP (§5.5) :</b> {haccp_lbl}", s_n))
     if audit.non_conformites:
         elems.append(Paragraph(f"<i>Non-conformités : {audit.non_conformites}</i>", s_n))
-    elems.append(Spacer(1, 0.4*cm))
 
-    # ── Section 3 : Plan de gestion ──
-    elems.append(Paragraph("3. PLAN DE GESTION DES NUISIBLES", s_h1))
+    # Mesures immédiates
     if audit.mesures_immediates:
         elems.append(Paragraph("<b>Mesures immédiates requises :</b>", s_h2))
         elems.append(Paragraph(audit.mesures_immediates.replace('\n','<br/>'), s_n))
+
+    # Traitements préconisés (§5.6)
     if audit.traitements:
-        elems.append(Paragraph("<b>Traitements préconisés :</b>", s_h2))
+        elems.append(Paragraph("<b>Traitements préconisés (§5.6) :</b>", s_h2))
         tr_data = [['Traitement', 'Zones', 'Fréquence', 'Produit / Méthode']]
         for t in audit.traitements:
             tr_data.append([t.get('type',''), t.get('zones',''), t.get('frequence',''), t.get('produit','')])
@@ -1100,19 +1238,58 @@ def generer_pdf_audit(audit):
         ]))
         elems.append(tt)
         elems.append(Spacer(1, 0.2*cm))
-    for label, val in [("Mesures préventives à mettre en place par le client", audit.mesures_preventives),
-                        ("Fréquence d'intervention recommandée", audit.frequence)]:
-        if val:
-            elems.append(Paragraph(f"<b>{label} :</b> {val}", s_n))
+
+    # Mesures préventives PCO / CLIENT
+    if audit.mesures:
+        elems.append(Paragraph("<b>Mesures préventives et recommandations :</b>", s_h2))
+        mp_data = [['Mesure préventive', 'PCO', 'Client']]
+        for i, m in enumerate(audit.mesures, 1):
+            mp_data.append([
+                f"{i}. {m.get('mesure','')}",
+                Paragraph('<b>☑</b>' if m.get('pco') else '☐',
+                          ParagraphStyle('mpck', parent=styles['Normal'], fontSize=10, alignment=TA_CENTER)),
+                Paragraph('<b>☑</b>' if m.get('client') else '☐',
+                          ParagraphStyle('mpck2', parent=styles['Normal'], fontSize=10, alignment=TA_CENTER)),
+            ])
+        tmp = Table(mp_data, colWidths=[14*cm, 1.5*cm, 2*cm])
+        tmp.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e293b')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
+            ('PADDING',(0,0),(-1,-1),5), ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ALIGN',(1,0),(-1,-1),'CENTER'),
+        ]))
+        elems.append(tmp)
+        elems.append(Spacer(1, 0.2*cm))
+
+    if audit.frequence:
+        elems.append(Paragraph(f"<b>Fréquence d'intervention recommandée :</b> {audit.frequence}", s_n))
     if audit.prochaine_visite:
         elems.append(Paragraph(f"<b>Prochaine visite de contrôle prévue :</b> {audit.prochaine_visite.strftime('%d/%m/%Y')}", s_n))
     elems.append(Spacer(1, 0.4*cm))
 
-    # ── Section 4 : Recommandations ──
+    # ── Recommandations ──
     if audit.recommandations:
-        elems.append(Paragraph("4. RECOMMANDATIONS", s_h1))
+        elems.append(Paragraph("6. RECOMMANDATIONS", s_h1))
         elems.append(Paragraph(audit.recommandations.replace('\n','<br/>'), s_n))
         elems.append(Spacer(1, 0.4*cm))
+
+    # ── Zone de signature ──
+    elems.append(Spacer(1, 0.4*cm))
+    sig_data = [
+        ['Nom & Date — Rédacteur (PCO)', 'Signature client'],
+        ['', ''],
+        ['\n\n\n', '\n\n\n'],
+    ]
+    tsig = Table(sig_data, colWidths=[8.75*cm, 8.75*cm])
+    tsig.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'), ('FONTSIZE',(0,0),(-1,-1),8),
+        ('GRID',(0,0),(-1,-1),0.4,colors.grey), ('PADDING',(0,0),(-1,-1),6),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f0f6fa')),
+        ('ROWHEIGHT',(0,2),(-1,2),60),
+    ]))
+    elems.append(tsig)
 
     # ── Pied de page ──
     elems.append(Spacer(1, 0.6*cm))
@@ -2912,6 +3089,13 @@ def init_db():
                 date_finalisation TIMESTAMP,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS batiment VARCHAR(100)",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS checklist_json TEXT DEFAULT '{}'",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS causes_profondes TEXT",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS evaluation_prestations TEXT",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS communication_client VARCHAR(50)",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS situation_site VARCHAR(30)",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS mesures_json TEXT DEFAULT '[]'",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_date TIMESTAMP",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_statut VARCHAR(20)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_message TEXT",
