@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rapport d'audit — {{ client.nom_affichage }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root { --hps-blue: #1aabe3; --hps-dark: #1e293b; }
+    body { background: #f0f4f8; }
+    .portal-header { background: var(--hps-dark); color:#fff; padding:.75rem 1.5rem; display:flex; justify-content:space-between; align-items:center; }
+    .portal-header img { max-height:45px; background:#fff; border-radius:6px; padding:4px 8px; }
+    .card { border:none; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .card-header { font-weight:600; border-radius:12px 12px 0 0 !important; }
+    .section-header { background:linear-gradient(90deg,var(--hps-dark),var(--hps-blue)); color:#fff; padding:10px 16px; border-radius:8px; font-weight:600; margin-bottom:12px; }
+    .risk-box { border-radius:10px; padding:12px 16px; font-weight:600; font-size:1.05rem; }
+    .risk-faible   { background:#d1fae5; color:#065f46; }
+    .risk-moyen    { background:#fef3c7; color:#92400e; }
+    .risk-eleve    { background:#fee2e2; color:#991b1b; }
+    .risk-critique { background:#fee2e2; color:#7f1d1d; border:2px solid #dc2626; }
+  </style>
+</head>
+<body>
+
+<div class="portal-header">
+  <img src="{{ url_for('static', filename='logo.png') }}" alt="HPS" onerror="this.style.display='none'">
+  <div class="text-end">
+    <div style="font-size:.7rem;color:#94a3b8">Espace client sécurisé</div>
+    <div class="fw-semibold">{{ client.nom_affichage }}</div>
+  </div>
+</div>
+
+<div class="container py-4" style="max-width:800px">
+
+  <a href="{{ url_for('portail_dashboard', token=token) }}" class="btn btn-sm btn-outline-secondary mb-3">
+    <i class="bi bi-arrow-left me-1"></i>Retour à mon espace
+  </a>
+
+  <!-- En-tête rapport -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h5 class="fw-bold mb-1"><i class="bi bi-clipboard2-pulse me-2" style="color:var(--hps-blue)"></i>Diagnostic d'infestation & Plan de gestion</h5>
+          <div class="text-muted small">
+            Référence : <strong>{{ audit.reference }}</strong> ·
+            Date : <strong>{{ audit.date_audit.strftime('%d/%m/%Y') }}</strong>
+            {% if audit.technicien %} · Technicien : {{ audit.technicien }}{% endif %}
+          </div>
+          {% if audit.type_site %}<div class="text-muted small">Site : {{ audit.type_site }}</div>{% endif %}
+        </div>
+        <a href="{{ url_for('portail_audit_pdf', token=token, aid=audit.id) }}"
+           class="btn btn-danger btn-sm">
+          <i class="bi bi-filetype-pdf me-1"></i>Télécharger le rapport PDF
+        </a>
+      </div>
+
+      {% if audit.niveau_risque %}
+      <div class="risk-box risk-{{ audit.niveau_risque }} mt-3">
+        <i class="bi bi-shield-exclamation me-2"></i>Niveau de risque global : {{ audit.niveau_label }}
+      </div>{% endif %}
+    </div>
+  </div>
+
+  <!-- Nuisibles -->
+  {% if audit.nuisibles %}
+  <div class="card mb-3">
+    <div class="card-header" style="background:#f8fafc">
+      <i class="bi bi-bug me-2"></i>Nuisibles détectés
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th>Nuisible</th><th>Niveau</th><th>Zones</th><th>Preuves</th></tr></thead>
+          <tbody>
+            {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
+            {% for n in audit.nuisibles %}
+            <tr class="small">
+              <td class="fw-semibold">{{ n.label }}</td>
+              <td><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
+              <td>{{ n.zones or '—' }}</td>
+              <td>{{ n.preuves or '—' }}</td>
+            </tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Analyse du site -->
+  {% if audit.points_entree or audit.facteurs_favorisants or audit.observations %}
+  <div class="card mb-3">
+    <div class="card-header" style="background:#f8fafc"><i class="bi bi-search me-2"></i>Analyse du site</div>
+    <div class="card-body small">
+      {% if audit.observations %}<p><strong>Observations :</strong> {{ audit.observations }}</p>{% endif %}
+      {% if audit.points_entree %}<p class="mb-1"><strong>Points d'entrée identifiés :</strong> {{ audit.points_entree }}</p>{% endif %}
+      {% if audit.facteurs_favorisants %}<p class="mb-0"><strong>Facteurs favorisants :</strong> {{ audit.facteurs_favorisants }}</p>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Plan de gestion -->
+  <div class="card mb-3">
+    <div class="card-header" style="background:#f8fafc"><i class="bi bi-clipboard2-check me-2"></i>Plan de gestion des nuisibles</div>
+    <div class="card-body">
+      {% if audit.mesures_immediates %}
+      <div class="alert alert-warning py-2 small mb-3">
+        <strong><i class="bi bi-exclamation-triangle me-1"></i>Mesures immédiates :</strong> {{ audit.mesures_immediates }}
+      </div>{% endif %}
+
+      {% if audit.traitements %}
+      <div class="fw-semibold small mb-2">Traitements préconisés</div>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm table-bordered">
+          <thead class="table-light"><tr><th>Traitement</th><th>Zones</th><th>Fréquence</th><th>Produit</th></tr></thead>
+          <tbody>
+            {% for t in audit.traitements %}
+            <tr class="small"><td>{{ t.type }}</td><td>{{ t.zones or '—' }}</td><td>{{ t.frequence or '—' }}</td><td>{{ t.produit or '—' }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>{% endif %}
+
+      <div class="small">
+        {% if audit.mesures_preventives %}<p class="mb-1"><strong>Mesures préventives à mettre en place :</strong> {{ audit.mesures_preventives }}</p>{% endif %}
+        {% if audit.frequence %}<p class="mb-1"><strong>Fréquence d'intervention recommandée :</strong> {{ audit.frequence }}</p>{% endif %}
+        {% if audit.prochaine_visite %}<p class="mb-0"><strong>Prochaine visite de contrôle :</strong> <span class="text-primary fw-semibold">{{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</span></p>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recommandations -->
+  {% if audit.recommandations %}
+  <div class="card mb-3">
+    <div class="card-header" style="background:#f8fafc"><i class="bi bi-lightbulb me-2"></i>Recommandations</div>
+    <div class="card-body small">{{ audit.recommandations }}</div>
+  </div>{% endif %}
+
+  <p class="text-center text-muted small mt-4" style="font-size:.75rem">
+    Document officiel — {{ audit.reference }} — Lien personnel et sécurisé
+  </p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

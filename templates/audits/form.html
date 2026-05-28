@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block title %}{% if audit %}Modifier audit {{ audit.reference }}{% else %}Nouvel audit — {{ client.nom_affichage }}{% endif %}{% endblock %}
+{% block page_title %}
+  <i class="bi bi-clipboard2-pulse me-2"></i>
+  {% if audit %}Modifier l'audit {{ audit.reference }}{% else %}Nouvel audit — {{ client.nom_affichage }}{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .nuis-block { border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:8px; transition:background .15s; }
+  .nuis-block.active { background:#f0faff; border-color:#1aabe3; }
+  .niveau-badge { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:4px; }
+  .section-card .card-header { background:linear-gradient(90deg,#1e293b,#1aabe3); color:#fff; }
+  .tr-row td { padding:4px 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="POST">
+  <div class="row g-3">
+    <div class="col-lg-8">
+
+      <!-- 1. Informations générales -->
+      <div class="card mb-3 section-card">
+        <div class="card-header"><i class="bi bi-info-circle me-2"></i>1. Informations générales</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <label class="form-label fw-semibold">Date de l'audit *</label>
+              <input type="date" name="date_audit" class="form-control" required
+                     value="{{ audit.date_audit.strftime('%Y-%m-%d') if audit and audit.date_audit else today }}">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label fw-semibold">Technicien</label>
+              <input type="text" name="technicien" class="form-control"
+                     list="tech-list" value="{{ audit.technicien or '' }}" placeholder="Nom du technicien">
+              <datalist id="tech-list">
+                {% for t in techniciens.split(',') if t.strip() %}
+                <option value="{{ t.strip() }}">
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label fw-semibold">Type de site</label>
+              <input type="text" name="type_site" class="form-control"
+                     list="site-list" value="{{ audit.type_site or '' }}" placeholder="Restaurant, entrepôt…">
+              <datalist id="site-list">
+                {% for s in ['Restaurant / Restauration collective','Entrepôt / Stockage','Logement particulier','Bureau / Tertiaire','Industrie agroalimentaire','Commerce / Surface de vente','Établissement de santé','Hôtel / Hébergement','Autre'] %}
+                <option value="{{ s }}">{% endfor %}
+              </datalist>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Diagnostic — Nuisibles détectés -->
+      <div class="card mb-3 section-card">
+        <div class="card-header"><i class="bi bi-bug me-2"></i>2. Nuisibles détectés</div>
+        <div class="card-body">
+          {% set nuis_dict = {} %}
+          {% if audit %}
+            {% for n in audit.nuisibles %}{% set _ = nuis_dict.update({n.type: n}) %}{% endfor %}
+          {% endif %}
+
+          {% for key, label in nuisibles_types %}
+          {% set n = nuis_dict.get(key, {}) %}
+          <div class="nuis-block {% if n %}active{% endif %}" id="nb-{{ key }}">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="nuis_{{ key }}_present"
+                     id="cb-{{ key }}" onchange="toggleNuis('{{ key }}')"
+                     {% if n %}checked{% endif %}>
+              <label class="form-check-label fw-semibold" for="cb-{{ key }}">{{ label }}</label>
+            </div>
+            <div id="nd-{{ key }}" {% if not n %}style="display:none"{% endif %} class="mt-2">
+              <div class="row g-2">
+                <div class="col-sm-3">
+                  <label class="form-label small fw-semibold">Niveau</label>
+                  <select name="nuis_{{ key }}_niveau" class="form-select form-select-sm">
+                    {% for v, l, c in [('faible','Faible','success'),('moyen','Moyen','warning'),('eleve','Élevé','danger'),('critique','Critique','danger')] %}
+                    <option value="{{ v }}" {% if n.get('niveau') == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label small fw-semibold">Zones touchées</label>
+                  <input type="text" name="nuis_{{ key }}_zones" class="form-control form-control-sm"
+                         placeholder="Cave, cuisine, entrepôt…" value="{{ n.get('zones','') }}">
+                </div>
+                <div class="col-sm-5">
+                  <label class="form-label small fw-semibold">Preuves / observations</label>
+                  <input type="text" name="nuis_{{ key }}_preuves" class="form-control form-control-sm"
+                         placeholder="Fèces, coulées, dégâts, traces…" value="{{ n.get('preuves','') }}">
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- 3. Analyse du site -->
+      <div class="card mb-3 section-card">
+        <div class="card-header"><i class="bi bi-search me-2"></i>3. Analyse du site</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Points d'entrée identifiés</label>
+              <textarea name="points_entree" class="form-control" rows="3"
+                        placeholder="Fissures, passages de gaines, portes mal jointées…">{{ audit.points_entree or '' if audit else '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Facteurs favorisants</label>
+              <textarea name="facteurs_favorisants" class="form-control" rows="3"
+                        placeholder="Humidité, nourriture accessible, végétation dense…">{{ audit.facteurs_favorisants or '' if audit else '' }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Observations terrain</label>
+              <textarea name="observations" class="form-control" rows="3"
+                        placeholder="Observations générales relevées lors de la visite…">{{ audit.observations or '' if audit else '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Niveau de risque global</label>
+              <div class="d-flex gap-2 flex-wrap mt-1">
+                {% for v, l, c in [('faible','Faible','success'),('moyen','Moyen','warning'),('eleve','Élevé','danger'),('critique','Critique ⛔','danger')] %}
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="niveau_risque"
+                         id="nr-{{ v }}" value="{{ v }}"
+                         {% if audit and audit.niveau_risque == v %}checked{% endif %}>
+                  <label class="form-check-label" for="nr-{{ v }}">
+                    <span class="badge bg-{{ c }}">{{ l }}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Conformité HACCP</label>
+              <select name="conformite_haccp" class="form-select">
+                <option value="na" {% if not audit or audit.conformite_haccp == 'na' %}selected{% endif %}>N/A — Non applicable</option>
+                <option value="conforme" {% if audit and audit.conformite_haccp == 'conforme' %}selected{% endif %}>✔ Conforme</option>
+                <option value="non_conforme" {% if audit and audit.conformite_haccp == 'non_conforme' %}selected{% endif %}>✘ Non conforme</option>
+              </select>
+            </div>
+            <div class="col-12" id="nc-block" {% if not audit or audit.conformite_haccp != 'non_conforme' %}style="display:none"{% endif %}>
+              <label class="form-label fw-semibold">Non-conformités relevées</label>
+              <textarea name="non_conformites" class="form-control" rows="2"
+                        placeholder="Détaillez les non-conformités…">{{ audit.non_conformites or '' if audit else '' }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Plan de gestion -->
+      <div class="card mb-3 section-card">
+        <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>4. Plan de gestion des nuisibles</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Mesures immédiates requises</label>
+            <textarea name="mesures_immediates" class="form-control" rows="2"
+                      placeholder="Actions à réaliser en urgence…">{{ audit.mesures_immediates or '' if audit else '' }}</textarea>
+          </div>
+
+          <!-- Traitements préconisés -->
+          <label class="form-label fw-semibold">Traitements préconisés</label>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-2" id="tr-table">
+              <thead class="table-dark">
+                <tr>
+                  <th>Type de traitement</th><th>Zones</th><th>Fréquence</th><th>Produit / Méthode</th><th style="width:40px"></th>
+                </tr>
+              </thead>
+              <tbody id="tr-body">
+                {% set trs = audit.traitements if audit else [] %}
+                {% if trs %}
+                  {% for t in trs %}
+                  <tr class="tr-row">
+                    <td><input type="text" name="tr_type[]" class="form-control form-control-sm" value="{{ t.type }}" placeholder="Pose d'appâts…" list="tr-types-list"></td>
+                    <td><input type="text" name="tr_zones[]" class="form-control form-control-sm" value="{{ t.zones }}" placeholder="Cave, cuisine…"></td>
+                    <td><input type="text" name="tr_frequence[]" class="form-control form-control-sm" value="{{ t.frequence }}" list="freq-list" placeholder="Mensuel…"></td>
+                    <td><input type="text" name="tr_produit[]" class="form-control form-control-sm" value="{{ t.produit }}" placeholder="Nom produit…"></td>
+                    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
+                  </tr>
+                  {% endfor %}
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+          <datalist id="tr-types-list">
+            {% for t in ["Pose d'appâts rodenticides","Piégeage mécanique","Traitement insecticide","Traitement désinfectant","Pose de pièges lumineux UV","Traitement préventif anti-fourmis","Anti-pigeons (pics/filets)","Traitement anti-taupes","Traitement anti-punaises"] %}
+            <option value="{{ t }}">{% endfor %}
+          </datalist>
+          <datalist id="freq-list">
+            {% for f in ["Hebdomadaire","Bimensuel","Mensuel","Bimestriel","Trimestriel","Semestriel","Annuel","Sur appel"] %}
+            <option value="{{ f }}">{% endfor %}
+          </datalist>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTr()">
+            <i class="bi bi-plus-circle me-1"></i>Ajouter un traitement
+          </button>
+
+          <div class="row g-3 mt-1">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Mesures préventives à mettre en place par le client</label>
+              <textarea name="mesures_preventives" class="form-control" rows="2"
+                        placeholder="Étanchéité des locaux, gestion des déchets, nettoyage…">{{ audit.mesures_preventives or '' if audit else '' }}</textarea>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Fréquence d'intervention recommandée</label>
+              <input type="text" name="frequence" class="form-control"
+                     list="freq-list" value="{{ audit.frequence or '' if audit else '' }}" placeholder="Trimestriel, Mensuel…">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label fw-semibold">Prochaine visite de contrôle</label>
+              <input type="date" name="prochaine_visite" class="form-control"
+                     value="{{ audit.prochaine_visite.strftime('%Y-%m-%d') if audit and audit.prochaine_visite else '' }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Recommandations -->
+      <div class="card mb-3 section-card">
+        <div class="card-header"><i class="bi bi-lightbulb me-2"></i>5. Recommandations finales</div>
+        <div class="card-body">
+          <textarea name="recommandations" class="form-control" rows="4"
+                    placeholder="Recommandations globales, points de vigilance, conseils au client…">{{ audit.recommandations or '' if audit else '' }}</textarea>
+        </div>
+      </div>
+
+    </div><!-- col-lg-8 -->
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-person me-2"></i>Client</div>
+        <div class="card-body small">
+          <div class="fw-bold">{{ client.nom_affichage }}</div>
+          {% if client.adresse %}<div class="text-muted">{{ client.adresse }}<br>{{ client.code_postal }} {{ client.ville }}</div>{% endif %}
+          {% if client.telephone %}<div class="mt-1"><i class="bi bi-telephone me-1"></i>{{ client.telephone }}</div>{% endif %}
+          <a href="{{ url_for('client_detail', id=client.id) }}" class="btn btn-sm btn-outline-secondary mt-2 w-100">
+            <i class="bi bi-arrow-left me-1"></i>Fiche client
+          </a>
+        </div>
+      </div>
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-floppy me-2"></i>Actions</div>
+        <div class="card-body d-grid gap-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-floppy me-1"></i>
+            {% if audit %}Enregistrer les modifications{% else %}Créer l'audit{% endif %}
+          </button>
+          {% if audit %}
+          <a href="{{ url_for('audit_detail', id=audit.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-x me-1"></i>Annuler
+          </a>
+          {% else %}
+          <a href="{{ url_for('client_detail', id=client.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-x me-1"></i>Annuler
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleNuis(key) {
+  const cb = document.getElementById('cb-' + key);
+  const nd = document.getElementById('nd-' + key);
+  const nb = document.getElementById('nb-' + key);
+  nd.style.display = cb.checked ? '' : 'none';
+  nb.classList.toggle('active', cb.checked);
+}
+function addTr() {
+  const row = `<tr class="tr-row">
+    <td><input type="text" name="tr_type[]" class="form-control form-control-sm" placeholder="Type de traitement" list="tr-types-list"></td>
+    <td><input type="text" name="tr_zones[]" class="form-control form-control-sm" placeholder="Zones"></td>
+    <td><input type="text" name="tr_frequence[]" class="form-control form-control-sm" placeholder="Fréquence" list="freq-list"></td>
+    <td><input type="text" name="tr_produit[]" class="form-control form-control-sm" placeholder="Produit"></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
+  </tr>`;
+  document.getElementById('tr-body').insertAdjacentHTML('beforeend', row);
+}
+// HACCP toggle
+document.querySelector('[name="conformite_haccp"]').addEventListener('change', function() {
+  document.getElementById('nc-block').style.display = this.value === 'non_conforme' ? '' : 'none';
+});
+// Ajouter une ligne vide par défaut si aucun traitement
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('tr-body').children.length === 0) addTr();
+});
+</script>
+{% endblock %}

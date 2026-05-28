@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Audit {{ audit.reference }}{% endblock %}
+{% block page_title %}<i class="bi bi-clipboard2-pulse me-2"></i>Audit {{ audit.reference }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('audit_modifier', id=audit.id) }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-pencil me-1"></i>Modifier
+</a>
+<a href="{{ url_for('audit_pdf', id=audit.id) }}" class="btn btn-outline-danger btn-sm" target="_blank">
+  <i class="bi bi-filetype-pdf me-1"></i>PDF
+</a>
+<a href="{{ url_for('audit_pdf', id=audit.id) }}?dl=1" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-download me-1"></i>Télécharger
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Sidebar -->
+  <div class="col-lg-3">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-info-circle me-1"></i>Infos</span>
+        <span class="badge bg-{{ audit.statut_couleur }}">{{ audit.statut_label }}</span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:90px">Référence</td><td class="fw-bold">{{ audit.reference }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Client</td>
+              <td><a href="{{ url_for('client_detail', id=audit.client_id) }}">{{ audit.client.nom_affichage }}</a></td></tr>
+          <tr><td class="text-muted small fw-semibold">Date audit</td><td>{{ audit.date_audit.strftime('%d/%m/%Y') }}</td></tr>
+          {% if audit.technicien %}<tr><td class="text-muted small fw-semibold">Technicien</td><td>{{ audit.technicien }}</td></tr>{% endif %}
+          {% if audit.type_site %}<tr><td class="text-muted small fw-semibold">Type site</td><td>{{ audit.type_site }}</td></tr>{% endif %}
+          {% if audit.niveau_risque %}
+          <tr><td class="text-muted small fw-semibold">Risque</td>
+              <td><span class="badge bg-{{ audit.niveau_couleur }}">{{ audit.niveau_label }}</span></td></tr>
+          {% endif %}
+          <tr><td class="text-muted small fw-semibold">Créé le</td><td>{{ audit.created_at.strftime('%d/%m/%Y') }}</td></tr>
+          {% if audit.date_finalisation %}
+          <tr><td class="text-muted small fw-semibold">Finalisé</td><td>{{ audit.date_finalisation.strftime('%d/%m/%Y') }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+
+    {% if audit.statut == 'brouillon' %}
+    <div class="card mb-3 border-success">
+      <div class="card-header text-success"><i class="bi bi-check-circle me-2"></i>Finaliser</div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">Une fois finalisé, le rapport sera disponible sur le portail client{% if not audit.client.portal_actif %} (portail non activé){% endif %}.</p>
+        <form method="POST" action="{{ url_for('audit_finaliser', id=audit.id) }}"
+              onsubmit="return confirm('Finaliser cet audit ? Il sera visible par le client.')">
+          <button class="btn btn-success btn-sm w-100">
+            <i class="bi bi-check-lg me-1"></i>Finaliser l'audit
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card border-danger">
+      <div class="card-header text-danger"><i class="bi bi-trash me-2"></i>Zone dangereuse</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('audit_supprimer', id=audit.id) }}"
+              onsubmit="return confirm('Supprimer définitivement cet audit ?')">
+          <button class="btn btn-outline-danger btn-sm w-100">Supprimer l'audit</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenu principal -->
+  <div class="col-lg-9">
+
+    <!-- Nuisibles détectés -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-bug me-2"></i>Nuisibles détectés</div>
+      <div class="card-body">
+        {% if audit.nuisibles %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-dark"><tr><th>Nuisible</th><th>Niveau</th><th>Zones</th><th>Preuves / Observations</th></tr></thead>
+            <tbody>
+              {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
+              {% for n in audit.nuisibles %}
+              <tr>
+                <td class="fw-semibold">{{ n.label }}</td>
+                <td><span class="badge bg-{{ niv_c.get(n.niveau, 'secondary') }}">{{ n.niveau|capitalize }}</span></td>
+                <td class="small">{{ n.zones or '—' }}</td>
+                <td class="small">{{ n.preuves or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">Aucun nuisible détecté lors de cet audit.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Analyse du site -->
+    {% if audit.points_entree or audit.facteurs_favorisants or audit.observations or audit.niveau_risque %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-search me-2"></i>Analyse du site</div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% if audit.points_entree %}
+          <div class="col-md-6">
+            <div class="fw-semibold small mb-1">Points d'entrée identifiés</div>
+            <p class="small mb-0">{{ audit.points_entree }}</p>
+          </div>{% endif %}
+          {% if audit.facteurs_favorisants %}
+          <div class="col-md-6">
+            <div class="fw-semibold small mb-1">Facteurs favorisants</div>
+            <p class="small mb-0">{{ audit.facteurs_favorisants }}</p>
+          </div>{% endif %}
+          {% if audit.observations %}
+          <div class="col-12">
+            <div class="fw-semibold small mb-1">Observations terrain</div>
+            <p class="small mb-0">{{ audit.observations }}</p>
+          </div>{% endif %}
+          {% if audit.conformite_haccp and audit.conformite_haccp != 'na' %}
+          <div class="col-12">
+            <div class="fw-semibold small mb-1">Conformité HACCP</div>
+            {% if audit.conformite_haccp == 'conforme' %}
+              <span class="badge bg-success">✔ Conforme</span>
+            {% else %}
+              <span class="badge bg-danger">✘ Non conforme</span>
+              {% if audit.non_conformites %}<p class="small mt-1 mb-0 text-danger">{{ audit.non_conformites }}</p>{% endif %}
+            {% endif %}
+          </div>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Plan de gestion -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>Plan de gestion des nuisibles</div>
+      <div class="card-body">
+        {% if audit.mesures_immediates %}
+        <div class="alert alert-warning py-2 small mb-3">
+          <strong><i class="bi bi-exclamation-triangle me-1"></i>Mesures immédiates :</strong> {{ audit.mesures_immediates }}
+        </div>{% endif %}
+        {% if audit.traitements %}
+        <div class="fw-semibold small mb-2">Traitements préconisés</div>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered">
+            <thead class="table-secondary"><tr><th>Traitement</th><th>Zones</th><th>Fréquence</th><th>Produit / Méthode</th></tr></thead>
+            <tbody>
+              {% for t in audit.traitements %}
+              <tr class="small"><td>{{ t.type }}</td><td>{{ t.zones or '—' }}</td><td>{{ t.frequence or '—' }}</td><td>{{ t.produit or '—' }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>{% endif %}
+        <div class="row g-2 small">
+          {% if audit.mesures_preventives %}
+          <div class="col-12"><strong>Mesures préventives client :</strong> {{ audit.mesures_preventives }}</div>{% endif %}
+          {% if audit.frequence %}
+          <div class="col-sm-6"><strong>Fréquence recommandée :</strong> {{ audit.frequence }}</div>{% endif %}
+          {% if audit.prochaine_visite %}
+          <div class="col-sm-6"><strong>Prochaine visite :</strong> {{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommandations -->
+    {% if audit.recommandations %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recommandations</div>
+      <div class="card-body small">{{ audit.recommandations }}</div>
+    </div>{% endif %}
+
+  </div>
+</div>
+{% endblock %}

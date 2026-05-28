@@ -240,6 +240,76 @@ class BonIntervention(db.Model):
                 'envoye': 'info', 'signe': 'success'}.get(self.statut, 'secondary')
 
 
+NUISIBLES_TYPES = [
+    ('rongeurs',   'Rongeurs (rats / souris)'),
+    ('blattes',    'Blattes / Cafards'),
+    ('mouches',    'Mouches / Moucherons'),
+    ('moustiques', 'Moustiques'),
+    ('punaises',   'Punaises de lit'),
+    ('fourmis',    'Fourmis'),
+    ('guepes',     'Guêpes / Frelons'),
+    ('abeilles',   'Abeilles'),
+    ('pigeons',    'Pigeons / Oiseaux'),
+    ('taupes',     'Taupes'),
+    ('autres',     'Autres nuisibles'),
+]
+
+class AuditClient(db.Model):
+    __tablename__ = 'audits_clients'
+    id = db.Column(db.Integer, primary_key=True)
+    reference = db.Column(db.String(20), unique=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    date_audit = db.Column(db.Date, nullable=False)
+    technicien = db.Column(db.String(100))
+    type_site = db.Column(db.String(100))
+    # Diagnostic
+    nuisibles_json = db.Column(db.Text, default='[]')
+    points_entree = db.Column(db.Text)
+    facteurs_favorisants = db.Column(db.Text)
+    observations = db.Column(db.Text)
+    niveau_risque = db.Column(db.String(20))
+    conformite_haccp = db.Column(db.String(20), default='na')
+    non_conformites = db.Column(db.Text)
+    # Plan de gestion
+    mesures_immediates = db.Column(db.Text)
+    traitements_json = db.Column(db.Text, default='[]')
+    mesures_preventives = db.Column(db.Text)
+    frequence = db.Column(db.String(50))
+    prochaine_visite = db.Column(db.Date)
+    recommandations = db.Column(db.Text)
+    # Statut
+    statut = db.Column(db.String(20), default='brouillon')
+    date_finalisation = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship('Client', backref='audits')
+
+    @property
+    def nuisibles(self):
+        try: return json.loads(self.nuisibles_json or '[]')
+        except: return []
+
+    @property
+    def traitements(self):
+        try: return json.loads(self.traitements_json or '[]')
+        except: return []
+
+    @property
+    def statut_label(self):
+        return {'brouillon': 'Brouillon', 'finalise': 'Finalisé'}.get(self.statut, self.statut)
+
+    @property
+    def statut_couleur(self):
+        return {'brouillon': 'secondary', 'finalise': 'success'}.get(self.statut, 'secondary')
+
+    @property
+    def niveau_label(self):
+        return {'faible': 'Faible ✔', 'moyen': 'Moyen ⚠', 'eleve': 'Élevé ⚠', 'critique': 'Critique ⛔'}.get(self.niveau_risque or '', '—')
+
+    @property
+    def niveau_couleur(self):
+        return {'faible': 'success', 'moyen': 'warning', 'eleve': 'danger', 'critique': 'danger'}.get(self.niveau_risque or '', 'secondary')
+
+
 class BonPhoto(db.Model):
     __tablename__ = 'bon_photos'
     id = db.Column(db.Integer, primary_key=True)
@@ -336,6 +406,58 @@ def next_bon_num():
     last = BonIntervention.query.order_by(BonIntervention.id.desc()).first()
     n = (last.id if last else 0) + 1
     return f"BI{datetime.now().year}{n:04d}"
+
+def next_audit_ref():
+    last = AuditClient.query.order_by(AuditClient.id.desc()).first()
+    n = (last.id if last else 0) + 1
+    return f"AUD{datetime.now().year}{n:04d}"
+
+def _parse_audit_form(form):
+    """Extrait et structure les données du formulaire d'audit."""
+    nuisibles = []
+    for key, label in NUISIBLES_TYPES:
+        if form.get(f'nuis_{key}_present'):
+            nuisibles.append({
+                'type': key, 'label': label,
+                'niveau':  form.get(f'nuis_{key}_niveau', 'faible'),
+                'zones':   form.get(f'nuis_{key}_zones', '').strip(),
+                'preuves': form.get(f'nuis_{key}_preuves', '').strip(),
+            })
+    traitements = []
+    for t, z, f2, p in zip(
+        form.getlist('tr_type[]'), form.getlist('tr_zones[]'),
+        form.getlist('tr_frequence[]'), form.getlist('tr_produit[]')
+    ):
+        if t.strip():
+            traitements.append({'type': t.strip(), 'zones': z.strip(),
+                                 'frequence': f2.strip(), 'produit': p.strip()})
+    try:
+        date_audit = datetime.strptime(form.get('date_audit', ''), '%Y-%m-%d').date()
+    except ValueError:
+        date_audit = datetime.now().date()
+    prochaine_str = form.get('prochaine_visite', '').strip()
+    try:
+        prochaine_visite = datetime.strptime(prochaine_str, '%Y-%m-%d').date() if prochaine_str else None
+    except ValueError:
+        prochaine_visite = None
+    return dict(
+        date_audit=date_audit,
+        technicien=form.get('technicien', '').strip(),
+        type_site=form.get('type_site', '').strip(),
+        nuisibles_json=json.dumps(nuisibles, ensure_ascii=False),
+        points_entree=form.get('points_entree', '').strip(),
+        facteurs_favorisants=form.get('facteurs_favorisants', '').strip(),
+        observations=form.get('observations', '').strip(),
+        niveau_risque=form.get('niveau_risque', '').strip(),
+        conformite_haccp=form.get('conformite_haccp', 'na'),
+        non_conformites=form.get('non_conformites', '').strip(),
+        mesures_immediates=form.get('mesures_immediates', '').strip(),
+        traitements_json=json.dumps(traitements, ensure_ascii=False),
+        mesures_preventives=form.get('mesures_preventives', '').strip(),
+        frequence=form.get('frequence', '').strip(),
+        prochaine_visite=prochaine_visite,
+        recommandations=form.get('recommandations', '').strip(),
+    )
 
 def _sig_to_image(b64_data, max_w=7*cm, max_h=3*cm):
     """Convertit une signature base64 (data URL ou raw) en objet RLImage, ou '' si invalide."""
@@ -846,6 +968,162 @@ def envoyer_bon_email(bon):
         return False, f"Erreur Brevo {e.code} : {detail}"
     except Exception as e:
         return False, f"Erreur envoi : {e}"
+
+def generer_pdf_audit(audit):
+    """Génère le PDF du diagnostic d'infestation et plan de gestion des nuisibles."""
+    if not PDF_OK:
+        raise RuntimeError("ReportLab non installé.")
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+    s_titre  = ParagraphStyle('t',  parent=styles['Title'],  fontSize=14, alignment=TA_CENTER, spaceAfter=4)
+    s_h1     = ParagraphStyle('h1', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', spaceAfter=4, spaceBefore=8)
+    s_h2     = ParagraphStyle('h2', parent=styles['Normal'], fontSize=9,  fontName='Helvetica-Bold', spaceAfter=3)
+    s_n      = ParagraphStyle('n',  parent=styles['Normal'], fontSize=9,  spaceAfter=3)
+    s_sm     = ParagraphStyle('sm', parent=styles['Normal'], fontSize=8,  textColor=colors.grey, alignment=TA_CENTER)
+    s_right  = ParagraphStyle('r',  parent=styles['Normal'], fontSize=8,  alignment=TA_RIGHT)
+
+    soc = get_param('societe', 'HPS')
+    cli = audit.client
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    logo_path  = os.path.join(static_dir, 'logo.png')
+    elems = []
+
+    # ── En-tête ──
+    info_soc = ' | '.join(filter(None, [get_param('adresse'), get_param('telephone'), get_param('email')]))
+    if os.path.exists(logo_path):
+        try:
+            logo = RLImage(logo_path, width=4*cm, height=1.8*cm, kind='proportional')
+            ht = Table([[logo, Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc}</font>",
+                                         ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))]],
+                        colWidths=[5*cm, 12.5*cm])
+            ht.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+                                    ('LINEBELOW',(0,0),(-1,0),1.5,colors.HexColor('#1aabe3')),
+                                    ('BOTTOMPADDING',(0,0),(-1,0),8)]))
+            elems.append(ht)
+        except Exception:
+            elems.append(Paragraph(soc, s_titre))
+    else:
+        elems.append(Paragraph(soc, s_titre))
+    elems.append(Spacer(1, 0.4*cm))
+
+    # ── Titre ──
+    titre_couleur = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}.get(audit.niveau_risque or '', '#1aabe3')
+    elems.append(Paragraph("DIAGNOSTIC D'INFESTATION & PLAN DE GESTION DES NUISIBLES", s_titre))
+    elems.append(Paragraph(f"Référence : <b>{audit.reference}</b>", ParagraphStyle('ref', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, spaceAfter=6)))
+    elems.append(Spacer(1, 0.3*cm))
+
+    # ── Infos générales ──
+    info_data = [
+        ['CLIENT', cli.nom_affichage, 'DATE AUDIT', audit.date_audit.strftime('%d/%m/%Y')],
+        ['ADRESSE', f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip(), 'TECHNICIEN', audit.technicien or '—'],
+        ['TYPE DE SITE', audit.type_site or '—', 'NIVEAU DE RISQUE',
+         Paragraph(f"<b>{audit.niveau_label}</b>",
+                   ParagraphStyle('nr', parent=styles['Normal'], fontSize=9,
+                                  textColor=colors.HexColor(titre_couleur)))],
+    ]
+    ti = Table(info_data, colWidths=[3*cm, 7.5*cm, 3.5*cm, 3.5*cm])
+    ti.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'), ('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),8), ('BACKGROUND',(0,0),(0,-1),colors.HexColor('#f0f6fa')),
+        ('BACKGROUND',(2,0),(2,-1),colors.HexColor('#f0f6fa')),
+        ('GRID',(0,0),(-1,-1),0.4,colors.grey), ('PADDING',(0,0),(-1,-1),5),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+    ]))
+    elems.append(ti)
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── Section 1 : Nuisibles détectés ──
+    elems.append(Paragraph("1. NUISIBLES DÉTECTÉS", s_h1))
+    if audit.nuisibles:
+        niv_couleurs = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}
+        nuis_data = [['Nuisible', 'Niveau', 'Zones touchées', 'Preuves / Observations']]
+        for n in audit.nuisibles:
+            niv_c = niv_couleurs.get(n.get('niveau',''), '#666')
+            nuis_data.append([
+                n.get('label', ''),
+                Paragraph(f"<b>{n.get('niveau','').capitalize()}</b>",
+                          ParagraphStyle('nv', parent=styles['Normal'], fontSize=8,
+                                         textColor=colors.HexColor(niv_c))),
+                n.get('zones', ''),
+                n.get('preuves', ''),
+            ])
+        tn = Table(nuis_data, colWidths=[4*cm, 2.2*cm, 5*cm, 6.3*cm])
+        tn.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
+            ('PADDING',(0,0),(-1,-1),5), ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ]))
+        elems.append(tn)
+    else:
+        elems.append(Paragraph("Aucun nuisible détecté lors de cet audit.", s_n))
+    elems.append(Spacer(1, 0.4*cm))
+
+    # ── Section 2 : Analyse du site ──
+    elems.append(Paragraph("2. ANALYSE DU SITE", s_h1))
+    for label, val in [("Points d'entrée identifiés", audit.points_entree),
+                        ("Facteurs favorisants", audit.facteurs_favorisants),
+                        ("Observations terrain", audit.observations)]:
+        if val:
+            elems.append(Paragraph(f"<b>{label} :</b>", s_h2))
+            elems.append(Paragraph(val.replace('\n','<br/>'), s_n))
+
+    # HACCP
+    haccp_map = {'conforme': '✔ Conforme', 'non_conforme': '✘ Non conforme', 'na': 'N/A'}
+    haccp_lbl = haccp_map.get(audit.conformite_haccp or 'na', 'N/A')
+    elems.append(Paragraph(f"<b>Conformité HACCP :</b> {haccp_lbl}", s_n))
+    if audit.non_conformites:
+        elems.append(Paragraph(f"<i>Non-conformités : {audit.non_conformites}</i>", s_n))
+    elems.append(Spacer(1, 0.4*cm))
+
+    # ── Section 3 : Plan de gestion ──
+    elems.append(Paragraph("3. PLAN DE GESTION DES NUISIBLES", s_h1))
+    if audit.mesures_immediates:
+        elems.append(Paragraph("<b>Mesures immédiates requises :</b>", s_h2))
+        elems.append(Paragraph(audit.mesures_immediates.replace('\n','<br/>'), s_n))
+    if audit.traitements:
+        elems.append(Paragraph("<b>Traitements préconisés :</b>", s_h2))
+        tr_data = [['Traitement', 'Zones', 'Fréquence', 'Produit / Méthode']]
+        for t in audit.traitements:
+            tr_data.append([t.get('type',''), t.get('zones',''), t.get('frequence',''), t.get('produit','')])
+        tt = Table(tr_data, colWidths=[5*cm, 4.5*cm, 3*cm, 5*cm])
+        tt.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#34495e')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
+            ('PADDING',(0,0),(-1,-1),5), ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ]))
+        elems.append(tt)
+        elems.append(Spacer(1, 0.2*cm))
+    for label, val in [("Mesures préventives à mettre en place par le client", audit.mesures_preventives),
+                        ("Fréquence d'intervention recommandée", audit.frequence)]:
+        if val:
+            elems.append(Paragraph(f"<b>{label} :</b> {val}", s_n))
+    if audit.prochaine_visite:
+        elems.append(Paragraph(f"<b>Prochaine visite de contrôle prévue :</b> {audit.prochaine_visite.strftime('%d/%m/%Y')}", s_n))
+    elems.append(Spacer(1, 0.4*cm))
+
+    # ── Section 4 : Recommandations ──
+    if audit.recommandations:
+        elems.append(Paragraph("4. RECOMMANDATIONS", s_h1))
+        elems.append(Paragraph(audit.recommandations.replace('\n','<br/>'), s_n))
+        elems.append(Spacer(1, 0.4*cm))
+
+    # ── Pied de page ──
+    elems.append(Spacer(1, 0.6*cm))
+    date_doc = audit.date_finalisation or audit.created_at
+    elems.append(Paragraph(
+        f"Document établi le {date_doc.strftime('%d/%m/%Y')} — {audit.reference} — {soc}",
+        s_sm))
+
+    doc.build(elems)
+    buf.seek(0)
+    return buf
 
 # ─── GÉOCODAGE & OPTIMISATION TOURNÉE ────────────────────────────────────────
 
@@ -1712,6 +1990,121 @@ def tournee_optimiser():
         'depart_lon': depart_lon,
     })
 
+# ─── AUDITS DIAGNOSTIC ────────────────────────────────────────────────────────
+
+@app.route('/audits')
+@login_required
+def audits_liste():
+    audits = AuditClient.query.order_by(AuditClient.date_audit.desc()).all()
+    return render_template('audits/liste.html', audits=audits)
+
+@app.route('/clients/<int:id>/audits/nouveau', methods=['GET', 'POST'])
+@login_required
+def audit_nouveau(id):
+    client = Client.query.get_or_404(id)
+    if request.method == 'POST':
+        data = _parse_audit_form(request.form)
+        audit = AuditClient(reference=next_audit_ref(), client_id=id, **data)
+        db.session.add(audit)
+        db.session.commit()
+        flash(f'Audit {audit.reference} créé.', 'success')
+        return redirect(url_for('audit_detail', id=audit.id))
+    techniciens = get_param('techniciens', '')
+    today = datetime.now().date().strftime('%Y-%m-%d')
+    return render_template('audits/form.html', client=client, audit=None,
+                           nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
+                           today=today)
+
+@app.route('/audits/<int:id>')
+@login_required
+def audit_detail(id):
+    audit = AuditClient.query.get_or_404(id)
+    return render_template('audits/detail.html', audit=audit)
+
+@app.route('/audits/<int:id>/modifier', methods=['GET', 'POST'])
+@login_required
+def audit_modifier(id):
+    audit = AuditClient.query.get_or_404(id)
+    if request.method == 'POST':
+        data = _parse_audit_form(request.form)
+        for k, v in data.items():
+            setattr(audit, k, v)
+        db.session.commit()
+        flash('Audit mis à jour.', 'success')
+        return redirect(url_for('audit_detail', id=id))
+    techniciens = get_param('techniciens', '')
+    today = datetime.now().date().strftime('%Y-%m-%d')
+    return render_template('audits/form.html', client=audit.client, audit=audit,
+                           nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
+                           today=today)
+
+@app.route('/audits/<int:id>/finaliser', methods=['POST'])
+@login_required
+def audit_finaliser(id):
+    audit = AuditClient.query.get_or_404(id)
+    audit.statut = 'finalise'
+    audit.date_finalisation = datetime.utcnow()
+    db.session.commit()
+    if audit.client.portal_actif:
+        lien_p = url_for('portail_access', token=audit.client.access_token, _external=True)
+        _notif_async(
+            audit.client_id,
+            sujet=f"Votre rapport d'audit est disponible ({audit.reference})",
+            titre="📋 Rapport d'audit disponible",
+            corps=(f"Votre diagnostic d'infestation et plan de gestion des nuisibles "
+                   f"({audit.reference} — {audit.date_audit.strftime('%d/%m/%Y')}) "
+                   f"est disponible dans votre espace client."),
+            lien=lien_p,
+        )
+    msg = 'Audit finalisé.'
+    if audit.client.portal_actif:
+        msg += ' Client notifié.'
+    flash(msg, 'success')
+    return redirect(url_for('audit_detail', id=id))
+
+@app.route('/audits/<int:id>/supprimer', methods=['POST'])
+@login_required
+def audit_supprimer(id):
+    audit = AuditClient.query.get_or_404(id)
+    cid = audit.client_id
+    db.session.delete(audit)
+    db.session.commit()
+    flash('Audit supprimé.', 'info')
+    return redirect(url_for('client_detail', id=cid))
+
+@app.route('/audits/<int:id>/pdf')
+@login_required
+def audit_pdf(id):
+    audit = AuditClient.query.get_or_404(id)
+    try:
+        buf = generer_pdf_audit(audit)
+        return send_file(buf, download_name=f"audit_{audit.reference}.pdf",
+                         mimetype='application/pdf', as_attachment=bool(request.args.get('dl')))
+    except Exception as e:
+        flash(f'Erreur PDF : {e}', 'danger')
+        return redirect(url_for('audit_detail', id=id))
+
+@app.route('/portail/<token>/audits/<int:aid>')
+def portail_audit_detail(token, aid):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    audit = AuditClient.query.filter_by(id=aid, client_id=c.id, statut='finalise').first_or_404()
+    return render_template('portal/audit_detail.html', client=c, token=token, audit=audit)
+
+@app.route('/portail/<token>/audits/<int:aid>/pdf')
+def portail_audit_pdf(token, aid):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    audit = AuditClient.query.filter_by(id=aid, client_id=c.id, statut='finalise').first_or_404()
+    try:
+        buf = generer_pdf_audit(audit)
+        return send_file(buf, download_name=f"audit_{audit.reference}.pdf", mimetype='application/pdf')
+    except Exception as e:
+        flash(f'Erreur PDF : {e}', 'danger')
+        return redirect(url_for('portail_audit_detail', token=token, aid=aid))
+
 # ─── CONTRATS CLIENTS ────────────────────────────────────────────────────────
 
 TYPES_PRESTATION = [
@@ -2239,13 +2632,15 @@ def portail_dashboard(token):
         .filter(Intervention.client_id == c.id,
                 BonIntervention.statut.in_(['finalise', 'envoye', 'signe']))\
         .order_by(BonIntervention.date_creation.desc()).all()
+    audits = AuditClient.query.filter_by(client_id=c.id, statut='finalise')\
+        .order_by(AuditClient.date_audit.desc()).all()
     soc = get_param('societe', 'HPS')
     tel_soc = get_param('telephone', '')
     email_soc = get_param('email', '')
     return render_template('portal/dashboard.html', client=c,
                            a_venir=a_venir, passes=passes, bons=bons,
-                           token=token, soc=soc, tel_soc=tel_soc,
-                           email_soc=email_soc)
+                           audits=audits, token=token, soc=soc,
+                           tel_soc=tel_soc, email_soc=email_soc)
 
 @app.route('/portail/<token>/bon/<int:bid>/pdf')
 def portail_bon_pdf(token, bid):
@@ -2493,6 +2888,30 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_actif BOOLEAN DEFAULT FALSE",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
+            """CREATE TABLE IF NOT EXISTS audits_clients (
+                id SERIAL PRIMARY KEY,
+                reference VARCHAR(20) UNIQUE,
+                client_id INTEGER NOT NULL REFERENCES clients(id),
+                date_audit DATE NOT NULL,
+                technicien VARCHAR(100),
+                type_site VARCHAR(100),
+                nuisibles_json TEXT DEFAULT '[]',
+                points_entree TEXT,
+                facteurs_favorisants TEXT,
+                observations TEXT,
+                niveau_risque VARCHAR(20),
+                conformite_haccp VARCHAR(20) DEFAULT 'na',
+                non_conformites TEXT,
+                mesures_immediates TEXT,
+                traitements_json TEXT DEFAULT '[]',
+                mesures_preventives TEXT,
+                frequence VARCHAR(50),
+                prochaine_visite DATE,
+                recommandations TEXT,
+                statut VARCHAR(20) DEFAULT 'brouillon',
+                date_finalisation TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_date TIMESTAMP",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_statut VARCHAR(20)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_message TEXT",

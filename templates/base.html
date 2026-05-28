@@ -171,6 +171,9 @@
     <a href="{{ url_for('bons_liste') }}" class="nav-link {% if 'bon' in request.endpoint %}active{% endif %}">
       <i class="bi bi-file-earmark-text"></i> Bons d'intervention
     </a>
+    <a href="{{ url_for('audits_liste') }}" class="nav-link {% if 'audit' in request.endpoint %}active{% endif %}">
+      <i class="bi bi-clipboard2-pulse"></i> Audits
+    </a>
 
     <div class="nav-section">Compte</div>
     <a href="{{ url_for('parametres') }}" class="nav-link {% if request.endpoint=='parametres' %}active{% endif %}">

@@ -220,6 +220,54 @@
   </div>
   {% endif %}
 
+  <!-- RAPPORTS D'AUDIT -->
+  {% if audits %}
+  <div class="section-title mt-4">
+    <i class="bi bi-clipboard2-pulse" style="color:#1aabe3"></i>
+    Rapports d'audit
+    <span class="badge bg-primary rounded-pill ms-1">{{ audits|length }}</span>
+  </div>
+
+  {% set niv_bg = {'faible':'#d1fae5','moyen':'#fef3c7','eleve':'#fee2e2','critique':'#fee2e2'} %}
+  {% set niv_tc = {'faible':'#065f46','moyen':'#92400e','eleve':'#991b1b','critique':'#7f1d1d'} %}
+
+  {% for a in audits %}
+  <div class="card mb-2">
+    <div class="card-body py-2">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <div class="fw-semibold small">
+            <i class="bi bi-clipboard2-pulse me-1 text-primary"></i>
+            Diagnostic {{ a.reference }}
+            {% if a.niveau_risque %}
+            <span class="badge ms-1"
+                  style="background:{{ niv_bg.get(a.niveau_risque,'#e2e8f0') }};color:{{ niv_tc.get(a.niveau_risque,'#334155') }}">
+              {{ a.niveau_label }}
+            </span>
+            {% endif %}
+          </div>
+          <div class="text-muted" style="font-size:.75rem">
+            {{ a.date_audit.strftime('%d/%m/%Y') }}
+            {% if a.technicien %} · {{ a.technicien }}{% endif %}
+            {% if a.type_site %} · {{ a.type_site }}{% endif %}
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('portail_audit_pdf', token=token, aid=a.id) }}"
+             class="btn btn-sm btn-outline-danger" target="_blank">
+            <i class="bi bi-filetype-pdf me-1"></i>PDF
+          </a>
+          <a href="{{ url_for('portail_audit_detail', token=token, aid=a.id) }}"
+             class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-eye me-1"></i>Consulter
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   <div class="text-center mt-4 text-muted" style="font-size:.72rem">
     <i class="bi bi-shield-lock me-1"></i>Espace sécurisé — Accès personnel et confidentiel — {{ soc }}
   </div>
