@@ -2,6 +2,32 @@
 {% block title %}{{ client.nom_affichage }}{% endblock %}
 {% block page_title %}<i class="bi bi-person me-2"></i>{{ client.nom_affichage }}{% endblock %}
 
+{% block head %}
+<style>
+/* ── Fix champ nombre de passages : masquer les flèches navigateur qui écrasent le chiffre ── */
+#form-contrats input[type="number"] {
+  color: #1e293b !important;
+  background-color: #fff !important;
+  font-weight: 700;
+  font-size: .92rem;
+  min-width: 52px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+/* Chrome / Safari / Edge */
+#form-contrats input[type="number"]::-webkit-inner-spin-button,
+#form-contrats input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0;
+  width: 0;
+}
+/* Firefox */
+#form-contrats input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+</style>
+{% endblock %}
+
 {% block topbar_actions %}
 <a href="{{ url_for('client_modifier', id=client.id) }}" class="btn btn-outline-primary btn-sm">
   <i class="bi bi-pencil me-1"></i>Modifier
@@ -77,15 +103,16 @@
                         else '#3788d8' %}
             {% set existing = client.contrats | selectattr('type_prestation', 'equalto', t) | list | first %}
             <div class="row g-2 align-items-center mb-2">
-              <div class="col-5">
+              <div class="col-4">
                 <span class="badge me-1 rounded-circle" style="background:{{ couleur }};width:10px;height:10px;padding:0;display:inline-block;vertical-align:middle"></span>
                 <small class="fw-semibold">{{ t }}</small>
               </div>
-              <div class="col-3">
+              <div class="col-4">
                 <div class="input-group input-group-sm">
-                  <input type="number" name="passages_{{ loop.index }}" class="form-control form-control-sm text-center"
+                  <input type="number" name="passages_{{ loop.index }}"
+                         class="form-control form-control-sm text-center"
                          value="{{ existing.passages_annuels if existing else 0 }}" min="0" max="52">
-                  <span class="input-group-text" style="font-size:.7rem">/an</span>
+                  <span class="input-group-text" style="font-size:.7rem;background:#e8f6fc;color:#1aabe3;font-weight:700">/an</span>
                 </div>
               </div>
               <div class="col-4">
