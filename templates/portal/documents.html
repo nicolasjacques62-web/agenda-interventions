@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documents techniques — {{ client.nom_affichage }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root { --hps-blue:#1aabe3; --hps-dark:#1e293b; }
+    body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
+    .portal-header { background:var(--hps-dark); color:#fff; padding:.75rem 1.5rem;
+      display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+    .portal-header img { max-height:45px; background:#fff; border-radius:6px; padding:4px 8px; }
+    .card { border:none; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .card-header { border-radius:12px 12px 0 0 !important; font-weight:600; }
+    .prest-header { background:linear-gradient(90deg,var(--hps-dark),var(--hps-blue));
+      color:#fff; padding:10px 16px; border-radius:8px; font-weight:600; margin-bottom:10px;
+      display:flex; align-items:center; gap:.6rem; }
+    .prest-mine { border:2px solid var(--hps-blue); }
+    .prest-mine .prest-header { position:relative; }
+    .doc-row { display:flex; align-items:center; gap:12px; padding:10px 0;
+      border-bottom:1px solid #f0f4f8; }
+    .doc-row:last-child { border-bottom:none; }
+    .doc-icon { font-size:1.6rem; flex-shrink:0; }
+    .doc-icon.ft  { color:var(--hps-blue); }
+    .doc-icon.fds { color:#d97706; }
+    .ft-badge  { background:#dbeafe; color:#1e40af; font-size:.68rem; padding:2px 7px; border-radius:10px; font-weight:700; }
+    .fds-badge { background:#fef3c7; color:#92400e; font-size:.68rem; padding:2px 7px; border-radius:10px; font-weight:700; }
+    .section-divider { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em;
+      color:#64748b; font-weight:700; border-bottom:1px solid #e2e8f0; margin:8px 0 4px; padding-bottom:4px; }
+  </style>
+</head>
+<body>
+
+<div class="portal-header">
+  <img src="{{ url_for('static', filename='logo.png') }}" alt="Hygiene Pro Services 3D" onerror="this.style.display='none'">
+  <div class="text-end">
+    <div style="font-size:.7rem;color:#94a3b8">Espace client sécurisé</div>
+    <div class="fw-semibold">{{ client.nom_affichage }}</div>
+  </div>
+</div>
+
+<div class="container py-4" style="max-width:800px">
+
+  <a href="{{ url_for('portail_dashboard', token=token) }}"
+     class="btn btn-sm btn-outline-secondary mb-3">
+    <i class="bi bi-arrow-left me-1"></i>Retour à mon espace
+  </a>
+
+  <h5 class="fw-bold mb-1"><i class="bi bi-file-earmark-medical me-2" style="color:var(--hps-blue)"></i>Fiches Techniques &amp; Fiches de Données Sécurité</h5>
+  <p class="text-muted small mb-4">
+    Documents disponibles par type de prestation.
+    <span class="badge ft-badge">FT</span> Fiche Technique &nbsp;
+    <span class="badge fds-badge">FDS</span> Fiche de Données Sécurité
+  </p>
+
+  {% if not grouped %}
+  <div class="card">
+    <div class="card-body text-center py-5 text-muted">
+      <i class="bi bi-file-earmark-medical fs-1 d-block mb-3"></i>
+      <p class="small">Aucun document disponible pour l'instant.</p>
+    </div>
+  </div>
+  {% else %}
+
+  {% for prestation, buckets in grouped.items() | sort %}
+  {% set is_mine = prestation in client_prestations %}
+  <div class="card mb-3 {% if is_mine %}prest-mine{% endif %}">
+    <div class="prest-header">
+      <i class="bi bi-layers"></i>
+      {{ prestation }}
+      {% if is_mine %}
+      <span class="ms-auto badge" style="background:rgba(255,255,255,.25);font-size:.68rem">
+        <i class="bi bi-star-fill me-1"></i>Votre prestation
+      </span>
+      {% endif %}
+    </div>
+    <div class="px-3">
+
+      <!-- Fiches Techniques -->
+      {% if buckets.ft %}
+      <div class="section-divider"><i class="bi bi-file-earmark-text me-1"></i>Fiches Techniques</div>
+      {% for doc in buckets.ft %}
+      <div class="doc-row">
+        <i class="bi {{ doc.icone }} doc-icon ft"></i>
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-semibold small">
+            <span class="ft-badge me-1">FT</span>
+            {{ doc.nom }}
+          </div>
+          <div class="text-muted" style="font-size:.72rem">
+            {% if doc.produit %}<span class="me-2"><i class="bi bi-tag me-1"></i>{{ doc.produit }}</span>{% endif %}
+            {% if doc.taille_str %}{{ doc.taille_str }}{% endif %}
+          </div>
+          {% if doc.description %}<div class="text-muted small">{{ doc.description }}</div>{% endif %}
+        </div>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <a href="{{ url_for('portail_document_voir', token=token, did=doc.id) }}"
+             class="btn btn-sm btn-outline-primary py-1 px-2" target="_blank" title="Voir">
+            <i class="bi bi-eye"></i>
+          </a>
+          <a href="{{ url_for('portail_document_voir', token=token, did=doc.id) }}?dl=1"
+             class="btn btn-sm btn-primary py-1 px-2" title="Télécharger">
+            <i class="bi bi-download"></i>
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <!-- Fiches de Données Sécurité -->
+      {% if buckets.fds %}
+      <div class="section-divider"><i class="bi bi-exclamation-diamond me-1"></i>Fiches de Données Sécurité</div>
+      {% for doc in buckets.fds %}
+      <div class="doc-row">
+        <i class="bi {{ doc.icone }} doc-icon fds"></i>
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-semibold small">
+            <span class="fds-badge me-1">FDS</span>
+            {{ doc.nom }}
+          </div>
+          <div class="text-muted" style="font-size:.72rem">
+            {% if doc.produit %}<span class="me-2"><i class="bi bi-tag me-1"></i>{{ doc.produit }}</span>{% endif %}
+            {% if doc.taille_str %}{{ doc.taille_str }}{% endif %}
+          </div>
+          {% if doc.description %}<div class="text-muted small">{{ doc.description }}</div>{% endif %}
+        </div>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <a href="{{ url_for('portail_document_voir', token=token, did=doc.id) }}"
+             class="btn btn-sm btn-outline-warning py-1 px-2" target="_blank" title="Voir">
+            <i class="bi bi-eye"></i>
+          </a>
+          <a href="{{ url_for('portail_document_voir', token=token, did=doc.id) }}?dl=1"
+             class="btn btn-sm btn-warning py-1 px-2" title="Télécharger">
+            <i class="bi bi-download"></i>
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+    </div>
+    <div style="height:4px"></div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <p class="text-center text-muted small mt-4" style="font-size:.72rem">
+    <i class="bi bi-shield-lock me-1"></i>Espace sécurisé — {{ soc }}
+  </p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

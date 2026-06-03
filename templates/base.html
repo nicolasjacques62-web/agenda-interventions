@@ -174,6 +174,9 @@
     <a href="{{ url_for('audits_liste') }}" class="nav-link {% if 'audit' in request.endpoint %}active{% endif %}">
       <i class="bi bi-clipboard2-pulse"></i> Audits
     </a>
+    <a href="{{ url_for('documents_liste') }}" class="nav-link {% if 'document' in request.endpoint %}active{% endif %}">
+      <i class="bi bi-file-earmark-medical"></i> Fiches Tech. / FDS
+    </a>
 
     <div class="nav-section">Compte</div>
     <a href="{{ url_for('parametres') }}" class="nav-link {% if request.endpoint=='parametres' %}active{% endif %}">

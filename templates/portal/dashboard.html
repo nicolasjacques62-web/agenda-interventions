@@ -268,6 +268,34 @@
   {% endfor %}
   {% endif %}
 
+  <!-- FICHES TECHNIQUES & FDS -->
+  {% if nb_docs %}
+  <div class="section-title mt-4">
+    <i class="bi bi-file-earmark-medical" style="color:#1aabe3"></i>
+    Fiches techniques &amp; FDS
+    <span class="badge bg-primary rounded-pill ms-1">{{ nb_docs }}</span>
+  </div>
+  <div class="card mb-2">
+    <div class="card-body py-3">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <div class="fw-semibold small">
+            <i class="bi bi-file-earmark-medical me-1 text-primary"></i>
+            Fiches techniques &amp; Fiches de Données Sécurité
+          </div>
+          <div class="text-muted" style="font-size:.75rem">
+            {{ nb_docs }} document{{ 's' if nb_docs > 1 else '' }} disponible{{ 's' if nb_docs > 1 else '' }} par type de prestation
+          </div>
+        </div>
+        <a href="{{ url_for('portail_documents', token=token) }}"
+           class="btn btn-sm btn-primary">
+          <i class="bi bi-folder2-open me-1"></i>Consulter les documents
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="text-center mt-4 text-muted" style="font-size:.72rem">
     <i class="bi bi-shield-lock me-1"></i>Espace sécurisé — Accès personnel et confidentiel — {{ soc }}
   </div>

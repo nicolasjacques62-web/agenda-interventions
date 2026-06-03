@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Ajouter un document technique{% endblock %}
+{% block page_title %}<i class="bi bi-upload me-2"></i>Ajouter un document{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <form method="POST" enctype="multipart/form-data">
+      <div class="card">
+        <div class="card-header">
+          <i class="bi bi-file-earmark-medical me-2"></i>Informations du document
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <!-- Type de document -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">Type de document *</label>
+              <div class="d-flex gap-4">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="type_doc" id="td-ft" value="ft" checked>
+                  <label class="form-check-label" for="td-ft">
+                    <span class="badge bg-primary me-1">FT</span> Fiche Technique
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="type_doc" id="td-fds" value="fds">
+                  <label class="form-check-label" for="td-fds">
+                    <span class="badge bg-warning text-dark me-1">FDS</span> Fiche de Données Sécurité
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Type de prestation -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Type de prestation *</label>
+              <input type="text" name="type_prestation" class="form-control" required
+                     list="prest-list" placeholder="Dératisation, Désinsectisation…">
+              <datalist id="prest-list">
+                {% for t in types_prestation %}<option value="{{ t }}">{% endfor %}
+                {% for t in existing_types if t not in types_prestation %}<option value="{{ t }}">{% endfor %}
+              </datalist>
+              <div class="form-text">Choisissez ou tapez votre propre type de prestation.</div>
+            </div>
+
+            <!-- Nom du document -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Nom du document</label>
+              <input type="text" name="nom" class="form-control"
+                     placeholder="FT Brodifacoum 0,005%…">
+              <div class="form-text">Si vide, le nom du fichier sera utilisé.</div>
+            </div>
+
+            <!-- Produit / Substance -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Produit / Substance active</label>
+              <input type="text" name="produit" class="form-control"
+                     placeholder="Brodifacoum, Deltaméthrine, Fipronil…">
+            </div>
+
+            <!-- Description courte -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Description courte</label>
+              <input type="text" name="description" class="form-control"
+                     placeholder="Appâts brodifacoum — usage rongeurs commensal">
+            </div>
+
+            <!-- Fichier -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">Fichier *</label>
+              <input type="file" name="fichier" class="form-control" required
+                     accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls">
+              <div class="form-text">
+                <i class="bi bi-info-circle me-1"></i>
+                Formats acceptés : PDF, Word, Excel, JPG, PNG — <strong>15 Mo maximum</strong>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <div class="card-footer d-flex gap-2 justify-content-end">
+          <a href="{{ url_for('documents_liste') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-x me-1"></i>Annuler
+          </a>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-upload me-1"></i>Enregistrer le document
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

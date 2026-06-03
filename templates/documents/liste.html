@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Fiches Techniques & FDS{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-medical me-2"></i>Fiches Techniques &amp; FDS{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('document_nouveau') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-upload me-1"></i>Ajouter un document
+</a>
+{% endblock %}
+
+{% block content %}
+{% if not grouped %}
+<div class="card">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-file-earmark-medical fs-1 d-block mb-3" style="color:#cbd5e1"></i>
+    <p class="mb-1 fw-semibold">Aucun document chargé pour l'instant.</p>
+    <p class="small">Ajoutez des fiches techniques et fiches de données sécurité<br>organisées par type de prestation.</p>
+    <a href="{{ url_for('document_nouveau') }}" class="btn btn-primary btn-sm mt-2">
+      <i class="bi bi-upload me-1"></i>Ajouter le premier document
+    </a>
+  </div>
+</div>
+{% else %}
+
+{% for prestation, buckets in grouped.items() | sort %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center"
+       style="background:linear-gradient(90deg,#1e293b,#1aabe3);color:#fff">
+    <span><i class="bi bi-layers me-2"></i>{{ prestation }}</span>
+    <span class="badge bg-white text-dark">
+      {{ (buckets.ft | length) + (buckets.fds | length) }} doc{{ 's' if (buckets.ft | length) + (buckets.fds | length) > 1 else '' }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+
+    <!-- FICHES TECHNIQUES -->
+    {% if buckets.ft %}
+    <div class="px-3 pt-3 pb-1">
+      <div class="fw-semibold small text-primary mb-2">
+        <i class="bi bi-file-earmark-text me-1"></i>Fiches Techniques (FT)
+      </div>
+    </div>
+    {% for doc in buckets.ft %}
+    <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom" style="gap:.5rem">
+      <div class="d-flex align-items-start gap-2 flex-grow-1 min-w-0">
+        <i class="bi {{ doc.icone }} text-primary mt-1" style="font-size:1.2rem;flex-shrink:0"></i>
+        <div class="min-w-0">
+          <div class="fw-semibold small text-truncate">{{ doc.nom }}</div>
+          <div class="text-muted" style="font-size:.72rem">
+            {% if doc.produit %}<span class="me-2"><i class="bi bi-tag me-1"></i>{{ doc.produit }}</span>{% endif %}
+            {% if doc.taille_str %}<span class="me-2">{{ doc.taille_str }}</span>{% endif %}
+            <span>{{ doc.created_at.strftime('%d/%m/%Y') }}</span>
+          </div>
+          {% if doc.description %}<div class="text-muted small mt-1">{{ doc.description }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="d-flex gap-1 flex-shrink-0">
+        <a href="{{ url_for('document_voir', id=doc.id) }}" target="_blank"
+           class="btn btn-sm btn-outline-primary py-0 px-2" title="Voir">
+          <i class="bi bi-eye"></i>
+        </a>
+        <a href="{{ url_for('document_voir', id=doc.id) }}?dl=1"
+           class="btn btn-sm btn-outline-secondary py-0 px-2" title="Télécharger">
+          <i class="bi bi-download"></i>
+        </a>
+        <form method="POST" action="{{ url_for('document_supprimer', id=doc.id) }}"
+              onsubmit="return confirm('Supprimer ce document ?')" class="d-inline">
+          <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Supprimer">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- FICHES DE DONNÉES SÉCURITÉ -->
+    {% if buckets.fds %}
+    <div class="px-3 pt-3 pb-1">
+      <div class="fw-semibold small text-warning mb-2">
+        <i class="bi bi-exclamation-diamond me-1"></i>Fiches de Données Sécurité (FDS)
+      </div>
+    </div>
+    {% for doc in buckets.fds %}
+    <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom" style="gap:.5rem">
+      <div class="d-flex align-items-start gap-2 flex-grow-1 min-w-0">
+        <i class="bi {{ doc.icone }} text-warning mt-1" style="font-size:1.2rem;flex-shrink:0"></i>
+        <div class="min-w-0">
+          <div class="fw-semibold small text-truncate">{{ doc.nom }}</div>
+          <div class="text-muted" style="font-size:.72rem">
+            {% if doc.produit %}<span class="me-2"><i class="bi bi-tag me-1"></i>{{ doc.produit }}</span>{% endif %}
+            {% if doc.taille_str %}<span class="me-2">{{ doc.taille_str }}</span>{% endif %}
+            <span>{{ doc.created_at.strftime('%d/%m/%Y') }}</span>
+          </div>
+          {% if doc.description %}<div class="text-muted small mt-1">{{ doc.description }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="d-flex gap-1 flex-shrink-0">
+        <a href="{{ url_for('document_voir', id=doc.id) }}" target="_blank"
+           class="btn btn-sm btn-outline-warning py-0 px-2" title="Voir">
+          <i class="bi bi-eye"></i>
+        </a>
+        <a href="{{ url_for('document_voir', id=doc.id) }}?dl=1"
+           class="btn btn-sm btn-outline-secondary py-0 px-2" title="Télécharger">
+          <i class="bi bi-download"></i>
+        </a>
+        <form method="POST" action="{{ url_for('document_supprimer', id=doc.id) }}"
+              onsubmit="return confirm('Supprimer ce document ?')" class="d-inline">
+          <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Supprimer">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

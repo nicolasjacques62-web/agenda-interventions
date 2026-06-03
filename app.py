@@ -341,6 +341,43 @@ class AuditClient(db.Model):
         return [labels[v] for v in (self.communication_client or '').split(',') if v.strip() in labels]
 
 
+class DocumentTechnique(db.Model):
+    __tablename__ = 'documents_techniques'
+    id              = db.Column(db.Integer, primary_key=True)
+    nom             = db.Column(db.String(200), nullable=False)
+    type_doc        = db.Column(db.String(10), default='ft')   # 'ft' | 'fds'
+    type_prestation = db.Column(db.String(100))
+    produit         = db.Column(db.String(100))
+    description     = db.Column(db.Text)
+    filename_orig   = db.Column(db.String(200))
+    data            = db.Column(db.Text, nullable=False)        # base64
+    mimetype        = db.Column(db.String(80), default='application/pdf')
+    taille          = db.Column(db.Integer)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def type_doc_label(self):
+        return {'ft': 'Fiche Technique', 'fds': 'Fiche de Données Sécurité'}.get(self.type_doc or 'ft', self.type_doc)
+
+    @property
+    def type_doc_couleur(self):
+        return {'ft': 'primary', 'fds': 'warning'}.get(self.type_doc or 'ft', 'secondary')
+
+    @property
+    def taille_str(self):
+        if not self.taille: return ''
+        if self.taille < 1024: return f"{self.taille} o"
+        if self.taille < 1024*1024: return f"{self.taille//1024} Ko"
+        return f"{round(self.taille/(1024*1024),1)} Mo"
+
+    @property
+    def icone(self):
+        if self.mimetype and 'pdf' in self.mimetype: return 'bi-filetype-pdf'
+        if self.mimetype and 'image' in self.mimetype: return 'bi-file-image'
+        if self.mimetype and 'word' in self.mimetype: return 'bi-file-word'
+        return 'bi-file-earmark'
+
+
 class BonPhoto(db.Model):
     __tablename__ = 'bon_photos'
     id = db.Column(db.Integer, primary_key=True)
@@ -2282,6 +2319,120 @@ def portail_audit_pdf(token, aid):
         flash(f'Erreur PDF : {e}', 'danger')
         return redirect(url_for('portail_audit_detail', token=token, aid=aid))
 
+# ─── DOCUMENTS TECHNIQUES & FDS ───────────────────────────────────────────────
+
+@app.route('/documents')
+@login_required
+def documents_liste():
+    docs = DocumentTechnique.query.order_by(
+        DocumentTechnique.type_prestation, DocumentTechnique.type_doc, DocumentTechnique.nom
+    ).all()
+    grouped = {}
+    for d in docs:
+        k = d.type_prestation or 'Général'
+        grouped.setdefault(k, {'ft': [], 'fds': []})
+        bucket = d.type_doc if d.type_doc in ('ft', 'fds') else 'ft'
+        grouped[k][bucket].append(d)
+    return render_template('documents/liste.html', grouped=grouped, nb_docs=len(docs))
+
+@app.route('/documents/nouveau', methods=['GET', 'POST'])
+@login_required
+def document_nouveau():
+    if request.method == 'POST':
+        f = request.files.get('fichier')
+        if not f or not f.filename:
+            flash('Veuillez sélectionner un fichier.', 'danger')
+            return redirect(request.url)
+        raw = f.read()
+        taille = len(raw)
+        if taille > 15 * 1024 * 1024:
+            flash('Fichier trop volumineux (15 Mo max).', 'danger')
+            return redirect(request.url)
+        b64 = base64.b64encode(raw).decode('utf-8')
+        nom = request.form.get('nom', '').strip() or f.filename
+        doc = DocumentTechnique(
+            nom=nom,
+            type_doc=request.form.get('type_doc', 'ft'),
+            type_prestation=request.form.get('type_prestation', '').strip(),
+            produit=request.form.get('produit', '').strip(),
+            description=request.form.get('description', '').strip(),
+            filename_orig=f.filename,
+            data=b64,
+            mimetype=f.mimetype or 'application/octet-stream',
+            taille=taille,
+        )
+        db.session.add(doc)
+        db.session.commit()
+        flash(f'Document « {doc.nom} » ajouté avec succès.', 'success')
+        return redirect(url_for('documents_liste'))
+    existing_types = [r[0] for r in
+        db.session.query(DocumentTechnique.type_prestation).distinct().all() if r[0]]
+    return render_template('documents/form.html',
+                           existing_types=existing_types,
+                           types_prestation=TYPES_PRESTATION)
+
+@app.route('/documents/<int:id>/voir')
+@login_required
+def document_voir(id):
+    doc = DocumentTechnique.query.get_or_404(id)
+    try:
+        raw = base64.b64decode(doc.data)
+        resp = make_response(raw)
+        resp.headers['Content-Type'] = doc.mimetype
+        dl = request.args.get('dl', '0') == '1'
+        disp = 'attachment' if dl else 'inline'
+        resp.headers['Content-Disposition'] = f'{disp}; filename="{doc.filename_orig or doc.nom}"'
+        return resp
+    except Exception:
+        flash('Erreur lors de l\'ouverture du document.', 'danger')
+        return redirect(url_for('documents_liste'))
+
+@app.route('/documents/<int:id>/supprimer', methods=['POST'])
+@login_required
+def document_supprimer(id):
+    doc = DocumentTechnique.query.get_or_404(id)
+    nom = doc.nom
+    db.session.delete(doc)
+    db.session.commit()
+    flash(f'Document « {nom} » supprimé.', 'success')
+    return redirect(url_for('documents_liste'))
+
+@app.route('/portail/<token>/documents')
+def portail_documents(token):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    docs = DocumentTechnique.query.order_by(
+        DocumentTechnique.type_prestation, DocumentTechnique.type_doc, DocumentTechnique.nom
+    ).all()
+    grouped = {}
+    for d in docs:
+        k = d.type_prestation or 'Documents généraux'
+        grouped.setdefault(k, {'ft': [], 'fds': []})
+        bucket = d.type_doc if d.type_doc in ('ft', 'fds') else 'ft'
+        grouped[k][bucket].append(d)
+    client_prestations = [ct.type_prestation for ct in c.contrats if ct.actif]
+    soc = get_param('societe', 'HPS')
+    return render_template('portal/documents.html', client=c, token=token,
+                           grouped=grouped, client_prestations=client_prestations, soc=soc)
+
+@app.route('/portail/<token>/documents/<int:did>/voir')
+def portail_document_voir(token, did):
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    if flask_session.get('portal_cid') != c.id:
+        return redirect(url_for('portail_access', token=token))
+    doc = DocumentTechnique.query.get_or_404(did)
+    try:
+        raw = base64.b64decode(doc.data)
+        resp = make_response(raw)
+        resp.headers['Content-Type'] = doc.mimetype
+        dl = request.args.get('dl', '0') == '1'
+        disp = 'attachment' if dl else 'inline'
+        resp.headers['Content-Disposition'] = f'{disp}; filename="{doc.filename_orig or doc.nom}"'
+        return resp
+    except Exception:
+        return redirect(url_for('portail_dashboard', token=token))
+
 # ─── CONTRATS CLIENTS ────────────────────────────────────────────────────────
 
 TYPES_PRESTATION = [
@@ -2811,12 +2962,13 @@ def portail_dashboard(token):
         .order_by(BonIntervention.date_creation.desc()).all()
     audits = AuditClient.query.filter_by(client_id=c.id, statut='finalise')\
         .order_by(AuditClient.date_audit.desc()).all()
+    nb_docs = DocumentTechnique.query.count()
     soc = get_param('societe', 'HPS')
     tel_soc = get_param('telephone', '')
     email_soc = get_param('email', '')
     return render_template('portal/dashboard.html', client=c,
                            a_venir=a_venir, passes=passes, bons=bons,
-                           audits=audits, token=token, soc=soc,
+                           audits=audits, nb_docs=nb_docs, token=token, soc=soc,
                            tel_soc=tel_soc, email_soc=email_soc)
 
 @app.route('/portail/<token>/bon/<int:bid>/pdf')
@@ -3087,6 +3239,19 @@ def init_db():
                 recommandations TEXT,
                 statut VARCHAR(20) DEFAULT 'brouillon',
                 date_finalisation TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS documents_techniques (
+                id SERIAL PRIMARY KEY,
+                nom VARCHAR(200) NOT NULL,
+                type_doc VARCHAR(10) DEFAULT 'ft',
+                type_prestation VARCHAR(100),
+                produit VARCHAR(100),
+                description TEXT,
+                filename_orig VARCHAR(200),
+                data TEXT NOT NULL,
+                mimetype VARCHAR(80) DEFAULT 'application/pdf',
+                taille INTEGER,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS batiment VARCHAR(100)",
