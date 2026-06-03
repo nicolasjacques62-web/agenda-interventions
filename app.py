@@ -378,6 +378,18 @@ class DocumentTechnique(db.Model):
         return 'bi-file-earmark'
 
 
+class ClientDocument(db.Model):
+    """Liaison many-to-many entre un client et ses documents FT/FDS."""
+    __tablename__ = 'client_documents'
+    id          = db.Column(db.Integer, primary_key=True)
+    client_id   = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents_techniques.id'), nullable=False)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    client      = db.relationship('Client',           backref='doc_associations')
+    document    = db.relationship('DocumentTechnique', backref='client_associations')
+    __table_args__ = (db.UniqueConstraint('client_id', 'document_id'),)
+
+
 class BonPhoto(db.Model):
     __tablename__ = 'bon_photos'
     id = db.Column(db.Integer, primary_key=True)
@@ -1596,9 +1608,17 @@ def client_detail(id):
         .order_by(Intervention.date_planifiee.desc()).all()
     lien = url_for('portail_access', token=c.access_token, _external=True)
     annee = datetime.now().year
+    # Documents déjà associés à ce client
+    assoc_ids = {cd.document_id for cd in c.doc_associations}
+    # Documents disponibles (pas encore associés)
+    all_docs = DocumentTechnique.query.order_by(
+        DocumentTechnique.type_prestation, DocumentTechnique.type_doc, DocumentTechnique.nom
+    ).all()
+    docs_dispo = [d for d in all_docs if d.id not in assoc_ids]
     return render_template('clients/detail.html', client=c,
                            interventions=interventions, lien_portail=lien,
-                           types_prestation=TYPES_PRESTATION, annee=annee)
+                           types_prestation=TYPES_PRESTATION, annee=annee,
+                           docs_dispo=docs_dispo)
 
 @app.route('/clients/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
@@ -2321,6 +2341,30 @@ def portail_audit_pdf(token, aid):
 
 # ─── DOCUMENTS TECHNIQUES & FDS ───────────────────────────────────────────────
 
+@app.route('/clients/<int:id>/documents/associer', methods=['POST'])
+@login_required
+def client_document_associer(id):
+    c = Client.query.get_or_404(id)
+    doc_id = request.form.get('document_id', type=int)
+    if doc_id:
+        existing = ClientDocument.query.filter_by(client_id=id, document_id=doc_id).first()
+        if not existing:
+            db.session.add(ClientDocument(client_id=id, document_id=doc_id))
+            db.session.commit()
+            flash('Document associé au client.', 'success')
+        else:
+            flash('Ce document est déjà associé à ce client.', 'info')
+    return redirect(url_for('client_detail', id=id) + '#docs')
+
+@app.route('/clients/<int:id>/documents/<int:did>/retirer', methods=['POST'])
+@login_required
+def client_document_retirer(id, did):
+    cd = ClientDocument.query.filter_by(client_id=id, document_id=did).first_or_404()
+    db.session.delete(cd)
+    db.session.commit()
+    flash('Document retiré du client.', 'success')
+    return redirect(url_for('client_detail', id=id) + '#docs')
+
 @app.route('/documents')
 @login_required
 def documents_liste():
@@ -2402,9 +2446,17 @@ def portail_documents(token):
     c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
-    docs = DocumentTechnique.query.order_by(
-        DocumentTechnique.type_prestation, DocumentTechnique.type_doc, DocumentTechnique.nom
-    ).all()
+    # Si le client a des documents spécifiquement associés → les utiliser
+    # Sinon → afficher tous les documents de la bibliothèque
+    if c.doc_associations:
+        docs = [cd.document for cd in sorted(c.doc_associations, key=lambda x: (
+            x.document.type_prestation or '', x.document.type_doc or '', x.document.nom))]
+        filtre_client = True
+    else:
+        docs = DocumentTechnique.query.order_by(
+            DocumentTechnique.type_prestation, DocumentTechnique.type_doc, DocumentTechnique.nom
+        ).all()
+        filtre_client = False
     grouped = {}
     for d in docs:
         k = d.type_prestation or 'Documents généraux'
@@ -2414,7 +2466,8 @@ def portail_documents(token):
     client_prestations = [ct.type_prestation for ct in c.contrats if ct.actif]
     soc = get_param('societe', 'HPS')
     return render_template('portal/documents.html', client=c, token=token,
-                           grouped=grouped, client_prestations=client_prestations, soc=soc)
+                           grouped=grouped, client_prestations=client_prestations,
+                           filtre_client=filtre_client, soc=soc)
 
 @app.route('/portail/<token>/documents/<int:did>/voir')
 def portail_document_voir(token, did):
@@ -3273,6 +3326,13 @@ def init_db():
                 data TEXT NOT NULL,
                 mimetype VARCHAR(80) DEFAULT 'image/jpeg',
                 created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS client_documents (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                document_id INTEGER NOT NULL REFERENCES documents_techniques(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(client_id, document_id)
             )""",
         ]
         for sql in migrations:

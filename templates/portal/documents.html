@@ -49,11 +49,22 @@
   </a>
 
   <h5 class="fw-bold mb-1"><i class="bi bi-file-earmark-medical me-2" style="color:var(--hps-blue)"></i>Fiches Techniques &amp; Fiches de Données Sécurité</h5>
-  <p class="text-muted small mb-4">
+  <p class="text-muted small mb-2">
     Documents disponibles par type de prestation.
     <span class="badge ft-badge">FT</span> Fiche Technique &nbsp;
     <span class="badge fds-badge">FDS</span> Fiche de Données Sécurité
   </p>
+  {% if filtre_client %}
+  <div class="alert alert-info py-2 small mb-4 d-flex align-items-center gap-2">
+    <i class="bi bi-person-check-fill" style="color:var(--hps-blue);font-size:1.1rem;flex-shrink:0"></i>
+    <span>Ces documents ont été <strong>sélectionnés spécifiquement pour vous</strong> par votre prestataire.</span>
+  </div>
+  {% else %}
+  <div class="alert alert-light py-2 small mb-4 d-flex align-items-center gap-2 border">
+    <i class="bi bi-info-circle" style="color:#64748b;flex-shrink:0"></i>
+    <span>Bibliothèque complète des fiches disponibles.</span>
+  </div>
+  {% endif %}
 
   {% if not grouped %}
   <div class="card">

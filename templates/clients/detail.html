@@ -408,6 +408,112 @@
       </div>
     </div>
 
+    <!-- Fiches Techniques & FDS associées -->
+    <div class="card mt-3" id="card-documents">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+          <i class="bi bi-file-earmark-medical me-2"></i>
+          Fiches Techniques &amp; FDS
+          {% set nb_assoc = client.doc_associations | length %}
+          <span class="badge bg-secondary ms-1">{{ nb_assoc }}</span>
+        </span>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-assoc-doc">
+          <i class="bi bi-plus-lg me-1"></i>Associer
+        </button>
+      </div>
+
+      <!-- Formulaire d'association -->
+      <div class="collapse" id="form-assoc-doc">
+        <div class="card-body border-bottom bg-light pb-3">
+          {% if docs_dispo %}
+          <form method="POST" action="{{ url_for('client_document_associer', id=client.id) }}" class="d-flex gap-2 flex-wrap align-items-end">
+            <div class="flex-grow-1">
+              <label class="form-label small fw-semibold mb-1">Choisir un document à associer</label>
+              <select name="document_id" class="form-select form-select-sm" required>
+                <option value="">— Sélectionnez un document —</option>
+                {% for doc in docs_dispo %}
+                <option value="{{ doc.id }}">
+                  [{{ doc.type_doc | upper }}] {{ doc.type_prestation }} — {{ doc.nom }}{% if doc.produit %} ({{ doc.produit }}){% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success btn-sm">
+                <i class="bi bi-link-45deg me-1"></i>Associer
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#form-assoc-doc">Annuler</button>
+            </div>
+          </form>
+          {% else %}
+          <div class="text-muted small fst-italic">
+            <i class="bi bi-info-circle me-1"></i>
+            Tous les documents disponibles sont déjà associés à ce client.
+            <a href="{{ url_for('document_nouveau') }}" class="ms-2">
+              <i class="bi bi-upload me-1"></i>Ajouter un nouveau document
+            </a>
+          </div>
+          {% endif %}
+          <div class="mt-2" style="font-size:.75rem;color:#64748b">
+            <i class="bi bi-folder2-open me-1"></i>
+            <a href="{{ url_for('documents_liste') }}">Gérer la bibliothèque de documents</a>
+            &nbsp;·&nbsp;
+            <a href="{{ url_for('document_nouveau') }}">Uploader un nouveau document</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Liste des documents associés -->
+      <div class="card-body p-0">
+        {% if client.doc_associations %}
+        {% set type_colors = {'ft': 'primary', 'fds': 'warning'} %}
+        {% for cd in client.doc_associations | sort(attribute='document.type_prestation') %}
+        {% set doc = cd.document %}
+        <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+          <i class="bi {{ doc.icone }} {% if doc.type_doc == 'fds' %}text-warning{% else %}text-primary{% endif %}"
+             style="font-size:1.3rem;flex-shrink:0"></i>
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-semibold small text-truncate">
+              <span class="badge {% if doc.type_doc == 'fds' %}bg-warning text-dark{% else %}bg-primary{% endif %} me-1"
+                    style="font-size:.65rem">{{ doc.type_doc | upper }}</span>
+              {{ doc.nom }}
+            </div>
+            <div class="text-muted" style="font-size:.72rem">
+              <i class="bi bi-layers me-1"></i>{{ doc.type_prestation or '—' }}
+              {% if doc.produit %}&nbsp;·&nbsp;<i class="bi bi-tag me-1"></i>{{ doc.produit }}{% endif %}
+              {% if doc.taille_str %}&nbsp;·&nbsp;{{ doc.taille_str }}{% endif %}
+            </div>
+          </div>
+          <div class="d-flex gap-1 flex-shrink-0">
+            <a href="{{ url_for('document_voir', id=doc.id) }}" target="_blank"
+               class="btn btn-sm {% if doc.type_doc == 'fds' %}btn-outline-warning{% else %}btn-outline-primary{% endif %} py-0 px-2"
+               title="Voir">
+              <i class="bi bi-eye"></i>
+            </a>
+            <a href="{{ url_for('document_voir', id=doc.id) }}?dl=1"
+               class="btn btn-sm btn-outline-secondary py-0 px-2" title="Télécharger">
+              <i class="bi bi-download"></i>
+            </a>
+            <form method="POST" action="{{ url_for('client_document_retirer', id=client.id, did=doc.id) }}"
+                  onsubmit="return confirm('Retirer ce document de ce client ?')" class="d-inline">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Retirer">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-file-earmark-medical fs-2 d-block mb-2" style="color:#cbd5e1"></i>
+          <span class="small">Aucune fiche associée à ce client.<br>
+          Cliquez sur <strong>Associer</strong> pour lier des FT/FDS depuis la bibliothèque.</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Plans d'appâtage -->
     {% set plans = client.plans_appatage if client.plans_appatage is defined else [] %}
     <div class="card mt-3" id="plans-appatage">
