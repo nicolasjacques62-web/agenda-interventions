@@ -724,6 +724,47 @@ def generer_pdf(bon):
         elems.append(Paragraph(bon.recommandations.replace('\n', '<br/>'), s_n))
         elems.append(Spacer(1, 0.3*cm))
 
+    # ── Photos du bon d'intervention ──
+    if bon.photos:
+        elems.append(Paragraph("Photos :", s_h))
+        elems.append(Spacer(1, 0.2*cm))
+        photo_row = []
+        for photo in bon.photos:
+            try:
+                data = photo.data
+                if ',' in data:
+                    data = data.split(',', 1)[1]
+                raw = base64.b64decode(data)
+                buf_img = io.BytesIO(raw)
+                img_photo = RLImage(buf_img, width=8*cm, height=6*cm, kind='proportional')
+                photo_row.append(img_photo)
+            except Exception:
+                photo_row.append(Paragraph(photo.nom or 'Photo', s_n))
+            if len(photo_row) == 2:
+                t_ph = Table([photo_row], colWidths=[8.75*cm, 8.75*cm])
+                t_ph.setStyle(TableStyle([
+                    ('ALIGN',   (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN',  (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 4),
+                    ('BOX',     (0, 0), (0, 0), 0.4, colors.grey),
+                    ('BOX',     (1, 0), (1, 0), 0.4, colors.grey),
+                ]))
+                elems.append(t_ph)
+                elems.append(Spacer(1, 0.2*cm))
+                photo_row = []
+        # Dernière ligne si nombre impair de photos
+        if photo_row:
+            photo_row.append('')  # cellule vide pour compléter la grille
+            t_ph = Table([photo_row], colWidths=[8.75*cm, 8.75*cm])
+            t_ph.setStyle(TableStyle([
+                ('ALIGN',   (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN',  (0, 0), (-1, -1), 'MIDDLE'),
+                ('PADDING', (0, 0), (-1, -1), 4),
+                ('BOX',     (0, 0), (0, 0), 0.4, colors.grey),
+            ]))
+            elems.append(t_ph)
+        elems.append(Spacer(1, 0.3*cm))
+
     elems.append(Spacer(1, 0.8*cm))
 
     # Signatures : récupérer les images si elles existent
