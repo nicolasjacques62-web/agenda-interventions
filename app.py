@@ -29,6 +29,12 @@ try:
 except ImportError:
     PDF_OK = False
 
+try:
+    from PIL import Image as PILImage, ExifTags
+    PILLOW_OK = True
+except ImportError:
+    PILLOW_OK = False
+
 app = Flask(__name__)
 # Render / Gunicorn tournent derrière un reverse-proxy HTTPS.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -567,6 +573,51 @@ def _parse_audit_form(form):
         prochaine_visite=prochaine_visite,
         recommandations=form.get('recommandations', '').strip(),
     )
+
+def _corriger_orientation(image_bytes):
+    """Lit les données EXIF d'une photo mobile et la remet dans le bon sens.
+    Retourne les bytes corrigés (JPEG), ou les bytes originaux si Pillow absent."""
+    if not PILLOW_OK:
+        return image_bytes
+    try:
+        img = PILImage.open(io.BytesIO(image_bytes))
+        # Cherche le tag EXIF d'orientation
+        exif = img._getexif() if hasattr(img, '_getexif') else None
+        if exif:
+            orient_tag = next(
+                (k for k, v in ExifTags.TAGS.items() if v == 'Orientation'), None
+            )
+            orientation = exif.get(orient_tag) if orient_tag else None
+            # Rotation selon la valeur EXIF
+            rotations = {
+                3: 180,
+                6: 270,
+                8: 90,
+            }
+            flips = {
+                2: (True, False),
+                4: (False, True),
+                5: (True, 90),
+                7: (True, 270),
+            }
+            if orientation in rotations:
+                img = img.rotate(rotations[orientation], expand=True)
+            elif orientation in flips:
+                h, angle = flips[orientation] if isinstance(flips[orientation][1], int) else (flips[orientation][0], 0)
+                if flips[orientation][0]:
+                    img = img.transpose(PILImage.FLIP_LEFT_RIGHT)
+                if angle:
+                    img = img.rotate(angle, expand=True)
+        # Convertit en RGB si nécessaire (ex : PNG RGBA → JPEG)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+        # Ré-encode en JPEG en supprimant l'EXIF pour éviter double rotation
+        out = io.BytesIO()
+        img.save(out, format='JPEG', quality=85, exif=b'')
+        return out.getvalue()
+    except Exception:
+        return image_bytes
+
 
 def _sig_to_image(b64_data, max_w=7*cm, max_h=3*cm):
     """Convertit une signature base64 (data URL ou raw) en objet RLImage, ou '' si invalide."""
@@ -2068,9 +2119,10 @@ def bon_modifier(id):
             if file and file.filename and file.mimetype.startswith('image/'):
                 file.seek(0, 2); size = file.tell(); file.seek(0)
                 if size <= 8 * 1024 * 1024:
-                    data_b64 = base64.b64encode(file.read()).decode('utf-8')
+                    img_bytes = _corriger_orientation(file.read())
+                    data_b64 = base64.b64encode(img_bytes).decode('utf-8')
                     photo = BonPhoto(bon_id=id, nom=file.filename,
-                                     data=data_b64, mimetype=file.mimetype)
+                                     data=data_b64, mimetype='image/jpeg')
                     db.session.add(photo)
                     flash('Photo ajoutée.', 'success')
                 else:
@@ -2933,9 +2985,10 @@ def bon_photo_ajouter(id):
     if size > 8 * 1024 * 1024:
         flash('Image trop lourde (max 8 Mo). Compressez-la avant.', 'danger')
         return redirect(url_for('bon_detail', id=id))
-    data_b64 = base64.b64encode(file.read()).decode('utf-8')
+    img_bytes = _corriger_orientation(file.read())
+    data_b64 = base64.b64encode(img_bytes).decode('utf-8')
     photo = BonPhoto(bon_id=id, nom=file.filename,
-                     data=data_b64, mimetype=file.mimetype)
+                     data=data_b64, mimetype='image/jpeg')
     db.session.add(photo)
     db.session.commit()
     flash('Photo ajoutée.', 'success')
