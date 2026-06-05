@@ -1578,6 +1578,102 @@ def _suggerer_dates(client, nb=8, horizon=60):
 def index():
     return redirect(url_for('dashboard') if current_user.is_authenticated else url_for('login'))
 
+
+# ══════════════════════════════════════════════════════════════
+#  PWA — Service Worker, Manifest, page offline
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/sw.js')
+def service_worker():
+    """Sert le Service Worker depuis /sw.js avec les bons headers."""
+    from flask import make_response, send_from_directory
+    resp = make_response(send_from_directory('static', 'sw.js'))
+    resp.headers['Content-Type']          = 'application/javascript'
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control']          = 'no-cache'
+    return resp
+
+
+@app.route('/manifest.json')
+def manifest():
+    """Manifest PWA pour l'installation sur mobile/tablette."""
+    from flask import make_response
+    data = {
+        "name":             "HPS3D — Agenda",
+        "short_name":       "HPS3D",
+        "description":      "Agenda et bons d'intervention Hygiene Pro Services 3D",
+        "start_url":        "/",
+        "display":          "standalone",
+        "background_color": "#0a1628",
+        "theme_color":      "#1AABE3",
+        "orientation":      "portrait-primary",
+        "icons": [
+            {"src": "/static/logo.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/logo.png", "sizes": "512x512", "type": "image/png"}
+        ]
+    }
+    resp = make_response(jsonify(data))
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.route('/offline')
+def offline_page():
+    """Page de fallback quand l'utilisateur est hors-ligne."""
+    return render_template('offline.html')
+
+
+# ══════════════════════════════════════════════════════════════
+#  API offline — CSRF token et upload photo JSON
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/api/csrf-token')
+@login_required
+def api_csrf_token():
+    """Retourne un token CSRF frais pour la synchronisation offline."""
+    from flask_wtf.csrf import generate_csrf
+    return jsonify({'csrf_token': generate_csrf()})
+
+
+@app.route('/api/bons/<int:id>/photos', methods=['POST'])
+@login_required
+def api_bon_photo_json(id):
+    """
+    Endpoint JSON pour l'upload de photo (utilisé par le mode offline et le JS online).
+    Corps attendu : { "nom": str, "data": str (dataURL base64), "mimetype": str }
+    """
+    b = BonIntervention.query.get_or_404(id)
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify({'error': 'JSON requis'}), 400
+
+    nom      = payload.get('nom', 'photo.jpg')
+    data_raw = payload.get('data', '')
+    mimetype = payload.get('mimetype', 'image/jpeg')
+
+    if not data_raw:
+        return jsonify({'error': 'Données image manquantes'}), 400
+
+    # Décoder le base64 (accepte "data:image/jpeg;base64,..." et raw base64)
+    try:
+        raw = base64.b64decode(data_raw.split(',', 1)[1] if ',' in data_raw else data_raw)
+    except Exception:
+        return jsonify({'error': 'Base64 invalide'}), 400
+
+    # Correction orientation EXIF
+    img_bytes = _corriger_orientation(raw)
+    data_b64  = base64.b64encode(img_bytes).decode('utf-8')
+
+    photo = BonPhoto(bon_id=id, nom=nom, data=data_b64, mimetype='image/jpeg')
+    db.session.add(photo)
+    db.session.commit()
+
+    return jsonify({
+        'success':    True,
+        'photo_id':   photo.id,
+        'created_at': photo.created_at.isoformat(),
+    })
+
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def login():

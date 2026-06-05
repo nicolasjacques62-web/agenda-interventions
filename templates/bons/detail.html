@@ -206,36 +206,39 @@
 
         </form>
 
-        {% if bon.photos %}
         <hr class="my-3">
-        <div class="row g-2">
-          {% for photo in bon.photos %}
-          <div class="col-6 col-md-4 col-lg-3" id="photo-card-{{ photo.id }}">
-            <div class="position-relative">
-              <a href="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" target="_blank">
-                <img src="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" alt="{{ photo.nom }}"
-                     class="img-thumbnail w-100" style="height:120px;object-fit:cover;">
-              </a>
-              <div class="position-absolute bottom-0 start-0 end-0 p-1"
-                   style="background:rgba(0,0,0,.55);font-size:.7rem;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
-                {{ photo.created_at.strftime('%d/%m %H:%M') }}
+        <!-- Grille photos : les cartes "en attente" (hors-ligne) sont injectées ici par offline.js -->
+        <div class="row g-2" id="photos-grid">
+          {% if bon.photos %}
+            {% for photo in bon.photos %}
+            <div class="col-6 col-md-4 col-lg-3" id="photo-card-{{ photo.id }}">
+              <div class="position-relative">
+                <a href="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" target="_blank">
+                  <img src="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" alt="{{ photo.nom }}"
+                       class="img-thumbnail w-100" style="height:120px;object-fit:cover;">
+                </a>
+                <div class="position-absolute bottom-0 start-0 end-0 p-1"
+                     style="background:rgba(0,0,0,.55);font-size:.7rem;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+                  {{ photo.created_at.strftime('%d/%m %H:%M') }}
+                </div>
+                <form method="POST" action="{{ url_for('bon_photo_supprimer', photo_id=photo.id) }}"
+                      onsubmit="return confirm('Supprimer cette photo ?')"
+                      class="position-absolute top-0 end-0 m-1">
+                  <button class="btn btn-danger btn-sm py-0 px-1" title="Supprimer">
+                    <i class="bi bi-trash" style="font-size:.75rem"></i>
+                  </button>
+                </form>
               </div>
-              <form method="POST" action="{{ url_for('bon_photo_supprimer', photo_id=photo.id) }}"
-                    onsubmit="return confirm('Supprimer cette photo ?')"
-                    class="position-absolute top-0 end-0 m-1">
-                <button class="btn btn-danger btn-sm py-0 px-1" title="Supprimer">
-                  <i class="bi bi-trash" style="font-size:.75rem"></i>
-                </button>
-              </form>
+            </div>
+            {% endfor %}
+          {% else %}
+          <div class="col-12 empty-photos">
+            <div class="text-muted small fst-italic text-center py-1">
+              <i class="bi bi-images me-1"></i>Aucune photo pour l'instant
             </div>
           </div>
-          {% endfor %}
+          {% endif %}
         </div>
-        {% else %}
-        <div class="text-muted small fst-italic text-center py-1">
-          <i class="bi bi-images me-1"></i>Aucune photo pour l'instant
-        </div>
-        {% endif %}
 
       </div>
     </div>
@@ -354,6 +357,76 @@
 
 {% block scripts %}
 <script>
+// ── Upload photo : online → serveur, offline → IndexedDB ──
+document.getElementById('form-photo').addEventListener('submit', async function (e) {
+  e.preventDefault();
+
+  const fileInput = document.getElementById('photo-input');
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const bonId = {{ bon.id }};
+
+  // Lire le fichier comme DataURL dans tous les cas (aperçu + stockage offline)
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  if (navigator.onLine) {
+    // ── En ligne : envoyer au serveur via fetch JSON ──
+    try {
+      const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+      const resp = await fetch('/api/bons/' + bonId + '/photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        credentials: 'include',
+        body: JSON.stringify({ nom: file.name, data: dataUrl, mimetype: file.type }),
+      });
+
+      if (resp.ok) {
+        const result = await resp.json();
+        annulerPhoto();
+        // Ajouter la photo dans la grille sans rechargement
+        const grid = document.getElementById('photos-grid');
+        const empty = grid && grid.querySelector('.empty-photos');
+        if (empty) empty.remove();
+
+        const timeStr = new Date(result.created_at).toLocaleString('fr-FR', {
+          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+        });
+        const col = document.createElement('div');
+        col.className = 'col-6 col-md-4 col-lg-3';
+        col.id = 'photo-card-' + result.photo_id;
+        col.innerHTML =
+          '<div class="position-relative">' +
+            '<a href="/bons/photos/' + result.photo_id + '" target="_blank">' +
+              '<img src="' + dataUrl + '" alt="' + file.name + '" class="img-thumbnail w-100" style="height:120px;object-fit:cover;">' +
+            '</a>' +
+            '<div class="position-absolute bottom-0 start-0 end-0 p-1" ' +
+                 'style="background:rgba(0,0,0,.55);font-size:.7rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+              timeStr +
+            '</div>' +
+          '</div>';
+        if (grid) grid.appendChild(col);
+        showToast('📸 Photo enregistrée.', 'success');
+        return;
+      }
+    } catch (_) {
+      // Erreur réseau malgré navigator.onLine → stocker localement
+    }
+  }
+
+  // ── Hors ligne (ou échec réseau) : stocker dans IndexedDB ──
+  const pendingId = await pendingPhotosAdd(bonId, file.name, dataUrl, file.type);
+  appendPendingPhotoCard(pendingId, dataUrl, file.name);
+  annulerPhoto();
+  updateBadge();
+  showToast('📶 Hors ligne — photo sauvegardée. Elle sera envoyée automatiquement à la reconnexion.', 'info');
+});
+
 // ── Caméra / Galerie ──
 function ouvrirCamera() {
   const inp = document.getElementById('photo-input');
