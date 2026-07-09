@@ -65,16 +65,14 @@ app.config.update(
     SECRET_KEY=_secret,
     SQLALCHEMY_DATABASE_URI=_db_url,
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    SQLALCHEMY_ENGINE_OPTIONS={
+  SQLALCHEMY_ENGINE_OPTIONS={
         "pool_pre_ping": True,
         "connect_args": _connect_args
     },
-)
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,   # 16 Mo max par upload (rejeté par Flask avant traitement)
     WTF_CSRF_TIME_LIMIT=3600,               # Token CSRF valide 1 heure
     WTF_CSRF_SSL_STRICT=False,              # Render proxy : ne pas vérifier Referer strict
 )
-
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
