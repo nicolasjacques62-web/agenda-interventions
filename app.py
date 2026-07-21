@@ -360,6 +360,7 @@ class AmdecFiche(db.Model):
     categorie = db.Column(db.String(20), default='metier')   # metier / technique
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=True)
     audit_id = db.Column(db.Integer, db.ForeignKey('audits_clients.id'), nullable=True)
+    bon_id = db.Column(db.Integer, db.ForeignKey('bons_intervention.id'), nullable=True)
     processus = db.Column(db.String(200))
     mode_defaillance = db.Column(db.Text, nullable=False)
     effet = db.Column(db.Text)
@@ -372,6 +373,7 @@ class AmdecFiche(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     client = db.relationship('Client', backref='amdec_fiches')
     audit = db.relationship('AuditClient', backref='amdec_fiches')
+    bon = db.relationship('BonIntervention', backref='amdec_fiches')
 
     @property
     def criticite(self):
@@ -865,6 +867,29 @@ def generer_pdf(bon):
                 ('BOX',     (0, 0), (0, 0), 0.4, colors.grey),
             ]))
             elems.append(t_ph)
+        elems.append(Spacer(1, 0.3*cm))
+
+    # ── AMDEC — analyse des risques ──
+    if bon.amdec_fiches:
+        elems.append(Paragraph("AMDEC — Analyse des risques :", s_h))
+        amdec_data = [['Mode de défaillance', 'G', 'F', 'D', 'Criticité', 'Actions correctives']]
+        for f in sorted(bon.amdec_fiches, key=lambda x: x.criticite, reverse=True):
+            amdec_data.append([
+                Paragraph(f.mode_defaillance or '—', s_n),
+                str(f.gravite), str(f.frequence), str(f.detectabilite),
+                Paragraph(f"<b>{f.criticite}</b> ({f.niveau[0]})", s_n),
+                Paragraph(f.actions_correctives or '—', s_n),
+            ])
+        tamdec = Table(amdec_data, colWidths=[5*cm, 1*cm, 1*cm, 1*cm, 3*cm, 6.5*cm])
+        tamdec.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e293b')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('PADDING',(0,0),(-1,-1),4), ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ALIGN',(1,0),(3,-1),'CENTER'),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
+        ]))
+        elems.append(tamdec)
         elems.append(Spacer(1, 0.3*cm))
 
     elems.append(Spacer(1, 0.8*cm))
@@ -2274,6 +2299,7 @@ def bon_nouveau():
         db.session.add(b)
         inter.statut = 'terminee'
         db.session.commit()
+        _sauvegarder_amdec_lignes(request.form, client_id=inter.client_id, bon_id=b.id)
         flash(f'Bon N° {b.numero} créé.', 'success')
         # Notification au client
         lien_p = url_for('portail_access', token=inter.client.access_token, _external=True) if inter.client.access_token else None
@@ -2296,7 +2322,10 @@ def bon_nouveau():
     return render_template('bons/create.html', bon=None, interventions=interventions,
                            iid=int(iid) if iid else None, materiaux=[],
                            travaux_modeles=TRAVAUX_MODELES,
-                           preconisations_modeles=PRECONISATIONS_MODELES)
+                           preconisations_modeles=PRECONISATIONS_MODELES,
+                           amdec_modeles=AMDEC_MODELES,
+                           amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[])
 
 @app.route('/bons/<int:id>')
 @login_required
@@ -2367,6 +2396,7 @@ def bon_modifier(id):
                     flash('Image trop lourde (max 8 Mo).', 'danger')
 
         db.session.commit()
+        _sauvegarder_amdec_lignes(request.form, client_id=b.intervention.client_id, bon_id=b.id)
         if not request.form.get('ajouter_photo'):
             flash('Bon mis à jour.', 'success')
         return redirect(url_for('bon_modifier', id=id))
@@ -2374,7 +2404,11 @@ def bon_modifier(id):
     return render_template('bons/create.html', bon=b, intervention=b.intervention,
                            interventions=[], iid=b.intervention_id, materiaux=mats,
                            travaux_modeles=TRAVAUX_MODELES,
-                           preconisations_modeles=PRECONISATIONS_MODELES)
+                           preconisations_modeles=PRECONISATIONS_MODELES,
+                           amdec_modeles=AMDEC_MODELES,
+                           amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=b.amdec_fiches,
+                           amdec_fiches_json=_amdec_fiches_json(b.amdec_fiches))
 
 def _extract_mats(req):
     desig = req.form.getlist('mat_designation[]')
@@ -2382,6 +2416,59 @@ def _extract_mats(req):
     unit = req.form.getlist('mat_unite[]')
     return [{'designation': d, 'quantite': q, 'unite': u}
             for d, q, u in zip(desig, qty, unit) if d.strip()]
+
+def _amdec_fiches_json(fiches):
+    """Sérialise des fiches AMDEC pour hydrater le bloc répétable côté client."""
+    return [{
+        'id': f.id, 'mode': f.mode_defaillance or '', 'effet': f.effet or '',
+        'cause': f.cause or '', 'action': f.actions_correctives or '',
+        'g': f.gravite, 'f': f.frequence, 'd': f.detectabilite,
+    } for f in fiches]
+
+def _sauvegarder_amdec_lignes(form, client_id=None, audit_id=None, bon_id=None):
+    """Enregistre les lignes AMDEC saisies dans un formulaire d'audit ou de bon
+    (mêmes tableaux répétables que les matériaux). Crée, met à jour et supprime
+    les fiches selon les identifiants transmis."""
+    ids = form.getlist('amdec_id[]')
+    modes = form.getlist('amdec_mode[]')
+    effets = form.getlist('amdec_effet[]')
+    causes = form.getlist('amdec_cause[]')
+    actions = form.getlist('amdec_action[]')
+    gravites = form.getlist('amdec_gravite[]')
+    frequences = form.getlist('amdec_frequence[]')
+    detectabilites = form.getlist('amdec_detectabilite[]')
+    supprimees = set(f for f in form.getlist('amdec_supprimer[]') if f)
+
+    for fid in supprimees:
+        try:
+            f = AmdecFiche.query.get(int(fid))
+            if f:
+                db.session.delete(f)
+        except (ValueError, TypeError):
+            pass
+
+    for i, mode in enumerate(modes):
+        mode = mode.strip()
+        if not mode:
+            continue
+        fid = ids[i] if i < len(ids) else ''
+        if fid and fid in supprimees:
+            continue
+        fiche = AmdecFiche.query.get(int(fid)) if fid else None
+        if not fiche:
+            fiche = AmdecFiche(reference=next_ref(AmdecFiche, 'AMD'), categorie='metier')
+            db.session.add(fiche)
+        fiche.client_id = client_id
+        fiche.audit_id = audit_id
+        fiche.bon_id = bon_id
+        fiche.mode_defaillance = mode
+        fiche.effet = effets[i].strip() if i < len(effets) else ''
+        fiche.cause = causes[i].strip() if i < len(causes) else ''
+        fiche.actions_correctives = actions[i].strip() if i < len(actions) else ''
+        fiche.gravite = max(1, min(5, int(gravites[i]))) if i < len(gravites) and gravites[i] else 1
+        fiche.frequence = max(1, min(5, int(frequences[i]))) if i < len(frequences) and frequences[i] else 1
+        fiche.detectabilite = max(1, min(5, int(detectabilites[i]))) if i < len(detectabilites) and detectabilites[i] else 1
+    db.session.commit()
 
 @app.route('/bons/<int:id>/pdf')
 @login_required
@@ -2595,13 +2682,16 @@ def audit_nouveau(id):
         audit = AuditClient(reference=next_audit_ref(), client_id=id, **data)
         db.session.add(audit)
         db.session.commit()
+        _sauvegarder_amdec_lignes(request.form, client_id=id, audit_id=audit.id)
         flash(f'Audit {audit.reference} créé.', 'success')
         return redirect(url_for('audit_detail', id=audit.id))
     techniciens = get_param('techniciens', '')
     today = datetime.now().date().strftime('%Y-%m-%d')
     return render_template('audits/form.html', client=client, audit=None,
                            nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
-                           today=today)
+                           today=today, amdec_modeles=AMDEC_MODELES,
+                           amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[])
 
 @app.route('/audits/<int:id>')
 @login_required
@@ -2618,13 +2708,17 @@ def audit_modifier(id):
         for k, v in data.items():
             setattr(audit, k, v)
         db.session.commit()
+        _sauvegarder_amdec_lignes(request.form, client_id=audit.client_id, audit_id=audit.id)
         flash('Audit mis à jour.', 'success')
         return redirect(url_for('audit_detail', id=id))
     techniciens = get_param('techniciens', '')
     today = datetime.now().date().strftime('%Y-%m-%d')
     return render_template('audits/form.html', client=audit.client, audit=audit,
                            nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
-                           today=today)
+                           today=today, amdec_modeles=AMDEC_MODELES,
+                           amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=audit.amdec_fiches,
+                           amdec_fiches_json=_amdec_fiches_json(audit.amdec_fiches))
 
 @app.route('/audits/<int:id>/finaliser', methods=['POST'])
 @login_required
@@ -2720,7 +2814,9 @@ def amdec_nouvelle():
     categorie = request.args.get('categorie', 'metier')
     audits = AuditClient.query.order_by(AuditClient.date_audit.desc()).all()
     return render_template('amdec/form.html', fiche=None, clients=clients, audits=audits,
-                           client_id=client_id, audit_id=audit_id, categorie=categorie)
+                           client_id=client_id, audit_id=audit_id, categorie=categorie,
+                           amdec_modeles=AMDEC_MODELES, amdec_echelle_g=AMDEC_ECHELLE_G,
+                           amdec_echelle_f=AMDEC_ECHELLE_F, amdec_echelle_d=AMDEC_ECHELLE_D)
 
 @app.route('/amdec/<int:id>')
 @login_required
@@ -2745,7 +2841,9 @@ def amdec_modifier(id):
     clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
     audits = AuditClient.query.order_by(AuditClient.date_audit.desc()).all()
     return render_template('amdec/form.html', fiche=fiche, clients=clients, audits=audits,
-                           client_id=fiche.client_id, audit_id=fiche.audit_id, categorie=fiche.categorie)
+                           client_id=fiche.client_id, audit_id=fiche.audit_id, categorie=fiche.categorie,
+                           amdec_modeles=AMDEC_MODELES, amdec_echelle_g=AMDEC_ECHELLE_G,
+                           amdec_echelle_f=AMDEC_ECHELLE_F, amdec_echelle_d=AMDEC_ECHELLE_D)
 
 @app.route('/amdec/<int:id>/supprimer', methods=['POST'])
 @login_required
@@ -3165,6 +3263,111 @@ PRECONISATIONS_MODELES = [
      "texte": "Contact avec un apiculteur local fortement recommandé avant toute intervention chimique sur un essaim d'abeilles. Les abeilles sont des espèces protégées et utiles. La récupération par un apiculteur est préférable au traitement."},
     {"groupe": "Abeilles", "label": "Obturation après traitement",
      "texte": "Obturation de l'accès à la cavité après traitement (minimum 72h après intervention). Risque de réinstallation d'un nouvel essaim si l'entrée reste ouverte. Restes de cire à retirer si accessible (risque de fusion en été et dégâts aux parois)."},
+]
+
+# ══════════════════ AMDEC — échelles et bibliothèque de modes de défaillance ══════════════════
+
+AMDEC_ECHELLE_G = [
+    (1, "1 — Mineure (aucun impact perceptible pour le client)"),
+    (2, "2 — Faible (remarque du client, sans conséquence)"),
+    (3, "3 — Modérée (mécontentement client, reprise nécessaire)"),
+    (4, "4 — Élevée (non-conformité HACCP / réglementaire)"),
+    (5, "5 — Critique (risque sanitaire, perte de contrat)"),
+]
+AMDEC_ECHELLE_F = [
+    (1, "1 — Très rare (jamais observé)"),
+    (2, "2 — Rare (quelques cas isolés)"),
+    (3, "3 — Occasionnelle (observée régulièrement)"),
+    (4, "4 — Fréquente (à chaque intervention ou presque)"),
+    (5, "5 — Systématique"),
+]
+AMDEC_ECHELLE_D = [
+    (1, "1 — Détection immédiate et évidente"),
+    (2, "2 — Facilement détectable au contrôle habituel"),
+    (3, "3 — Détectable avec une vérification ciblée"),
+    (4, "4 — Difficilement détectable (contrôle approfondi requis)"),
+    (5, "5 — Indétectable avant que l'incident survienne"),
+]
+
+AMDEC_MODELES = [
+    {"groupe": "Dératisation", "label": "Appâts non consommés / négligés",
+     "mode": "Postes d'appâtage non consommés sur plusieurs passages sans qu'aucune cause ne soit identifiée.",
+     "effet": "Infestation non maîtrisée, poursuite de l'activité rongeurs malgré les visites.",
+     "cause": "Appât non attractif, produit périmé, ou activité déjà en baisse non vérifiée.",
+     "action": "Changer de matière active/appât, vérifier la date de péremption, renforcer le diagnostic avant renouvellement.",
+     "g": 3, "f": 3, "d": 3},
+    {"groupe": "Dératisation", "label": "Postes endommagés ou déplacés",
+     "mode": "Postes d'appâtage cassés, ouverts ou déplacés par des tiers (nettoyage, travaux, animaux).",
+     "effet": "Appât rendu inaccessible aux nuisibles, ou accessible à des non-cibles (risque sécurité).",
+     "cause": "Fixation insuffisante, absence de sécurisation, zone de passage non anticipée.",
+     "action": "Sécuriser/fixer les postes, repositionner hors zone de passage, sensibiliser le client.",
+     "g": 4, "f": 2, "d": 2},
+    {"groupe": "Dératisation", "label": "Points d'entrée non colmatés",
+     "mode": "Points d'entrée identifiés lors d'un audit précédent mais toujours ouverts au passage suivant.",
+     "effet": "Ré-infestation continue malgré les traitements, inefficacité du plan de lutte.",
+     "cause": "Travaux de colmatage non réalisés par le client ou non suivis par le PCO.",
+     "action": "Relancer le client par écrit, proposer un devis de colmatage, tracer le suivi dans le dossier.",
+     "g": 4, "f": 3, "d": 2},
+    {"groupe": "Dératisation", "label": "Consommation non tracée",
+     "mode": "Relevé de consommation des postes non renseigné ou incomplet sur le compte-rendu.",
+     "effet": "Impossibilité d'évaluer la tendance de l'infestation dans le temps, non-conformité documentaire HACCP.",
+     "cause": "Oubli technicien, manque de temps sur site, support de relevé peu pratique.",
+     "action": "Rappel de procédure au technicien, checklist de relevé systématique.",
+     "g": 3, "f": 2, "d": 4},
+    {"groupe": "Désinsectisation", "label": "Résistance aux insecticides",
+     "mode": "Absence d'efficacité du traitement malgré application conforme (résistance de la population ciblée).",
+     "effet": "Ré-infestation rapide, perte de confiance du client, traitements répétés inefficaces.",
+     "cause": "Résistance acquise de la souche locale à la matière active utilisée.",
+     "action": "Rotation des matières actives, associer un traitement mécanique/thermique complémentaire.",
+     "g": 4, "f": 2, "d": 3},
+    {"groupe": "Désinsectisation", "label": "Zone inaccessible non traitée",
+     "mode": "Zone d'infestation non traitée car inaccessible (meuble non déplacé, gaine fermée, zone encombrée).",
+     "effet": "Foyer résiduel non traité, ré-infestation depuis la zone non couverte.",
+     "cause": "Accès non dégagé par le client, absence de coordination avant intervention.",
+     "action": "Prévenir le client en amont des conditions d'accès nécessaires, reprogrammer si besoin.",
+     "g": 3, "f": 3, "d": 3},
+    {"groupe": "Désinsectisation", "label": "Délai de ré-intervention non respecté",
+     "mode": "Second passage prévu (ex : J+14, J+21) non réalisé dans le délai indiqué au client.",
+     "effet": "Cycle de traitement rompu, efficacité réduite, non-respect de l'engagement contractuel.",
+     "cause": "Planning surchargé, absence de rappel automatique.",
+     "action": "Planifier le second passage dès le premier rendez-vous, alerte automatique de suivi.",
+     "g": 3, "f": 2, "d": 2},
+    {"groupe": "Désinfection", "label": "Temps de contact insuffisant",
+     "mode": "Zone traitée réutilisée avant la fin du temps de contact ou d'aération requis par le produit.",
+     "effet": "Efficacité biocide réduite, exposition du personnel/client au produit non séché.",
+     "cause": "Consigne non transmise ou non respectée par l'occupant des locaux.",
+     "action": "Affichage de consigne sur site, communication écrite systématique du délai à respecter.",
+     "g": 4, "f": 2, "d": 3},
+    {"groupe": "Désinfection", "label": "Zones oubliées lors du traitement",
+     "mode": "Surfaces de contact ou recoins non traités lors de la désinfection (angles, sous équipements).",
+     "effet": "Contamination résiduelle, désinfection jugée incomplète.",
+     "cause": "Check-list de zones à traiter absente ou non suivie.",
+     "action": "Utiliser une check-list de zones systématique avant/après intervention.",
+     "g": 3, "f": 2, "d": 4},
+    {"groupe": "HACCP / Suivi", "label": "Documentation manquante ou incomplète",
+     "mode": "Dossier de traçabilité (plans, relevés, certificats) incomplet lors d'un contrôle client ou audit externe.",
+     "effet": "Non-conformité HACCP constatée par le client ou un organisme de contrôle, risque contractuel.",
+     "cause": "Documents non centralisés, oubli de mise à jour après intervention.",
+     "action": "Centraliser la documentation dans le dossier client numérique, contrôle qualité périodique.",
+     "g": 4, "f": 2, "d": 3},
+    {"groupe": "HACCP / Suivi", "label": "Non-conformité identifiée non corrigée",
+     "mode": "Non-conformité relevée lors d'un audit précédent toujours présente au passage suivant.",
+     "effet": "Perte de crédibilité du plan de gestion, risque sanitaire persistant.",
+     "cause": "Absence de suivi formalisé des actions correctives entre deux audits.",
+     "action": "Créer une fiche AMDEC dédiée et la rattacher à chaque audit jusqu'à clôture.",
+     "g": 4, "f": 3, "d": 2},
+    {"groupe": "HACCP / Suivi", "label": "Fréquence de passage insuffisante",
+     "mode": "Fréquence contractuelle de passages inadaptée au niveau de risque réel du site.",
+     "effet": "Détection tardive d'une infestation, dégradation de la situation entre deux visites.",
+     "cause": "Contrat signé sans réévaluation du niveau de risque, absence de révision périodique.",
+     "action": "Réévaluer la fréquence lors de chaque audit, proposer un avenant si le risque a évolué.",
+     "g": 4, "f": 2, "d": 3},
+    {"groupe": "HACCP / Suivi", "label": "Communication client insuffisante",
+     "mode": "Recommandations transmises oralement mais non formalisées, non comprises ou non appliquées par le client.",
+     "effet": "Facteurs favorisants non corrigés côté client, réapparition du problème.",
+     "cause": "Absence de support écrit systématique, manque de suivi de la mise en œuvre.",
+     "action": "Systématiser la remise d'un document écrit et en vérifier l'application au passage suivant.",
+     "g": 3, "f": 3, "d": 3},
 ]
 
 def _planifier_passages_auto(client, type_prestation, passages_annuels, date_debut, date_fin):
@@ -3828,6 +4031,7 @@ def init_db():
                 statut VARCHAR(20) DEFAULT 'ouvert',
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
+            "ALTER TABLE amdec_fiches ADD COLUMN IF NOT EXISTS bon_id INTEGER REFERENCES bons_intervention(id)",
         ]
         for sql in migrations:
             try:

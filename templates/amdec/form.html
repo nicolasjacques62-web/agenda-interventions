@@ -54,50 +54,68 @@
         </div>
       </div>
 
+      {% if categorie == 'metier' and amdec_modeles %}
+      <div class="col-12">
+        <label class="form-label fw-semibold small mb-1">Pré-remplir à partir d'un mode de défaillance courant</label>
+        <select id="amdec-select-modele-solo" class="form-select form-select-sm" onchange="amdecInsererModeleSolo()">
+          <option value="">🛡️ Choisir un modèle…</option>
+          {% set ns_s = namespace(g='') %}
+          {% for m in amdec_modeles %}
+            {% if m.groupe != ns_s.g %}
+              {% if ns_s.g != '' %}</optgroup>{% endif %}
+              <optgroup label="── {{ m.groupe }} ──">
+              {% set ns_s.g = m.groupe %}
+            {% endif %}
+            <option value="{{ loop.index0 }}">{{ m.label }}</option>
+          {% endfor %}
+          {% if amdec_modeles %}</optgroup>{% endif %}
+        </select>
+      </div>
+      {% endif %}
+
       <div class="col-12">
         <label class="form-label fw-semibold">Mode de défaillance <span class="text-danger">*</span></label>
-        <textarea name="mode_defaillance" class="form-control" rows="2" required
+        <textarea name="mode_defaillance" id="amdec-solo-mode" class="form-control" rows="2" required
                   placeholder="Ce qui peut échouer, concrètement">{{ fiche.mode_defaillance if fiche else '' }}</textarea>
       </div>
       <div class="col-md-6">
         <label class="form-label fw-semibold">Effet(s)</label>
-        <textarea name="effet" class="form-control" rows="2"
+        <textarea name="effet" id="amdec-solo-effet" class="form-control" rows="2"
                   placeholder="Conséquence pour le client / le site">{{ fiche.effet if fiche else '' }}</textarea>
       </div>
       <div class="col-md-6">
         <label class="form-label fw-semibold">Cause(s)</label>
-        <textarea name="cause" class="form-control" rows="2"
+        <textarea name="cause" id="amdec-solo-cause" class="form-control" rows="2"
                   placeholder="Cause racine">{{ fiche.cause if fiche else '' }}</textarea>
       </div>
 
       <div class="col-12"><hr></div>
 
       <div class="col-md-4">
-        <label class="form-label fw-semibold">Gravité (G) <span class="text-muted small">1 à 5</span></label>
-        <select name="gravite" class="form-select">
+        <label class="form-label fw-semibold">Gravité (G)</label>
+        <select name="gravite" id="amdec-solo-g" class="form-select">
           {% set g = fiche.gravite if fiche else 1 %}
-          {% for i in range(1,6) %}<option value="{{ i }}" {% if g==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          {% for val, lab in amdec_echelle_g %}<option value="{{ val }}" {% if g==val %}selected{% endif %}>{{ lab }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-4">
-        <label class="form-label fw-semibold">Fréquence (F) <span class="text-muted small">1 à 5</span></label>
-        <select name="frequence" class="form-select">
+        <label class="form-label fw-semibold">Fréquence (F)</label>
+        <select name="frequence" id="amdec-solo-f" class="form-select">
           {% set fr = fiche.frequence if fiche else 1 %}
-          {% for i in range(1,6) %}<option value="{{ i }}" {% if fr==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          {% for val, lab in amdec_echelle_f %}<option value="{{ val }}" {% if fr==val %}selected{% endif %}>{{ lab }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-4">
-        <label class="form-label fw-semibold">Détectabilité (D) <span class="text-muted small">1 à 5</span></label>
-        <select name="detectabilite" class="form-select">
+        <label class="form-label fw-semibold">Détectabilité (D)</label>
+        <select name="detectabilite" id="amdec-solo-d" class="form-select">
           {% set d = fiche.detectabilite if fiche else 1 %}
-          {% for i in range(1,6) %}<option value="{{ i }}" {% if d==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          {% for val, lab in amdec_echelle_d %}<option value="{{ val }}" {% if d==val %}selected{% endif %}>{{ lab }}</option>{% endfor %}
         </select>
-        <div class="form-text">1 = facilement détectable, 5 = indétectable avant l'incident.</div>
       </div>
 
       <div class="col-12">
         <label class="form-label fw-semibold">Actions correctives / préventives</label>
-        <textarea name="actions_correctives" class="form-control" rows="3"
+        <textarea name="actions_correctives" id="amdec-solo-action" class="form-control" rows="3"
                   placeholder="Ce qui est mis en place pour réduire le risque">{{ fiche.actions_correctives if fiche else '' }}</textarea>
       </div>
 
@@ -111,4 +129,21 @@
     </div>
   </div>
 </form>
+
+<script>
+const AMDEC_MODELES_SOLO = {{ amdec_modeles|tojson }};
+function amdecInsererModeleSolo() {
+  const sel = document.getElementById('amdec-select-modele-solo');
+  if (sel.value === '') return;
+  const m = AMDEC_MODELES_SOLO[parseInt(sel.value)];
+  document.getElementById('amdec-solo-mode').value = m.mode;
+  document.getElementById('amdec-solo-effet').value = m.effet;
+  document.getElementById('amdec-solo-cause').value = m.cause;
+  document.getElementById('amdec-solo-action').value = m.action;
+  document.getElementById('amdec-solo-g').value = m.g;
+  document.getElementById('amdec-solo-f').value = m.f;
+  document.getElementById('amdec-solo-d').value = m.d;
+  sel.value = '';
+}
+</script>
 {% endblock %}

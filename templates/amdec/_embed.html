@@ -1,0 +1,166 @@
+<!-- Bloc AMDEC réutilisable (audit et bon d'intervention) -->
+<div class="card mb-3 border-warning">
+  <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-shield-exclamation me-2"></i>AMDEC — Analyse des risques (G × F × D)</span>
+    <button type="button" class="btn btn-outline-primary btn-sm" onclick="amdecAjouterLigne()">
+      <i class="bi bi-plus-lg me-1"></i>Ajouter un risque
+    </button>
+  </div>
+  <div class="card-body">
+
+    <div class="mb-3">
+      <select id="amdec-select-modele" class="form-select form-select-sm" onchange="amdecInsererModele()">
+        <option value="">🛡️ Ajouter à partir d'un mode de défaillance courant…</option>
+        {% set ns_amdec = namespace(g='') %}
+        {% for m in amdec_modeles %}
+          {% if m.groupe != ns_amdec.g %}
+            {% if ns_amdec.g != '' %}</optgroup>{% endif %}
+            <optgroup label="── {{ m.groupe }} ──">
+            {% set ns_amdec.g = m.groupe %}
+          {% endif %}
+          <option value="{{ loop.index0 }}">{{ m.label }}</option>
+        {% endfor %}
+        {% if amdec_modeles %}</optgroup>{% endif %}
+      </select>
+      <div class="form-text">
+        <i class="bi bi-info-circle me-1"></i>
+        Choisissez un modèle pour ajouter une ligne pré-remplie (tout reste modifiable), ou cliquez sur « Ajouter un risque » pour une ligne vierge.
+      </div>
+    </div>
+
+    <div id="amdecBody"></div>
+    <div id="amdecEmpty" class="text-center text-muted small py-2">
+      Aucun risque identifié pour l'instant.
+    </div>
+    <div id="amdecSupprimerContainer"></div>
+  </div>
+</div>
+
+<script>
+const AMDEC_MODELES = {{ amdec_modeles|tojson }};
+const AMDEC_EXISTANTES = {{ amdec_fiches_json|tojson }};
+const AMDEC_ECHELLE_G = {{ amdec_echelle_g|tojson }};
+const AMDEC_ECHELLE_F = {{ amdec_echelle_f|tojson }};
+const AMDEC_ECHELLE_D = {{ amdec_echelle_d|tojson }};
+let amdecCompteur = 0;
+
+function amdecOptions(echelle, valeurActuelle) {
+  return echelle.map(function(pair) {
+    const sel = pair[0] === valeurActuelle ? 'selected' : '';
+    return `<option value="${pair[0]}" ${sel}>${pair[1]}</option>`;
+  }).join('');
+}
+
+function amdecMajCriticite(carte) {
+  const g = parseInt(carte.querySelector('.amdec-g').value) || 0;
+  const f = parseInt(carte.querySelector('.amdec-f').value) || 0;
+  const d = parseInt(carte.querySelector('.amdec-d').value) || 0;
+  const c = g * f * d;
+  let niveau = 'secondary', label = 'Faible';
+  if (c >= 60) { niveau = 'danger'; label = 'Critique'; }
+  else if (c >= 30) { niveau = 'warning'; label = 'Élevé'; }
+  else if (c >= 12) { niveau = 'info'; label = 'Modéré'; }
+  const badge = carte.querySelector('.amdec-criticite');
+  badge.className = 'badge bg-' + niveau + ' amdec-criticite';
+  badge.textContent = c + ' — ' + label;
+}
+
+function amdecCreerLigne(data) {
+  data = data || {};
+  amdecCompteur++;
+  const div = document.createElement('div');
+  div.className = 'card mb-3';
+  div.innerHTML = `
+    <div class="card-body">
+      <input type="hidden" class="amdec-id" name="amdec_id[]" value="${data.id || ''}">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <span class="badge bg-secondary">Risque</span>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-secondary amdec-criticite">— </span>
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="amdecSupprimerLigne(this)">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label small fw-semibold mb-1">Mode de défaillance</label>
+        <textarea name="amdec_mode[]" class="form-control form-control-sm" rows="2"
+                  placeholder="Ce qui peut échouer, concrètement">${data.mode || ''}</textarea>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold mb-1">Effet</label>
+          <textarea name="amdec_effet[]" class="form-control form-control-sm" rows="2"
+                    placeholder="Conséquence pour le client / le site">${data.effet || ''}</textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold mb-1">Cause</label>
+          <textarea name="amdec_cause[]" class="form-control form-control-sm" rows="2"
+                    placeholder="Cause racine">${data.cause || ''}</textarea>
+        </div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold mb-1">Gravité (G)</label>
+          <select name="amdec_gravite[]" class="form-select form-select-sm amdec-g" onchange="amdecMajCriticite(this.closest('.card'))">
+            ${amdecOptions(AMDEC_ECHELLE_G, data.g || 1)}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold mb-1">Fréquence (F)</label>
+          <select name="amdec_frequence[]" class="form-select form-select-sm amdec-f" onchange="amdecMajCriticite(this.closest('.card'))">
+            ${amdecOptions(AMDEC_ECHELLE_F, data.f || 1)}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold mb-1">Détectabilité (D)</label>
+          <select name="amdec_detectabilite[]" class="form-select form-select-sm amdec-d" onchange="amdecMajCriticite(this.closest('.card'))">
+            ${amdecOptions(AMDEC_ECHELLE_D, data.d || 1)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="form-label small fw-semibold mb-1">Actions correctives / préventives</label>
+        <textarea name="amdec_action[]" class="form-control form-control-sm" rows="2"
+                  placeholder="Ce qui est mis en place pour réduire le risque">${data.action || ''}</textarea>
+      </div>
+    </div>
+  `;
+  document.getElementById('amdecEmpty').classList.add('d-none');
+  document.getElementById('amdecBody').appendChild(div);
+  amdecMajCriticite(div);
+  return div;
+}
+
+function amdecAjouterLigne() {
+  const div = amdecCreerLigne({});
+  div.querySelector('textarea').focus();
+}
+
+function amdecInsererModele() {
+  const sel = document.getElementById('amdec-select-modele');
+  if (sel.value === '') return;
+  const m = AMDEC_MODELES[parseInt(sel.value)];
+  amdecCreerLigne({mode: m.mode, effet: m.effet, cause: m.cause, action: m.action, g: m.g, f: m.f, d: m.d});
+  sel.value = '';
+}
+
+function amdecSupprimerLigne(btn) {
+  const carte = btn.closest('.card');
+  const id = carte.querySelector('.amdec-id').value;
+  if (id) {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'amdec_supprimer[]'; inp.value = id;
+    document.getElementById('amdecSupprimerContainer').appendChild(inp);
+  }
+  carte.remove();
+  if (!document.getElementById('amdecBody').children.length) {
+    document.getElementById('amdecEmpty').classList.remove('d-none');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  AMDEC_EXISTANTES.forEach(function(f) { amdecCreerLigne(f); });
+  if (!AMDEC_EXISTANTES.length) document.getElementById('amdecEmpty').classList.remove('d-none');
+});
+</script>
