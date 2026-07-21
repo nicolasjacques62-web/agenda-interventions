@@ -177,6 +177,9 @@
     <a href="{{ url_for('audits_liste') }}" class="nav-link {% if 'audit' in request.endpoint %}active{% endif %}">
       <i class="bi bi-clipboard2-pulse"></i> Audits
     </a>
+    <a href="{{ url_for('amdec_liste') }}" class="nav-link {% if 'amdec' in request.endpoint %}active{% endif %}">
+      <i class="bi bi-shield-exclamation"></i> AMDEC
+    </a>
     <a href="{{ url_for('documents_liste') }}" class="nav-link {% if 'document' in request.endpoint %}active{% endif %}">
       <i class="bi bi-file-earmark-medical"></i> Fiches Tech. / FDS
     </a>

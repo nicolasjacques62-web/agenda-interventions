@@ -352,6 +352,52 @@ class AuditClient(db.Model):
         return [labels[v] for v in (self.communication_client or '').split(',') if v.strip() in labels]
 
 
+class AmdecFiche(db.Model):
+    """AMDEC / FMEA — analyse des modes de défaillance, de leurs effets et de leur criticité."""
+    __tablename__ = 'amdec_fiches'
+    id = db.Column(db.Integer, primary_key=True)
+    reference = db.Column(db.String(20), unique=True)
+    categorie = db.Column(db.String(20), default='metier')   # metier / technique
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=True)
+    audit_id = db.Column(db.Integer, db.ForeignKey('audits_clients.id'), nullable=True)
+    processus = db.Column(db.String(200))
+    mode_defaillance = db.Column(db.Text, nullable=False)
+    effet = db.Column(db.Text)
+    cause = db.Column(db.Text)
+    gravite = db.Column(db.Integer, default=1)         # 1-5
+    frequence = db.Column(db.Integer, default=1)       # 1-5
+    detectabilite = db.Column(db.Integer, default=1)   # 1-5
+    actions_correctives = db.Column(db.Text)
+    statut = db.Column(db.String(20), default='ouvert')  # ouvert / en_cours / cloture
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship('Client', backref='amdec_fiches')
+    audit = db.relationship('AuditClient', backref='amdec_fiches')
+
+    @property
+    def criticite(self):
+        return (self.gravite or 0) * (self.frequence or 0) * (self.detectabilite or 0)
+
+    @property
+    def niveau(self):
+        c = self.criticite
+        if c >= 60:  return ('Critique', 'danger')
+        if c >= 30:  return ('Élevé',    'warning')
+        if c >= 12:  return ('Modéré',   'info')
+        return ('Faible', 'secondary')
+
+    @property
+    def categorie_label(self):
+        return {'metier': 'Métier (nuisibles/HACCP)', 'technique': 'Technique (site)'}.get(self.categorie, self.categorie)
+
+    @property
+    def statut_label(self):
+        return {'ouvert': 'Ouvert', 'en_cours': 'En cours', 'cloture': 'Clôturé'}.get(self.statut, self.statut)
+
+    @property
+    def statut_couleur(self):
+        return {'ouvert': 'danger', 'en_cours': 'warning', 'cloture': 'success'}.get(self.statut, 'secondary')
+
+
 class DocumentTechnique(db.Model):
     __tablename__ = 'documents_techniques'
     id              = db.Column(db.Integer, primary_key=True)
@@ -1453,6 +1499,29 @@ def generer_pdf_audit(audit):
     if audit.recommandations:
         elems.append(Paragraph("6. RECOMMANDATIONS", s_h1))
         elems.append(Paragraph(audit.recommandations.replace('\n','<br/>'), s_n))
+        elems.append(Spacer(1, 0.4*cm))
+
+    # ── AMDEC — analyse des risques ──
+    if audit.amdec_fiches:
+        elems.append(Paragraph("7. AMDEC — ANALYSE DES MODES DE DÉFAILLANCE", s_h1))
+        amdec_data = [['Mode de défaillance', 'G', 'F', 'D', 'Criticité', 'Actions correctives']]
+        for f in sorted(audit.amdec_fiches, key=lambda x: x.criticite, reverse=True):
+            amdec_data.append([
+                Paragraph(f.mode_defaillance or '—', s_n),
+                str(f.gravite), str(f.frequence), str(f.detectabilite),
+                Paragraph(f"<b>{f.criticite}</b> ({f.niveau[0]})", s_n),
+                Paragraph(f.actions_correctives or '—', s_n),
+            ])
+        tamdec = Table(amdec_data, colWidths=[5*cm, 1*cm, 1*cm, 1*cm, 3*cm, 6.5*cm])
+        tamdec.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e293b')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('PADDING',(0,0),(-1,-1),4), ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ALIGN',(1,0),(3,-1),'CENTER'),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor('#f9f9f9')]),
+        ]))
+        elems.append(tamdec)
         elems.append(Spacer(1, 0.4*cm))
 
     # ── Zone de signature ──
@@ -2603,6 +2672,90 @@ def audit_pdf(id):
         flash(f'Erreur PDF : {e}', 'danger')
         return redirect(url_for('audit_detail', id=id))
 
+# ─── AMDEC (FMEA) ─────────────────────────────────────────────────────────────
+
+def _parse_amdec_form(form):
+    return dict(
+        categorie=form.get('categorie', 'metier'),
+        client_id=int(form['client_id']) if form.get('client_id') else None,
+        audit_id=int(form['audit_id']) if form.get('audit_id') else None,
+        processus=form.get('processus', '').strip(),
+        mode_defaillance=form.get('mode_defaillance', '').strip(),
+        effet=form.get('effet', '').strip(),
+        cause=form.get('cause', '').strip(),
+        gravite=max(1, min(5, int(form.get('gravite') or 1))),
+        frequence=max(1, min(5, int(form.get('frequence') or 1))),
+        detectabilite=max(1, min(5, int(form.get('detectabilite') or 1))),
+        actions_correctives=form.get('actions_correctives', '').strip(),
+        statut=form.get('statut', 'ouvert'),
+    )
+
+@app.route('/amdec')
+@login_required
+def amdec_liste():
+    categorie = request.args.get('categorie', '')
+    query = AmdecFiche.query
+    if categorie in ('metier', 'technique'):
+        query = query.filter_by(categorie=categorie)
+    fiches = query.all()
+    fiches.sort(key=lambda f: f.criticite, reverse=True)
+    return render_template('amdec/liste.html', fiches=fiches, categorie=categorie)
+
+@app.route('/amdec/nouvelle', methods=['GET', 'POST'])
+@login_required
+def amdec_nouvelle():
+    if request.method == 'POST':
+        data = _parse_amdec_form(request.form)
+        if not data['mode_defaillance']:
+            flash('Le mode de défaillance est obligatoire.', 'warning')
+            return redirect(url_for('amdec_nouvelle'))
+        fiche = AmdecFiche(reference=next_ref(AmdecFiche, 'AMD'), **data)
+        db.session.add(fiche)
+        db.session.commit()
+        flash(f'Fiche AMDEC {fiche.reference} créée.', 'success')
+        return redirect(url_for('amdec_detail', id=fiche.id))
+    clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
+    client_id = request.args.get('client_id', type=int)
+    audit_id = request.args.get('audit_id', type=int)
+    categorie = request.args.get('categorie', 'metier')
+    audits = AuditClient.query.order_by(AuditClient.date_audit.desc()).all()
+    return render_template('amdec/form.html', fiche=None, clients=clients, audits=audits,
+                           client_id=client_id, audit_id=audit_id, categorie=categorie)
+
+@app.route('/amdec/<int:id>')
+@login_required
+def amdec_detail(id):
+    fiche = AmdecFiche.query.get_or_404(id)
+    return render_template('amdec/detail.html', fiche=fiche)
+
+@app.route('/amdec/<int:id>/modifier', methods=['GET', 'POST'])
+@login_required
+def amdec_modifier(id):
+    fiche = AmdecFiche.query.get_or_404(id)
+    if request.method == 'POST':
+        data = _parse_amdec_form(request.form)
+        if not data['mode_defaillance']:
+            flash('Le mode de défaillance est obligatoire.', 'warning')
+            return redirect(url_for('amdec_modifier', id=id))
+        for k, v in data.items():
+            setattr(fiche, k, v)
+        db.session.commit()
+        flash('Fiche AMDEC mise à jour.', 'success')
+        return redirect(url_for('amdec_detail', id=id))
+    clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
+    audits = AuditClient.query.order_by(AuditClient.date_audit.desc()).all()
+    return render_template('amdec/form.html', fiche=fiche, clients=clients, audits=audits,
+                           client_id=fiche.client_id, audit_id=fiche.audit_id, categorie=fiche.categorie)
+
+@app.route('/amdec/<int:id>/supprimer', methods=['POST'])
+@login_required
+def amdec_supprimer(id):
+    fiche = AmdecFiche.query.get_or_404(id)
+    db.session.delete(fiche)
+    db.session.commit()
+    flash('Fiche AMDEC supprimée.', 'info')
+    return redirect(url_for('amdec_liste'))
+
 @app.route('/portail/<token>/audits/<int:aid>')
 def portail_audit_detail(token, aid):
     c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
@@ -3657,6 +3810,23 @@ def init_db():
                 document_id INTEGER NOT NULL REFERENCES documents_techniques(id) ON DELETE CASCADE,
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(client_id, document_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS amdec_fiches (
+                id SERIAL PRIMARY KEY,
+                reference VARCHAR(20) UNIQUE,
+                categorie VARCHAR(20) DEFAULT 'metier',
+                client_id INTEGER REFERENCES clients(id),
+                audit_id INTEGER REFERENCES audits_clients(id),
+                processus VARCHAR(200),
+                mode_defaillance TEXT NOT NULL,
+                effet TEXT,
+                cause TEXT,
+                gravite INTEGER DEFAULT 1,
+                frequence INTEGER DEFAULT 1,
+                detectabilite INTEGER DEFAULT 1,
+                actions_correctives TEXT,
+                statut VARCHAR(20) DEFAULT 'ouvert',
+                created_at TIMESTAMP DEFAULT NOW()
             )""",
         ]
         for sql in migrations:

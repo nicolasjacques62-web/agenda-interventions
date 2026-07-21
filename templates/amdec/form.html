@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{% if fiche %}Modifier{% else %}Nouvelle{% endif %} fiche AMDEC{% endblock %}
+{% block page_title %}<i class="bi bi-shield-exclamation me-2"></i>{% if fiche %}Modifier{% else %}Nouvelle{% endif %} fiche AMDEC{% endblock %}
+
+{% block content %}
+<form method="POST" class="card">
+  <div class="card-body">
+    <div class="row g-3">
+
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Catégorie</label>
+        <select name="categorie" class="form-select">
+          <option value="metier" {% if categorie=='metier' %}selected{% endif %}>Métier (nuisibles/HACCP)</option>
+          <option value="technique" {% if categorie=='technique' %}selected{% endif %}>Technique (site)</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Processus / composant concerné</label>
+        <input type="text" name="processus" class="form-control"
+               value="{{ fiche.processus if fiche else '' }}"
+               placeholder="Ex : Traitement insecticide / Base de données">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Statut</label>
+        <select name="statut" class="form-select">
+          {% set statut_actuel = fiche.statut if fiche else 'ouvert' %}
+          <option value="ouvert" {% if statut_actuel=='ouvert' %}selected{% endif %}>Ouvert</option>
+          <option value="en_cours" {% if statut_actuel=='en_cours' %}selected{% endif %}>En cours</option>
+          <option value="cloture" {% if statut_actuel=='cloture' %}selected{% endif %}>Clôturé</option>
+        </select>
+      </div>
+
+      <div class="col-12">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Client concerné (optionnel)</label>
+            <select name="client_id" class="form-select">
+              <option value="">— Aucun —</option>
+              {% for c in clients %}
+              <option value="{{ c.id }}" {% if client_id==c.id %}selected{% endif %}>{{ c.nom_affichage }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Audit lié (optionnel — pour intégration au PDF)</label>
+            <select name="audit_id" class="form-select">
+              <option value="">— Aucun —</option>
+              {% for a in audits %}
+              <option value="{{ a.id }}" {% if audit_id==a.id %}selected{% endif %}>{{ a.client.nom_affichage }} — {{ a.reference }} — {{ a.date_audit.strftime('%d/%m/%Y') }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Si un audit est lié, cette fiche apparaîtra dans le PDF du rapport d'audit.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label fw-semibold">Mode de défaillance <span class="text-danger">*</span></label>
+        <textarea name="mode_defaillance" class="form-control" rows="2" required
+                  placeholder="Ce qui peut échouer, concrètement">{{ fiche.mode_defaillance if fiche else '' }}</textarea>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Effet(s)</label>
+        <textarea name="effet" class="form-control" rows="2"
+                  placeholder="Conséquence pour le client / le site">{{ fiche.effet if fiche else '' }}</textarea>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Cause(s)</label>
+        <textarea name="cause" class="form-control" rows="2"
+                  placeholder="Cause racine">{{ fiche.cause if fiche else '' }}</textarea>
+      </div>
+
+      <div class="col-12"><hr></div>
+
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Gravité (G) <span class="text-muted small">1 à 5</span></label>
+        <select name="gravite" class="form-select">
+          {% set g = fiche.gravite if fiche else 1 %}
+          {% for i in range(1,6) %}<option value="{{ i }}" {% if g==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Fréquence (F) <span class="text-muted small">1 à 5</span></label>
+        <select name="frequence" class="form-select">
+          {% set fr = fiche.frequence if fiche else 1 %}
+          {% for i in range(1,6) %}<option value="{{ i }}" {% if fr==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Détectabilité (D) <span class="text-muted small">1 à 5</span></label>
+        <select name="detectabilite" class="form-select">
+          {% set d = fiche.detectabilite if fiche else 1 %}
+          {% for i in range(1,6) %}<option value="{{ i }}" {% if d==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+        </select>
+        <div class="form-text">1 = facilement détectable, 5 = indétectable avant l'incident.</div>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label fw-semibold">Actions correctives / préventives</label>
+        <textarea name="actions_correctives" class="form-control" rows="3"
+                  placeholder="Ce qui est mis en place pour réduire le risque">{{ fiche.actions_correctives if fiche else '' }}</textarea>
+      </div>
+
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check2-circle me-1"></i>Enregistrer
+        </button>
+        <a href="{{ url_for('amdec_liste') }}" class="btn btn-outline-secondary">Annuler</a>
+      </div>
+
+    </div>
+  </div>
+</form>
+{% endblock %}

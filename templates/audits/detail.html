@@ -243,6 +243,42 @@
       <div class="card-body small">{{ audit.recommandations }}</div>
     </div>{% endif %}
 
+    <!-- AMDEC -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-exclamation me-2"></i>AMDEC — Analyse des risques</span>
+        <a href="{{ url_for('amdec_nouvelle', client_id=audit.client_id, audit_id=audit.id, categorie='metier') }}"
+           class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-plus-lg me-1"></i>Ajouter une fiche
+        </a>
+      </div>
+      {% if audit.amdec_fiches %}
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>Mode de défaillance</th><th class="text-center">G</th><th class="text-center">F</th><th class="text-center">D</th><th class="text-center">Criticité</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for f in audit.amdec_fiches|sort(attribute='criticite', reverse=true) %}
+              <tr>
+                <td class="small">{{ f.mode_defaillance[:60] }}{% if f.mode_defaillance|length > 60 %}…{% endif %}</td>
+                <td class="text-center small">{{ f.gravite }}</td>
+                <td class="text-center small">{{ f.frequence }}</td>
+                <td class="text-center small">{{ f.detectabilite }}</td>
+                <td class="text-center"><span class="badge bg-{{ f.niveau[1] }}">{{ f.criticite }}</span></td>
+                <td class="text-end"><a href="{{ url_for('amdec_detail', id=f.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-body text-muted small">Aucune fiche AMDEC liée à cet audit. Les fiches liées apparaissent aussi dans le PDF du rapport.</div>
+      {% endif %}
+    </div>
+
   </div>
 </div>
 {% endblock %}

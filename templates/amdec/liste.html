@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}AMDEC{% endblock %}
+{% block page_title %}<i class="bi bi-shield-exclamation me-2"></i>AMDEC — Analyse des risques{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('amdec_nouvelle') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg me-1"></i>Nouvelle fiche
+</a>
+{% endblock %}
+
+{% block content %}
+<ul class="nav nav-pills mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if not categorie %}active{% endif %}" href="{{ url_for('amdec_liste') }}">Toutes</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if categorie=='metier' %}active{% endif %}" href="{{ url_for('amdec_liste', categorie='metier') }}">Métier (nuisibles/HACCP)</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if categorie=='technique' %}active{% endif %}" href="{{ url_for('amdec_liste', categorie='technique') }}">Technique (site)</a>
+  </li>
+</ul>
+
+<div class="card">
+  <div class="card-header">
+    <i class="bi bi-shield-exclamation me-2"></i>Fiches AMDEC ({{ fiches|length }}) — triées par criticité décroissante
+  </div>
+  <div class="card-body p-0">
+    {% if fiches %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Réf.</th>
+            <th>Catégorie</th>
+            <th>Client</th>
+            <th>Mode de défaillance</th>
+            <th class="text-center">G</th>
+            <th class="text-center">F</th>
+            <th class="text-center">D</th>
+            <th class="text-center">Criticité</th>
+            <th>Statut</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in fiches %}
+          <tr>
+            <td class="fw-bold small">{{ f.reference }}</td>
+            <td class="small text-muted">{{ f.categorie_label }}</td>
+            <td class="small">{{ f.client.nom_affichage if f.client else '—' }}</td>
+            <td class="small">{{ f.mode_defaillance[:70] }}{% if f.mode_defaillance|length > 70 %}…{% endif %}</td>
+            <td class="text-center small">{{ f.gravite }}</td>
+            <td class="text-center small">{{ f.frequence }}</td>
+            <td class="text-center small">{{ f.detectabilite }}</td>
+            <td class="text-center">
+              <span class="badge bg-{{ f.niveau[1] }}">{{ f.criticite }} — {{ f.niveau[0] }}</span>
+            </td>
+            <td><span class="badge bg-{{ f.statut_couleur }}">{{ f.statut_label }}</span></td>
+            <td class="text-end">
+              <a href="{{ url_for('amdec_detail', id=f.id) }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-shield-check fs-1 d-block mb-3"></i>
+      <p class="mb-1">Aucune fiche AMDEC créée pour l'instant.</p>
+      <a href="{{ url_for('amdec_nouvelle') }}" class="btn btn-primary btn-sm mt-2">
+        <i class="bi bi-plus-lg me-1"></i>Créer une fiche
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

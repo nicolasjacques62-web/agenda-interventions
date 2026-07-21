@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Fiche AMDEC {{ fiche.reference }}{% endblock %}
+{% block page_title %}<i class="bi bi-shield-exclamation me-2"></i>Fiche AMDEC {{ fiche.reference }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('amdec_modifier', id=fiche.id) }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-pencil me-1"></i>Modifier
+</a>
+<form method="POST" action="{{ url_for('amdec_supprimer', id=fiche.id) }}" class="d-inline"
+      onsubmit="return confirm('Supprimer cette fiche AMDEC ?')">
+  <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash me-1"></i>Supprimer</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-info-circle me-1"></i>Infos</span>
+        <span class="badge bg-{{ fiche.statut_couleur }}">{{ fiche.statut_label }}</span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:110px">Référence</td><td class="fw-bold">{{ fiche.reference }}</td></tr>
+          <tr><td class="text-muted small fw-semibold">Catégorie</td><td>{{ fiche.categorie_label }}</td></tr>
+          {% if fiche.client %}
+          <tr><td class="text-muted small fw-semibold">Client</td>
+              <td><a href="{{ url_for('client_detail', id=fiche.client_id) }}">{{ fiche.client.nom_affichage }}</a></td></tr>
+          {% endif %}
+          {% if fiche.audit %}
+          <tr><td class="text-muted small fw-semibold">Audit lié</td>
+              <td><a href="{{ url_for('audit_detail', id=fiche.audit_id) }}">{{ fiche.audit.reference }}</a></td></tr>
+          {% endif %}
+          {% if fiche.processus %}
+          <tr><td class="text-muted small fw-semibold">Processus</td><td>{{ fiche.processus }}</td></tr>
+          {% endif %}
+          <tr><td class="text-muted small fw-semibold">Créée le</td><td>{{ fiche.created_at.strftime('%d/%m/%Y') }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3 border-{{ fiche.niveau[1] }}">
+      <div class="card-header">
+        <i class="bi bi-speedometer2 me-2"></i>Criticité
+      </div>
+      <div class="card-body text-center">
+        <div class="display-6 fw-bold text-{{ fiche.niveau[1] }}">{{ fiche.criticite }}</div>
+        <span class="badge bg-{{ fiche.niveau[1] }} mb-2">{{ fiche.niveau[0] }}</span>
+        <table class="table table-sm table-borderless mb-0 text-start">
+          <tr><td class="text-muted small">Gravité (G)</td><td class="fw-bold">{{ fiche.gravite }} / 5</td></tr>
+          <tr><td class="text-muted small">Fréquence (F)</td><td class="fw-bold">{{ fiche.frequence }} / 5</td></tr>
+          <tr><td class="text-muted small">Détectabilité (D)</td><td class="fw-bold">{{ fiche.detectabilite }} / 5</td></tr>
+        </table>
+        <div class="form-text mt-1">Criticité = G × F × D</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-exclamation-triangle me-2"></i>Mode de défaillance</div>
+      <div class="card-body">
+        <p class="mb-0">{{ fiche.mode_defaillance }}</p>
+      </div>
+    </div>
+    {% if fiche.effet %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-arrow-return-right me-2"></i>Effet(s)</div>
+      <div class="card-body"><p class="mb-0">{{ fiche.effet }}</p></div>
+    </div>
+    {% endif %}
+    {% if fiche.cause %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-search me-2"></i>Cause(s)</div>
+      <div class="card-body"><p class="mb-0">{{ fiche.cause }}</p></div>
+    </div>
+    {% endif %}
+    {% if fiche.actions_correctives %}
+    <div class="card mb-3 border-success">
+      <div class="card-header text-success"><i class="bi bi-check-circle me-2"></i>Actions correctives / préventives</div>
+      <div class="card-body"><p class="mb-0">{{ fiche.actions_correctives }}</p></div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
