@@ -2292,9 +2292,32 @@ def test_email():
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
+
+            test_send = {}
+            try:
+                dest = data.get('email') or ''
+                payload = json.dumps({
+                    'sender': {'name': 'Test diagnostic', 'email': dest or 'no-reply@hps-interventions.fr'},
+                    'to': [{'email': dest}],
+                    'subject': 'Test diagnostic Brevo',
+                    'htmlContent': '<p>Email de test du diagnostic /test-email.</p>',
+                }).encode('utf-8')
+                req2 = urllib.request.Request(
+                    'https://api.brevo.com/v3/smtp/email', data=payload,
+                    headers={'api-key': api_key, 'Content-Type': 'application/json'}, method='POST')
+                with urllib.request.urlopen(req2, timeout=15) as resp2:
+                    resp2.read()
+                    test_send = {'statut': 'ok', 'message': f'Email de test envoyé à {dest}'}
+            except urllib.error.HTTPError as e2:
+                test_send = {'statut': 'erreur', 'code': e2.code, 'message': e2.read().decode('utf-8', errors='ignore')[:500]}
+            except Exception as e2:
+                test_send = {'statut': 'erreur', 'message': str(e2)}
+
             return jsonify({
                 'statut': 'ok',
                 'message': f"Connexion Brevo réussie — compte : {data.get('email', '?')}",
+                'plan': data.get('plan'),
+                'test_envoi_email': test_send,
                 'env_vars_detectes': env_vars,
                 'version_code': version,
             })
