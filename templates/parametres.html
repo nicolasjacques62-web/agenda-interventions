@@ -3,6 +3,52 @@
 {% block page_title %}<i class="bi bi-gear me-2"></i>Paramètres{% endblock %}
 
 {% block content %}
+
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card border-warning">
+      <div class="card-header bg-warning bg-opacity-25">
+        <i class="bi bi-tools me-2"></i>Alertes de maintenance
+      </div>
+      <div class="card-body">
+        {% if params.get('maintenance_debut') %}
+          <div class="alert alert-warning d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <i class="bi bi-exclamation-triangle me-1"></i>
+              Maintenance programmée le <strong>{{ params.get('maintenance_debut')|replace('T', ' à ') }}</strong>
+              {% if params.get('maintenance_message') %} — {{ params.get('maintenance_message') }}{% endif %}
+            </div>
+            <form method="POST" action="{{ url_for('maintenance_annuler') }}" class="ms-2">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Annuler</button>
+            </form>
+          </div>
+        {% endif %}
+        <form method="POST" action="{{ url_for('maintenance_programmer') }}">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Date/heure de la maintenance</label>
+              <input type="datetime-local" name="maintenance_debut" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Motif (optionnel)</label>
+              <input type="text" name="maintenance_message" class="form-control" placeholder="Ex : migration base de données">
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-warning w-100">
+                <i class="bi bi-bell me-1"></i>Programmer
+              </button>
+            </div>
+          </div>
+          <div class="form-text mt-2">
+            Un email de confirmation est envoyé immédiatement, puis un rappel automatique 24h avant le début.
+            Le site surveille aussi en continu la base de données et Brevo, et vous alerte par email en cas de problème détecté.
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <form method="POST">
 <div class="row g-3">
 

@@ -1175,6 +1175,40 @@ def envoyer_bon_email(bon):
     except Exception as e:
         return False, f"Erreur envoi : {e}"
 
+def envoyer_email_admin(sujet, html):
+    """Envoie un email à l'adresse de contact de l'entreprise (alertes internes).
+    Se rabat sur APP_MAIL_USERNAME si la base de données est inaccessible."""
+    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+    try:
+        email_admin = get_param('email') or os.environ.get('APP_MAIL_USERNAME', '')
+    except Exception:
+        email_admin = os.environ.get('APP_MAIL_USERNAME', '')
+    if not api_key or not email_admin:
+        return False, "Clé API Brevo ou email de contact manquant."
+    try:
+        soc = get_param('societe', 'HPS')
+    except Exception:
+        soc = 'HPS'
+    payload = json.dumps({
+        "sender": {"name": soc, "email": email_admin},
+        "to": [{"email": email_admin}],
+        "subject": sujet,
+        "htmlContent": html,
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        'https://api.brevo.com/v3/smtp/email', data=payload,
+        headers={'api-key': api_key, 'Content-Type': 'application/json'}, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 201, 202):
+                return True, "Email envoyé."
+            return False, f"Erreur Brevo : statut {resp.status}"
+    except urllib.error.HTTPError as e:
+        return False, f"Erreur Brevo {e.code} : {e.read().decode('utf-8', errors='ignore')[:300]}"
+    except Exception as e:
+        return False, str(e)
+
+
 def generer_pdf_audit(audit):
     """Génère le PDF du diagnostic d'infestation et plan de gestion des nuisibles."""
     if not PDF_OK:
@@ -3482,6 +3516,44 @@ def parametres():
     params = {p.cle: p.valeur for p in Parametre.query.all()}
     return render_template('parametres.html', params=params)
 
+@app.route('/parametres/maintenance/programmer', methods=['POST'])
+@login_required
+def maintenance_programmer():
+    debut = request.form.get('maintenance_debut', '').strip()
+    message = request.form.get('maintenance_message', '').strip()
+    if not debut:
+        flash('Indiquez une date/heure de maintenance.', 'warning')
+        return redirect(url_for('parametres'))
+    set_param('maintenance_debut', debut)
+    set_param('maintenance_message', message)
+    set_param('maintenance_alerte_envoyee', '')
+    try:
+        dt = datetime.strptime(debut, '%Y-%m-%dT%H:%M')
+        dt_label = dt.strftime('%d/%m/%Y à %H:%M')
+    except ValueError:
+        dt_label = debut
+    ok, msg = envoyer_email_admin(
+        f"[{get_param('societe','HPS')}] Maintenance programmée le {dt_label}",
+        f"""<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+              <p>Maintenance programmée le <strong>{dt_label}</strong>.</p>
+              {f'<p>{message}</p>' if message else ''}
+              <p style="color:#64748b;font-size:13px">Un rappel vous sera envoyé avant le début si l'échéance approche.</p>
+            </div>""")
+    if ok:
+        flash('Maintenance programmée. Un email de confirmation a été envoyé.', 'success')
+    else:
+        flash(f'Maintenance enregistrée, mais l\'email de confirmation a échoué : {msg}', 'warning')
+    return redirect(url_for('parametres'))
+
+@app.route('/parametres/maintenance/annuler', methods=['POST'])
+@login_required
+def maintenance_annuler():
+    set_param('maintenance_debut', '')
+    set_param('maintenance_message', '')
+    set_param('maintenance_alerte_envoyee', '')
+    flash('Maintenance programmée annulée.', 'info')
+    return redirect(url_for('parametres'))
+
 # ─── DIAGNOSTIC ──────────────────────────────────────────────────────────────
 
 @app.route('/healthz')
@@ -3607,15 +3679,83 @@ def init_db():
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()
 
-# Auto-ping toutes les 10 min pour éviter la mise en veille Render (plan gratuit)
+# Auto-ping toutes les 4 min pour éviter la mise en veille Render (plan gratuit)
+# + surveillance santé (DB, Brevo) et rappel de maintenance planifiée
 def _keep_alive():
     url = os.environ.get('BASE_URL', '').strip()
     if not url or 'localhost' in url:
         return  # Désactivé en local
+    db_down = False
+    brevo_down = False
+    cycle = 0
     while True:
-        time.sleep(240)  # 4 minutes (Render dors après 15 min sans requête)
+        time.sleep(240)  # 4 minutes (Render dort après 15 min sans requête)
+        cycle += 1
         try:
             urllib.request.urlopen(url + '/healthz', timeout=10)
+        except Exception:
+            pass
+
+        # ── Surveillance base de données (chaque cycle) ──
+        try:
+            with app.app_context():
+                db.session.execute(db.text('SELECT 1'))
+            if db_down:
+                db_down = False
+                envoyer_email_admin(
+                    "✅ Base de données rétablie",
+                    "<p>La connexion à la base de données a été rétablie après une coupure.</p>")
+        except Exception as e:
+            if not db_down:
+                db_down = True
+                try:
+                    envoyer_email_admin(
+                        "⚠️ Problème d'accès à la base de données",
+                        f"<p>Le site ne parvient plus à accéder à la base de données "
+                        f"depuis {datetime.now().strftime('%d/%m/%Y %H:%M')}.</p>"
+                        f"<p style='color:#64748b;font-size:13px'>Détail technique : {e}</p>")
+                except Exception:
+                    pass
+
+        # ── Surveillance Brevo (environ une fois par heure) ──
+        if cycle % 15 == 0:
+            try:
+                api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+                if api_key:
+                    req = urllib.request.Request('https://api.brevo.com/v3/account',
+                                                 headers={'api-key': api_key})
+                    urllib.request.urlopen(req, timeout=10)
+                    if brevo_down:
+                        brevo_down = False
+                        envoyer_email_admin(
+                            "✅ Connexion Brevo rétablie",
+                            "<p>L'envoi d'emails/SMS via Brevo fonctionne de nouveau.</p>")
+            except Exception:
+                if not brevo_down:
+                    brevo_down = True
+                    try:
+                        envoyer_email_admin(
+                            "⚠️ Problème de connexion à Brevo",
+                            "<p>Le site n'arrive plus à joindre Brevo — les emails et SMS "
+                            "automatiques (confirmations, alertes clients) risquent de ne plus partir.</p>")
+                    except Exception:
+                        pass
+
+        # ── Rappel de maintenance planifiée ──
+        try:
+            with app.app_context():
+                debut_str = get_param('maintenance_debut', '')
+                deja_alerte = get_param('maintenance_alerte_envoyee', '')
+                if debut_str and not deja_alerte:
+                    debut = datetime.strptime(debut_str, '%Y-%m-%dT%H:%M')
+                    if datetime.now() >= debut - timedelta(hours=24):
+                        message = get_param('maintenance_message', '')
+                        envoyer_email_admin(
+                            f"⏰ Rappel : maintenance le {debut.strftime('%d/%m/%Y à %H:%M')}",
+                            f"<p>Rappel : la maintenance programmée commence le "
+                            f"<strong>{debut.strftime('%d/%m/%Y à %H:%M')}</strong>.</p>"
+                            + (f"<p>{message}</p>" if message else ""))
+                        set_param('maintenance_alerte_envoyee', '1')
         except Exception:
             pass
 
