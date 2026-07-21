@@ -1722,7 +1722,41 @@ def dashboard():
         Intervention.date_planifiee >= datetime.now(),
         Intervention.statut.in_(['planifiee', 'en_cours'])
     ).order_by(Intervention.date_planifiee).limit(8).all()
-    return render_template('dashboard.html', stats=stats, prochaines=prochaines)
+
+    # Alertes de continuité : suivi laissé au dernier passage pour les
+    # clients dont une intervention est prévue demain
+    demain = today + timedelta(days=1)
+    inter_demain = Intervention.query.filter(
+        db.func.date(Intervention.date_planifiee) == demain,
+        Intervention.statut.in_(['planifiee', 'en_cours'])
+    ).order_by(Intervention.date_planifiee).all()
+
+    alertes_suivi = []
+    for i in inter_demain:
+        dernier_bon = BonIntervention.query.join(Intervention).filter(
+            Intervention.client_id == i.client_id,
+            Intervention.id != i.id,
+            BonIntervention.statut.in_(['finalise', 'envoye', 'signe']),
+        ).order_by(BonIntervention.date_finalisation.desc()).first()
+        dernier_audit = AuditClient.query.filter_by(
+            client_id=i.client_id, statut='finalise'
+        ).order_by(AuditClient.date_audit.desc()).first()
+
+        points = []
+        if dernier_bon and (dernier_bon.recommandations or '').strip():
+            points.append(('Recommandations du dernier bon', dernier_bon.recommandations.strip()))
+        if dernier_audit:
+            if (dernier_audit.non_conformites or '').strip():
+                points.append(('Non-conformités du dernier audit', dernier_audit.non_conformites.strip()))
+            if (dernier_audit.mesures_preventives or '').strip():
+                points.append(('Mesures préventives à vérifier', dernier_audit.mesures_preventives.strip()))
+            if (dernier_audit.recommandations or '').strip():
+                points.append(('Recommandations du dernier audit', dernier_audit.recommandations.strip()))
+        if points:
+            alertes_suivi.append({'intervention': i, 'points': points})
+
+    return render_template('dashboard.html', stats=stats, prochaines=prochaines,
+                           alertes_suivi=alertes_suivi)
 
 # ─── CLIENTS ──────────────────────────────────────────────────────────────────
 
