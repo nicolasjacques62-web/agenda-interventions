@@ -843,6 +843,23 @@ def generer_pdf(bon):
                     data = data.split(',', 1)[1]
                 raw = base64.b64decode(data)
                 buf_img = io.BytesIO(raw)
+                # Réduit la photo avant intégration : les photos prises au téléphone
+                # peuvent peser plusieurs Mo en pleine résolution, ce qui ralentit
+                # fortement (voire fait échouer/timeout) la génération du PDF sur
+                # un serveur aux ressources limitées.
+                if PILLOW_OK:
+                    try:
+                        pil_img = PILImage.open(buf_img)
+                        pil_img = pil_img.convert('RGB')
+                        max_dim = 1000
+                        if max(pil_img.size) > max_dim:
+                            pil_img.thumbnail((max_dim, max_dim), PILImage.LANCZOS)
+                        small_buf = io.BytesIO()
+                        pil_img.save(small_buf, format='JPEG', quality=70, optimize=True)
+                        small_buf.seek(0)
+                        buf_img = small_buf
+                    except Exception:
+                        buf_img.seek(0)
                 img_photo = RLImage(buf_img, width=8*cm, height=6*cm, kind='proportional')
                 photo_row.append(img_photo)
             except Exception:
