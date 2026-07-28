@@ -1400,22 +1400,28 @@ def generer_pdf_audit(audit):
     ]))
 
     # Donut de complétude du diagnostic
-    diag_chart = Drawing(4.5*cm, 3.2*cm)
+    diag_chart = Drawing(4.2*cm, 2.8*cm)
     pie = Pie()
-    pie.x = 0.6*cm; pie.y = 0.2*cm
+    pie.x = 0.8*cm; pie.y = 0.1*cm
     pie.width = 2.6*cm; pie.height = 2.6*cm
     pie.data = [ck_done_pre, max(ck_total_pre - ck_done_pre, 0.0001)]
-    pie.labels = [f"{ck_done_pre}/{ck_total_pre}", '']
     pie.slices[0].fillColor = colors.HexColor('#1aabe3')
     pie.slices[1].fillColor = colors.HexColor('#e9ecef')
     pie.slices.strokeWidth = 0.5
     diag_chart.add(pie)
+    diag_stack = Table(
+        [[diag_chart],
+         [Paragraph(f"<b>{ck_done_pre}/{ck_total_pre}</b> éléments complétés",
+                    ParagraphStyle('dc', parent=styles['Normal'], fontSize=7.5, alignment=TA_CENTER))]],
+        colWidths=[4.2*cm]
+    )
+    diag_stack.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'), ('TOPPADDING',(0,1),(-1,1),2)]))
 
     # Barres nuisibles par niveau de risque
-    nuis_chart = Drawing(6.5*cm, 3.2*cm)
+    nuis_chart = Drawing(6.2*cm, 2.8*cm)
     bar = VerticalBarChart()
     bar.x = 0.8*cm; bar.y = 0.5*cm
-    bar.width = 5.2*cm; bar.height = 2.3*cm
+    bar.width = 5*cm; bar.height = 2*cm
     bar.data = [[niv_counts['faible'], niv_counts['moyen'], niv_counts['eleve'], niv_counts['critique']]]
     bar.categoryAxis.categoryNames = ['Faible', 'Moyen', 'Élevé', 'Critique']
     bar.categoryAxis.labels.fontSize = 6.5
@@ -1426,12 +1432,12 @@ def generer_pdf_audit(audit):
     nuis_chart.add(bar)
 
     overview_row = Table(
-        [[tav, diag_chart, nuis_chart]],
-        colWidths=[6.2*cm, 5*cm, 6.3*cm]
+        [[tav, diag_stack, nuis_chart]],
+        colWidths=[5.8*cm, 4.4*cm, 6.3*cm]
     )
     overview_row.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     elems.append(overview_row)
-    elems.append(Paragraph("Complétude du diagnostic (§4) — à gauche &nbsp;|&nbsp; Nuisibles par niveau de risque — à droite",
+    elems.append(Paragraph("Complétude du diagnostic (§4) — au centre &nbsp;|&nbsp; Nuisibles par niveau de risque — à droite",
                             ParagraphStyle('cap', parent=styles['Normal'], fontSize=7, textColor=colors.grey, spaceBefore=2)))
     elems.append(Spacer(1, 0.5*cm))
 
