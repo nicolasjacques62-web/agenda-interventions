@@ -25,6 +25,9 @@ try:
                                     Paragraph, Spacer, Image as RLImage)
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
     PDF_OK = True
 except ImportError:
     PDF_OK = False
@@ -1347,6 +1350,89 @@ def generer_pdf_audit(audit):
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
     ]))
     elems.append(ti)
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── VUE D'ENSEMBLE — Avancement de l'audit (miroir de la page web) ──
+    ck_pre = audit.checklist
+    ck_items_pre = ['especes_identifiees','localisation_niveau','facteurs_favorisants',
+                    'mesures_preventives','causes_profondes','evaluation_prestations']
+    ck_done_pre = sum(1 for f in ck_items_pre if ck_pre.get(f))
+    ck_total_pre = len(ck_items_pre)
+
+    niv_counts = {'faible': 0, 'moyen': 0, 'eleve': 0, 'critique': 0}
+    for n in audit.nuisibles:
+        if n.get('niveau') in niv_counts:
+            niv_counts[n.get('niveau')] += 1
+
+    diag_ok_pdf = ck_done_pre > 0 or len(audit.nuisibles) > 0
+    plan_ok_pdf = len(audit.traitements) > 0 or len(audit.mesures) > 0
+    reco_ok_pdf = bool(audit.recommandations and audit.recommandations.strip())
+    fin_ok_pdf  = audit.statut == 'finalise'
+    overall_pct_pdf = round(sum([diag_ok_pdf, plan_ok_pdf, reco_ok_pdf, fin_ok_pdf]) / 4 * 100)
+
+    elems.append(Paragraph("VUE D'ENSEMBLE — AVANCEMENT DE L'AUDIT", s_h1))
+
+    def _statut_cell(ok):
+        txt = '✔ Fait' if ok else '— À faire'
+        color = '#27ae60' if ok else '#94a3b8'
+        return Paragraph(f"<font color='{color}'><b>{txt}</b></font>",
+                          ParagraphStyle('st', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER))
+
+    avancement_data = [
+        ['Étape', 'Statut'],
+        ['Diagnostic (§4)', _statut_cell(diag_ok_pdf)],
+        ['Plan de gestion (§5)', _statut_cell(plan_ok_pdf)],
+        ['Recommandations', _statut_cell(reco_ok_pdf)],
+        ['Finalisation', _statut_cell(fin_ok_pdf)],
+        [Paragraph('<b>Avancement global</b>', ParagraphStyle('ag', parent=styles['Normal'], fontSize=8.5)),
+         Paragraph(f"<b>{overall_pct_pdf}%</b>", ParagraphStyle('agv', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER,
+                                                                  textColor=colors.HexColor('#27ae60' if overall_pct_pdf == 100 else '#1aabe3')))],
+    ]
+    tav = Table(avancement_data, colWidths=[6*cm, 5*cm])
+    tav.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e293b')),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),8), ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+        ('PADDING',(0,0),(-1,-1),5), ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('ROWBACKGROUNDS',(0,1),(-1,-2),[colors.white, colors.HexColor('#f9f9f9')]),
+        ('BACKGROUND',(0,-1),(-1,-1),colors.HexColor('#eaf6fb')),
+        ('LINEABOVE',(0,-1),(-1,-1),0.8,colors.HexColor('#1aabe3')),
+    ]))
+
+    # Donut de complétude du diagnostic
+    diag_chart = Drawing(4.5*cm, 3.2*cm)
+    pie = Pie()
+    pie.x = 0.6*cm; pie.y = 0.2*cm
+    pie.width = 2.6*cm; pie.height = 2.6*cm
+    pie.data = [ck_done_pre, max(ck_total_pre - ck_done_pre, 0.0001)]
+    pie.labels = [f"{ck_done_pre}/{ck_total_pre}", '']
+    pie.slices[0].fillColor = colors.HexColor('#1aabe3')
+    pie.slices[1].fillColor = colors.HexColor('#e9ecef')
+    pie.slices.strokeWidth = 0.5
+    diag_chart.add(pie)
+
+    # Barres nuisibles par niveau de risque
+    nuis_chart = Drawing(6.5*cm, 3.2*cm)
+    bar = VerticalBarChart()
+    bar.x = 0.8*cm; bar.y = 0.5*cm
+    bar.width = 5.2*cm; bar.height = 2.3*cm
+    bar.data = [[niv_counts['faible'], niv_counts['moyen'], niv_counts['eleve'], niv_counts['critique']]]
+    bar.categoryAxis.categoryNames = ['Faible', 'Moyen', 'Élevé', 'Critique']
+    bar.categoryAxis.labels.fontSize = 6.5
+    bar.valueAxis.labels.fontSize = 6.5
+    bar.valueAxis.valueMin = 0
+    bar.bars[0].fillColor = colors.HexColor('#1aabe3')
+    bar.barWidth = 8
+    nuis_chart.add(bar)
+
+    overview_row = Table(
+        [[tav, diag_chart, nuis_chart]],
+        colWidths=[6.2*cm, 5*cm, 6.3*cm]
+    )
+    overview_row.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    elems.append(overview_row)
+    elems.append(Paragraph("Complétude du diagnostic (§4) — à gauche &nbsp;|&nbsp; Nuisibles par niveau de risque — à droite",
+                            ParagraphStyle('cap', parent=styles['Normal'], fontSize=7, textColor=colors.grey, spaceBefore=2)))
     elems.append(Spacer(1, 0.5*cm))
 
     # ── §4 — DIAGNOSTIC D'INFESTATION (§5.3) ──
