@@ -1,284 +1,125 @@
-{% extends "base.html" %}
-{% block title %}Audit {{ audit.reference }}{% endblock %}
-{% block page_title %}<i class="bi bi-clipboard2-pulse me-2"></i>Audit {{ audit.reference }}{% endblock %}
+{% extends "base.html" %} {% block title %}Audit {{ audit.reference }}{% endblock %} {% block page_title %}Audit {{ audit.reference }}{% endblock %} {% block topbar_actions %} Modifier PDF Télécharger {% endblock %} {#- ───────── Calculs d'avancement (hors blocks pour être visibles dans content ET scripts) ───────── #} {% set ck = audit.checklist %} {% set ck_items = [ ('especes_identifiees', 'Identification des espèces détectées'), ('localisation_niveau', 'Localisation et niveau de l\'infestation'), ('facteurs_favorisants', 'Facteurs locaux favorisant la prolifération'), ('mesures_preventives', 'Mesures préventives pour éviter les proliférations'), ('causes_profondes', 'Analyse des causes profondes et recommandations'), ('evaluation_prestations', 'Évaluation des prestations précédentes'), ] %} {% set ck_total = ck_items|length %} {% set ck_state = namespace(done=0) %} {% for field, label in ck_items %}{% if ck.get(field) %}{% set ck_state.done = ck_state.done + 1 %}{% endif %}{% endfor %} {% set ck_pct = ((ck_state.done / ck_total * 100)|round|int) if ck_total else 0 %} {% set niv = namespace(faible=0, moyen=0, eleve=0, critique=0) %} {% for n in audit.nuisibles %} {% if n.niveau == 'faible' %}{% set niv.faible = niv.faible + 1 %} {% elif n.niveau == 'moyen' %}{% set niv.moyen = niv.moyen + 1 %} {% elif n.niveau == 'eleve' %}{% set niv.eleve = niv.eleve + 1 %} {% elif n.niveau == 'critique' %}{% set niv.critique = niv.critique + 1 %} {% endif %} {% endfor %} {% set diag_ok = (ck_state.done > 0) or (audit.nuisibles|length > 0) %} {% set plan_ok = (audit.traitements|length > 0) or (audit.mesures|length > 0) %} {% set reco_ok = audit.recommandations and audit.recommandations|trim|length > 0 %} {% set fin_ok = audit.statut == 'finalise' %} {% set stage_state = namespace(n=0) %} {% for ok in [diag_ok, plan_ok, reco_ok, fin_ok] %}{% if ok %}{% set stage_state.n = stage_state.n + 1 %}{% endif %}{% endfor %} {% set overall_pct = (stage_state.n / 4 * 100)|round|int %} {% block content %}
+Vue d'ensemble — Avancement de l'audit {{ audit.statut_label }}
+{% set steps = [ ('Diagnostic', diag_ok, 'bi-clipboard2-check'), ('Plan de gestion', plan_ok, 'bi-shield-check'), ('Recommandations', reco_ok, 'bi-lightbulb'), ('Finalisation', fin_ok, 'bi-check-circle'), ] %} {% for label, ok, icon in steps %}
+{{ label }}
+{% endfor %}
+Complétude du diagnostic (§4) : {{ ck_state.done }}/{{ ck_total }}
+Nuisibles par niveau de risque
+Étape	Statut
+Diagnostic (§4)	{% if diag_ok %}{% else %}{% endif %}
+Plan de gestion (§5)	{% if plan_ok %}{% else %}{% endif %}
+Recommandations	{% if reco_ok %}{% else %}{% endif %}
+Finalisation	{% if fin_ok %}{% else %}{% endif %}
+Avancement global	{{ overall_pct }}%
+Infos {{ audit.statut_label }}
+{% if audit.technicien %}{% endif %} {% if audit.type_site %}{% endif %} {% if audit.batiment %}{% endif %} {% if audit.niveau_risque %} {% endif %} {% if audit.date_finalisation %} {% endif %}
+Référence	{{ audit.reference }}
+Client	{{ audit.client.nom_affichage }}
+Date audit	{{ audit.date_audit.strftime('%d/%m/%Y') }}
+Technicien	{{ audit.technicien }}
+Type site	{{ audit.type_site }}
+Bâtiment	{{ audit.batiment }}
+Risque	{{ audit.niveau_label }}
+Créé le	{{ audit.created_at.strftime('%d/%m/%Y') }}
+Finalisé	{{ audit.date_finalisation.strftime('%d/%m/%Y') }}
+{% if audit.statut == 'brouillon' %}
+Finaliser
+Une fois finalisé, le rapport sera disponible sur le portail client{% if not audit.client.portal_actif %} (portail non activé){% endif %}.
 
-{% block topbar_actions %}
-<a href="{{ url_for('audit_modifier', id=audit.id) }}" class="btn btn-outline-primary btn-sm">
-  <i class="bi bi-pencil me-1"></i>Modifier
-</a>
-<a href="{{ url_for('audit_pdf', id=audit.id) }}" class="btn btn-outline-danger btn-sm" target="_blank">
-  <i class="bi bi-filetype-pdf me-1"></i>PDF
-</a>
-<a href="{{ url_for('audit_pdf', id=audit.id) }}?dl=1" class="btn btn-outline-secondary btn-sm">
-  <i class="bi bi-download me-1"></i>Télécharger
-</a>
-{% endblock %}
+Finaliser l'audit
+{% endif %}
+Zone dangereuse
+Supprimer l'audit
+§4 — Diagnostic d'infestation (§5.3) {{ ck_state.done }}/{{ ck_total }}
+{% if ck %}
+Éléments obligatoires du diagnostic {{ ck_state.done }}/{{ ck_total }}
+{% for field, label in ck_items %}
+{{ label }}
+{% endfor %}
+{% endif %}
+Nuisibles détectés {{ audit.nuisibles|length }}
+{% if audit.nuisibles %}
+{% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %} {% for n in audit.nuisibles %} {% endfor %}
+Nuisible	Localisation & Niveau	Facteurs défav.	Risque	Actions préc.
+{{ n.label }}	{{ n.zones or '—' }}
+{{ n.niveau|capitalize }}	{{ n.facteurs or '—' }}	{{ n.niveau|capitalize }}	{{ n.actions_prec or '—' }}
+{% else %}
+Aucun nuisible détecté lors de cet audit.
 
-{% block content %}
-<div class="row g-3">
+{% endif %}
+{% if audit.causes_profondes or audit.communication_labels %}
+Causes profondes & communication client
+{% if audit.causes_profondes %}
+Causes profondes identifiées
+{{ audit.causes_profondes }}
 
-  <!-- Sidebar -->
-  <div class="col-lg-3">
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-info-circle me-1"></i>Infos</span>
-        <span class="badge bg-{{ audit.statut_couleur }}">{{ audit.statut_label }}</span>
-      </div>
-      <div class="card-body">
-        <table class="table table-sm table-borderless mb-0">
-          <tr><td class="text-muted small fw-semibold" style="width:90px">Référence</td><td class="fw-bold">{{ audit.reference }}</td></tr>
-          <tr><td class="text-muted small fw-semibold">Client</td>
-              <td><a href="{{ url_for('client_detail', id=audit.client_id) }}">{{ audit.client.nom_affichage }}</a></td></tr>
-          <tr><td class="text-muted small fw-semibold">Date audit</td><td>{{ audit.date_audit.strftime('%d/%m/%Y') }}</td></tr>
-          {% if audit.technicien %}<tr><td class="text-muted small fw-semibold">Technicien</td><td>{{ audit.technicien }}</td></tr>{% endif %}
-          {% if audit.type_site %}<tr><td class="text-muted small fw-semibold">Type site</td><td>{{ audit.type_site }}</td></tr>{% endif %}
-          {% if audit.batiment %}<tr><td class="text-muted small fw-semibold">Bâtiment</td><td>{{ audit.batiment }}</td></tr>{% endif %}
-          {% if audit.niveau_risque %}
-          <tr><td class="text-muted small fw-semibold">Risque</td>
-              <td><span class="badge bg-{{ audit.niveau_couleur }}">{{ audit.niveau_label }}</span></td></tr>
-          {% endif %}
-          <tr><td class="text-muted small fw-semibold">Créé le</td><td>{{ audit.created_at.strftime('%d/%m/%Y') }}</td></tr>
-          {% if audit.date_finalisation %}
-          <tr><td class="text-muted small fw-semibold">Finalisé</td><td>{{ audit.date_finalisation.strftime('%d/%m/%Y') }}</td></tr>
-          {% endif %}
-        </table>
-      </div>
-    </div>
+{% endif %} {% if audit.communication_labels %}
+Communication client (§5.3)
+{% for lbl in audit.communication_labels %} {{ lbl }} {% endfor %}
+{% endif %}
+{% endif %}
+§5 — Plan de gestion des nuisibles (§5.4, 5.5, 5.6) {% if plan_ok %}Rempli{% else %}Vide{% endif %}
+{% if audit.mesures_immediates %}
+Mesures immédiates : {{ audit.mesures_immediates }}
+{% endif %}
+Situation sur site & évaluation
+{% if audit.situation_site %}
+Situation sur site (§5.4)
+{{ audit.situation_site_label }}
+{% endif %}
+{% if audit.points_entree %}
+Points d'entrée identifiés
+{{ audit.points_entree }}
 
-    {% if audit.statut == 'brouillon' %}
-    <div class="card mb-3 border-success">
-      <div class="card-header text-success"><i class="bi bi-check-circle me-2"></i>Finaliser</div>
-      <div class="card-body">
-        <p class="small text-muted mb-2">Une fois finalisé, le rapport sera disponible sur le portail client{% if not audit.client.portal_actif %} (portail non activé){% endif %}.</p>
-        <form method="POST" action="{{ url_for('audit_finaliser', id=audit.id) }}"
-              onsubmit="return confirm('Finaliser cet audit ? Il sera visible par le client.')">
-          <button class="btn btn-success btn-sm w-100">
-            <i class="bi bi-check-lg me-1"></i>Finaliser l'audit
-          </button>
-        </form>
-      </div>
-    </div>
-    {% endif %}
+{% endif %} {% if audit.facteurs_favorisants %}
+Observations terrain
+{{ audit.facteurs_favorisants }}
 
-    <div class="card border-danger">
-      <div class="card-header text-danger"><i class="bi bi-trash me-2"></i>Zone dangereuse</div>
-      <div class="card-body">
-        <form method="POST" action="{{ url_for('audit_supprimer', id=audit.id) }}"
-              onsubmit="return confirm('Supprimer définitivement cet audit ?')">
-          <button class="btn btn-outline-danger btn-sm w-100">Supprimer l'audit</button>
-        </form>
-      </div>
-    </div>
-  </div>
+{% endif %} {% if audit.evaluation_prestations %}
+Évaluation des prestations précédentes
+{{ audit.evaluation_prestations }}
 
-  <!-- Contenu principal -->
-  <div class="col-lg-9">
+{% endif %} {% if audit.conformite_haccp and audit.conformite_haccp != 'na' %}
+Conformité HACCP (§5.5)
+{% if audit.conformite_haccp == 'conforme' %} ✔ Conforme {% else %} ✘ Non conforme {% if audit.non_conformites %}
+{{ audit.non_conformites }}
 
-    <!-- §4 Diagnostic d'infestation -->
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>§4 — Diagnostic d'infestation <small class="fw-normal opacity-75">(§5.3)</small></div>
-      <div class="card-body">
+{% endif %} {% endif %}
+{% endif %}
+Traitements préconisés (§5.6) {{ audit.traitements|length }}
+{% if audit.traitements %}
+{% for t in audit.traitements %} {% endfor %}
+Traitement	Zones	Fréquence	Produit / Méthode
+{{ t.type }}	{{ t.zones or '—' }}	{{ t.frequence or '—' }}	{{ t.produit or '—' }}
+{% else %}
+Aucun traitement préconisé.
 
-        <!-- Checklist -->
-        {% set ck = audit.checklist %}
-        {% if ck %}
-        {% set ck_items = [
-          ('especes_identifiees',    'Identification des espèces détectées'),
-          ('localisation_niveau',    'Localisation et niveau de l\'infestation'),
-          ('facteurs_favorisants',   'Facteurs locaux favorisant la prolifération'),
-          ('mesures_preventives',    'Mesures préventives pour éviter les proliférations'),
-          ('causes_profondes',       'Analyse des causes profondes et recommandations'),
-          ('evaluation_prestations', 'Évaluation des prestations précédentes'),
-        ] %}
-        <div class="mb-3">
-          <div class="fw-semibold small text-muted mb-2">Éléments obligatoires du diagnostic :</div>
-          <div class="row g-1">
-            {% for field, label in ck_items %}
-            <div class="col-md-6">
-              <span class="{% if ck.get(field) %}text-success{% else %}text-muted{% endif %} small">
-                <i class="bi bi-{% if ck.get(field) %}check-square-fill{% else %}square{% endif %} me-1"></i>{{ label }}
-              </span>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
+{% endif %}
+Mesures préventives — PCO / Client {{ audit.mesures|length }}
+{% if audit.mesures %}
+{% for m in audit.mesures %}{% set i = loop.index %} {% endfor %}
+Mesure préventive	PCO	Client
+{{ i }}. {{ m.mesure }}	{% if m.pco %}{% else %}{% endif %}	{% if m.client %}{% else %}{% endif %}
+{% else %}
+Aucune mesure préventive renseignée.
 
-        <!-- Nuisibles -->
-        {% if audit.nuisibles %}
-        <div class="fw-semibold small mb-2">Nuisibles détectés :</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm table-hover">
-            <thead class="table-dark">
-              <tr><th>Nuisible</th><th>Localisation & Niveau</th><th>Facteurs défav.</th><th>Risque</th><th>Actions préc.</th></tr>
-            </thead>
-            <tbody>
-              {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
-              {% for n in audit.nuisibles %}
-              <tr>
-                <td class="fw-semibold small">{{ n.label }}</td>
-                <td class="small">{{ n.zones or '—' }}<br><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
-                <td class="small text-muted">{{ n.facteurs or '—' }}</td>
-                <td><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
-                <td class="small text-muted">{{ n.actions_prec or '—' }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-muted small mb-3">Aucun nuisible détecté lors de cet audit.</p>
-        {% endif %}
-
-        <div class="row g-3 small">
-          {% if audit.causes_profondes %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Causes profondes identifiées</div>
-            <p class="mb-0">{{ audit.causes_profondes }}</p>
-          </div>{% endif %}
-          {% if audit.communication_labels %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Communication client (§5.3)</div>
-            {% for lbl in audit.communication_labels %}
-            <span class="badge bg-info text-dark me-1">{{ lbl }}</span>
-            {% endfor %}
-          </div>{% endif %}
-        </div>
-      </div>
-    </div>
-
-    <!-- §5 Plan de gestion -->
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>§5 — Plan de gestion des nuisibles <small class="fw-normal opacity-75">(§5.4, 5.5, 5.6)</small></div>
-      <div class="card-body">
-
-        <!-- Situation sur site -->
-        {% if audit.situation_site %}
-        <div class="mb-3">
-          <div class="fw-semibold small text-muted mb-1">Situation sur site (§5.4)</div>
-          <span class="badge {% if audit.situation_site == 'infestation_active' %}bg-danger{% elif audit.situation_site == 'risque_significatif' %}bg-warning text-dark{% else %}bg-success{% endif %}">
-            {{ audit.situation_site_label }}
-          </span>
-        </div>{% endif %}
-
-        <!-- Obs / points d'entrée / eval -->
-        <div class="row g-3 small mb-3">
-          {% if audit.points_entree %}
-          <div class="col-md-6">
-            <div class="fw-semibold mb-1">Points d'entrée identifiés</div>
-            <p class="mb-0">{{ audit.points_entree }}</p>
-          </div>{% endif %}
-          {% if audit.facteurs_favorisants %}
-          <div class="col-md-6">
-            <div class="fw-semibold mb-1">Observations terrain</div>
-            <p class="mb-0">{{ audit.facteurs_favorisants }}</p>
-          </div>{% endif %}
-          {% if audit.evaluation_prestations %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Évaluation des prestations précédentes</div>
-            <p class="mb-0">{{ audit.evaluation_prestations }}</p>
-          </div>{% endif %}
-          {% if audit.conformite_haccp and audit.conformite_haccp != 'na' %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Conformité HACCP (§5.5)</div>
-            {% if audit.conformite_haccp == 'conforme' %}
-              <span class="badge bg-success">✔ Conforme</span>
-            {% else %}
-              <span class="badge bg-danger">✘ Non conforme</span>
-              {% if audit.non_conformites %}<p class="small mt-1 mb-0 text-danger">{{ audit.non_conformites }}</p>{% endif %}
-            {% endif %}
-          </div>{% endif %}
-        </div>
-
-        {% if audit.mesures_immediates %}
-        <div class="alert alert-warning py-2 small mb-3">
-          <strong><i class="bi bi-exclamation-triangle me-1"></i>Mesures immédiates :</strong> {{ audit.mesures_immediates }}
-        </div>{% endif %}
-
-        <!-- Traitements -->
-        {% if audit.traitements %}
-        <div class="fw-semibold small mb-2">Traitements préconisés (§5.6)</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm table-bordered">
-            <thead class="table-secondary"><tr><th>Traitement</th><th>Zones</th><th>Fréquence</th><th>Produit / Méthode</th></tr></thead>
-            <tbody>
-              {% for t in audit.traitements %}
-              <tr class="small"><td>{{ t.type }}</td><td>{{ t.zones or '—' }}</td><td>{{ t.frequence or '—' }}</td><td>{{ t.produit or '—' }}</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>{% endif %}
-
-        <!-- Mesures préventives PCO / CLIENT -->
-        {% if audit.mesures %}
-        <div class="fw-semibold small mb-2">Mesures préventives — Responsabilité PCO / Client</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm table-bordered">
-            <thead style="background:#1e293b;color:#fff"><tr><th>Mesure préventive</th><th class="text-center">PCO</th><th class="text-center">Client</th></tr></thead>
-            <tbody>
-              {% for m in audit.mesures %}{% set i = loop.index %}
-              <tr class="small">
-                <td>{{ i }}. {{ m.mesure }}</td>
-                <td class="text-center">{% if m.pco %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
-                <td class="text-center">{% if m.client %}<i class="bi bi-check-circle-fill text-primary"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>{% endif %}
-
-        <div class="row g-2 small">
-          {% if audit.frequence %}
-          <div class="col-sm-6"><strong>Fréquence recommandée :</strong> {{ audit.frequence }}</div>{% endif %}
-          {% if audit.prochaine_visite %}
-          <div class="col-sm-6"><strong>Prochaine visite :</strong> <span class="text-primary fw-semibold">{{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</span></div>{% endif %}
-        </div>
-      </div>
-    </div>
-
-    <!-- Recommandations -->
-    {% if audit.recommandations %}
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recommandations</div>
-      <div class="card-body small">{{ audit.recommandations }}</div>
-    </div>{% endif %}
-
-    <!-- AMDEC -->
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-shield-exclamation me-2"></i>AMDEC — Analyse des risques</span>
-        <a href="{{ url_for('amdec_nouvelle', client_id=audit.client_id, audit_id=audit.id, categorie='metier') }}"
-           class="btn btn-outline-primary btn-sm">
-          <i class="bi bi-plus-lg me-1"></i>Ajouter une fiche
-        </a>
-      </div>
-      {% if audit.amdec_fiches %}
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0">
-            <thead class="table-light">
-              <tr><th>Mode de défaillance</th><th class="text-center">G</th><th class="text-center">F</th><th class="text-center">D</th><th class="text-center">Criticité</th><th></th></tr>
-            </thead>
-            <tbody>
-              {% for f in audit.amdec_fiches|sort(attribute='criticite', reverse=true) %}
-              <tr>
-                <td class="small">{{ f.mode_defaillance[:60] }}{% if f.mode_defaillance|length > 60 %}…{% endif %}</td>
-                <td class="text-center small">{{ f.gravite }}</td>
-                <td class="text-center small">{{ f.frequence }}</td>
-                <td class="text-center small">{{ f.detectabilite }}</td>
-                <td class="text-center"><span class="badge bg-{{ f.niveau[1] }}">{{ f.criticite }}</span></td>
-                <td class="text-end"><a href="{{ url_for('amdec_detail', id=f.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {% else %}
-      <div class="card-body text-muted small">Aucune fiche AMDEC liée à cet audit. Les fiches liées apparaissent aussi dans le PDF du rapport.</div>
-      {% endif %}
-    </div>
-
-  </div>
-</div>
-{% endblock %}
+{% endif %}
+{% if audit.frequence %}
+Fréquence recommandée : {{ audit.frequence }}
+{% endif %} {% if audit.prochaine_visite %}
+Prochaine visite : {{ audit.prochaine_visite.strftime('%d/%m/%Y') }}
+{% endif %}
+{% if audit.recommandations %}
+Recommandations Rempli
+{{ audit.recommandations }}
+{% endif %}
+AMDEC — Analyse des risques {{ audit.amdec_fiches|length }}
+Ajouter une fiche
+{% if audit.amdec_fiches %}
+{% for f in audit.amdec_fiches|sort(attribute='criticite', reverse=true) %} {% endfor %}
+Mode de défaillance	G	F	D	Criticité	
+{{ f.mode_defaillance[:60] }}{% if f.mode_defaillance|length > 60 %}…{% endif %}	{{ f.gravite }}	{{ f.frequence }}	{{ f.detectabilite }}	{{ f.criticite }}	
+{% else %}
+Aucune fiche AMDEC liée à cet audit. Les fiches liées apparaissent aussi dans le PDF du rapport.
+{% endif %}
+{% endblock %} {% block scripts %} {% endblock %}
