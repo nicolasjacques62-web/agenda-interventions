@@ -1405,7 +1405,7 @@ def generer_pdf_audit(audit):
          Paragraph(f"<b>{overall_pct_pdf}%</b>", ParagraphStyle('agv', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER,
                                                                   textColor=colors.HexColor('#27ae60' if overall_pct_pdf == 100 else '#1aabe3')))],
     ]
-    tav = Table(avancement_data, colWidths=[6*cm, 5*cm])
+    tav = Table(avancement_data, colWidths=[4*cm, 2.5*cm])
     tav.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1e293b')),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white), ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
@@ -1435,10 +1435,10 @@ def generer_pdf_audit(audit):
     diag_stack.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'), ('TOPPADDING',(0,1),(-1,1),2)]))
 
     # Barres nuisibles par niveau de risque
-    nuis_chart = Drawing(6.2*cm, 2.8*cm)
+    nuis_chart = Drawing(6*cm, 2.8*cm)
     bar = VerticalBarChart()
-    bar.x = 0.8*cm; bar.y = 0.5*cm
-    bar.width = 5*cm; bar.height = 2*cm
+    bar.x = 0.7*cm; bar.y = 0.5*cm
+    bar.width = 4.8*cm; bar.height = 2*cm
     bar.data = [[niv_counts['faible'], niv_counts['moyen'], niv_counts['eleve'], niv_counts['critique']]]
     bar.categoryAxis.categoryNames = ['Faible', 'Moyen', 'Élevé', 'Critique']
     bar.categoryAxis.labels.fontSize = 6.5
@@ -1450,7 +1450,7 @@ def generer_pdf_audit(audit):
 
     overview_row = Table(
         [[tav, diag_stack, nuis_chart]],
-        colWidths=[5.8*cm, 4.4*cm, 6.3*cm]
+        colWidths=[6.5*cm, 4.2*cm, 6*cm]
     )
     overview_row.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     elems.append(overview_row)
