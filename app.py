@@ -1,4 +1,4 @@
-import os, uuid, io, json, threading, time, base64, urllib.request, urllib.error, secrets
+import os, uuid, io, csv, json, threading, time, base64, urllib.request, urllib.error, secrets
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import wraps
@@ -4220,6 +4220,68 @@ def too_many_requests(e):
 
 # ─── INIT ─────────────────────────────────────────────────────────────────────
 
+def _importer_patrimoine_csv(csv_path, nom_client):
+    """Importe le CSV patrimoine d'un bailleur (une seule fois — ne réimporte
+    pas si des logements existent déjà pour ce client)."""
+    if not os.path.exists(csv_path):
+        print(f"  [patrimoine] Fichier introuvable : {csv_path}")
+        return
+
+    client = Client.query.filter(
+        db.or_(Client.societe == nom_client, Client.nom == nom_client)
+    ).first()
+    if not client:
+        client = Client(nom=nom_client, societe=nom_client, type_client='professionnel', actif=True)
+        db.session.add(client)
+        db.session.commit()
+        print(f"  [patrimoine] Client cree : #{client.id} — {nom_client}")
+
+    deja = PatrimoineLogement.query.filter_by(client_id=client.id).count()
+    if deja > 0:
+        print(f"  [patrimoine] Deja {deja} logement(s) pour {nom_client} — import ignore.")
+        return
+
+    with open(csv_path, encoding='latin-1', newline='') as f:
+        raw_lines = f.readlines()
+    header_idx = next((i for i, l in enumerate(raw_lines) if l.strip().upper().startswith('SECTEUR')), None)
+    if header_idx is None:
+        print("  [patrimoine] Ligne d'en-tete (SECTEUR) introuvable dans le CSV.")
+        return
+
+    reader = csv.DictReader(io.StringIO(''.join(raw_lines[header_idx:])), delimiter=';')
+    count = 0
+    batch = []
+    for row in reader:
+        if not row.get('SECTEUR') and not row.get('BÂTIMENT'):
+            continue
+        batch.append(PatrimoineLogement(
+            client_id=client.id,
+            secteur=row.get('SECTEUR'),
+            programme=row.get('PROGRAMME'),
+            tranche=row.get('TRANCHE'),
+            code_batiment=row.get('Code bâtiment'),
+            batiment=row.get('BÂTIMENT'),
+            code_escalier=row.get('Code Escalier'),
+            numero_voirie=row.get('Numéro de Voirie'),
+            voirie=row.get('VOIRIE'),
+            module=row.get('MODULE'),
+            numero_logement=row.get('Numéro du logement'),
+            etage=row.get('ETAGE'),
+            commune=row.get('COMMUNE'),
+            type_logement=row.get('Type'),
+            nature_batiment=row.get('Nature Bâtiment'),
+        ))
+        count += 1
+        if len(batch) >= 500:
+            db.session.bulk_save_objects(batch)
+            db.session.commit()
+            batch = []
+    if batch:
+        db.session.bulk_save_objects(batch)
+        db.session.commit()
+    print(f"  [patrimoine] Import termine : {count} logement(s) pour {nom_client} (client #{client.id}).")
+
+
 def init_db():
     with app.app_context():
         db.create_all()
@@ -4345,6 +4407,17 @@ def init_db():
                 admin.email = _admin_email
                 db.session.commit()
                 print(f"  Email admin synchronise : {_admin_email}")
+
+        # ── Import ponctuel du patrimoine (liste de logements d'un bailleur) ──
+        # Définir la variable d'environnement IMPORT_PATRIMOINE=1 sur Render,
+        # avec le fichier CSV commité dans le repo à data/patrimoine_amsom.csv,
+        # puis redéployer : au démarrage, le patrimoine est importé une seule
+        # fois (ne réimporte pas si des logements existent déjà pour ce client).
+        if os.environ.get('IMPORT_PATRIMOINE', '').strip() == '1':
+            _importer_patrimoine_csv(
+                csv_path=os.path.join(os.path.dirname(__file__), 'data', 'patrimoine_amsom.csv'),
+                nom_client='AMSOM Habitat',
+            )
 
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()
