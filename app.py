@@ -4335,6 +4335,17 @@ def init_db():
             print("  !! Changez ce mot de passe dans Parametres !!")
             print("=" * 55)
 
+        # ── Email du compte admin (pour la réinitialisation de mot de passe) ──
+        # Définir la variable d'environnement ADMIN_EMAIL sur Render pour que
+        # les demandes de "mot de passe oublié" partent vers cette adresse.
+        _admin_email = os.environ.get('ADMIN_EMAIL', '').strip()
+        if _admin_email:
+            admin = User.query.filter_by(username='admin').first()
+            if admin and admin.email != _admin_email:
+                admin.email = _admin_email
+                db.session.commit()
+                print(f"  Email admin synchronise : {_admin_email}")
+
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()
 
