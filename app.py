@@ -504,6 +504,39 @@ class ContratClient(db.Model):
         if not self.passages_annuels: return 0
         return min(100, int(self.passages_realises(annee) * 100 / self.passages_annuels))
 
+
+class PatrimoineLogement(db.Model):
+    """Un logement/bâtiment du patrimoine d'un client bailleur (ex: AMSOM Habitat).
+    Alimenté par import CSV — voir scripts/import_patrimoine.py"""
+    __tablename__ = 'patrimoine_logements'
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    secteur = db.Column(db.String(100))
+    programme = db.Column(db.String(50))
+    tranche = db.Column(db.String(50))
+    code_batiment = db.Column(db.String(50))
+    batiment = db.Column(db.String(150))
+    code_escalier = db.Column(db.String(20))
+    numero_voirie = db.Column(db.String(20))
+    voirie = db.Column(db.String(200))
+    module = db.Column(db.String(50))
+    numero_logement = db.Column(db.String(50))
+    etage = db.Column(db.String(10))
+    commune = db.Column(db.String(100))
+    type_logement = db.Column(db.String(20))
+    nature_batiment = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship('Client', backref='patrimoine_logements')
+
+    @property
+    def adresse_complete(self):
+        parts = [p for p in [self.numero_voirie, self.voirie, self.commune] if p]
+        return ' '.join(parts)
+
+    @property
+    def libelle(self):
+        return f"{self.batiment or ''} — Log. {self.numero_logement or '?'} (ét. {self.etage or '?'}) — {self.commune or ''}".strip(' —')
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 # Noms français des jours et mois (indépendant de la locale système)
@@ -2079,10 +2112,48 @@ def client_detail(id):
         DocumentTechnique.type_prestation, DocumentTechnique.type_doc, DocumentTechnique.nom
     ).all()
     docs_dispo = [d for d in all_docs if d.id not in assoc_ids]
+    patrimoine_count = PatrimoineLogement.query.filter_by(client_id=id).count()
     return render_template('clients/detail.html', client=c,
                            interventions=interventions, lien_portail=lien,
                            types_prestation=TYPES_PRESTATION, annee=annee,
-                           docs_dispo=docs_dispo)
+                           docs_dispo=docs_dispo, patrimoine_count=patrimoine_count)
+
+@app.route('/clients/<int:id>/patrimoine')
+@login_required
+def client_patrimoine(id):
+    client = Client.query.get_or_404(id)
+
+    secteur = request.args.get('secteur', '')
+    commune = request.args.get('commune', '')
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+
+    query = PatrimoineLogement.query.filter_by(client_id=id)
+    if secteur:
+        query = query.filter(PatrimoineLogement.secteur == secteur)
+    if commune:
+        query = query.filter(PatrimoineLogement.commune == commune)
+    if q:
+        query = query.filter(db.or_(
+            PatrimoineLogement.batiment.ilike(f'%{q}%'),
+            PatrimoineLogement.voirie.ilike(f'%{q}%'),
+            PatrimoineLogement.numero_logement.ilike(f'%{q}%'),
+            PatrimoineLogement.code_batiment.ilike(f'%{q}%'),
+        ))
+
+    pagination = query.order_by(
+        PatrimoineLogement.commune, PatrimoineLogement.batiment, PatrimoineLogement.numero_logement
+    ).paginate(page=page, per_page=100, error_out=False)
+
+    secteurs = [r[0] for r in db.session.query(PatrimoineLogement.secteur)
+                .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.secteur).all() if r[0]]
+    communes = [r[0] for r in db.session.query(PatrimoineLogement.commune)
+                .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.commune).all() if r[0]]
+    total = PatrimoineLogement.query.filter_by(client_id=id).count()
+
+    return render_template('clients/patrimoine.html', client=client, pagination=pagination,
+                           logements=pagination.items, secteurs=secteurs, communes=communes,
+                           secteur=secteur, commune=commune, q=q, total=total)
 
 @app.route('/clients/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
