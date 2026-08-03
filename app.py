@@ -4230,6 +4230,21 @@ def init_db():
             print("  !! Changez ce mot de passe dans Parametres !!")
             print("=" * 55)
 
+        # ── Réinitialisation ponctuelle du mot de passe admin ──────────────
+        # Définir la variable d'environnement RESET_ADMIN_PASSWORD sur Render
+        # puis redéployer : au prochain démarrage, le mot de passe admin est
+        # remplacé par sa valeur. Pensez à RETIRER cette variable ensuite.
+        _reset_pw = os.environ.get('RESET_ADMIN_PASSWORD', '').strip()
+        if _reset_pw:
+            admin = User.query.filter_by(username='admin').first()
+            if admin:
+                admin.set_password(_reset_pw)
+                db.session.commit()
+                print("=" * 55)
+                print("  Mot de passe admin reinitialise via RESET_ADMIN_PASSWORD")
+                print("  !! Retirez cette variable d'environnement maintenant !!")
+                print("=" * 55)
+
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()
 
