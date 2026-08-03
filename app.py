@@ -123,6 +123,8 @@ class User(UserMixin, db.Model):
     nom = db.Column(db.String(100))
     email = db.Column(db.String(120))
     is_admin = db.Column(db.Boolean, default=True)
+    reset_token = db.Column(db.String(64))                 # token réinitialisation MDP admin
+    reset_token_expiry = db.Column(db.DateTime)            # expiration du token (1h)
 
     def set_password(self, p): self.password_hash = generate_password_hash(p)
     def check_password(self, p): return check_password_hash(self.password_hash, p)
@@ -1172,6 +1174,66 @@ def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=N
         return False, str(e)
 
 
+def envoyer_email_reset_admin(user, reset_url):
+    """Envoie un email de réinitialisation de mot de passe pour un compte admin."""
+    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
+    if not api_key:
+        return False, "Clé API Brevo manquante."
+    if not user.email:
+        return False, "Pas d'email pour ce compte."
+    soc = get_param('societe', 'HPS')
+    email_exp = get_param('email', '')
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+      <div style="background:#1e293b;padding:20px 24px;border-radius:10px 10px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:18px">{soc}</h2>
+        <p style="color:#94a3b8;margin:4px 0 0;font-size:13px">Espace administration</p>
+      </div>
+      <div style="background:#fff;padding:28px 24px;border:1px solid #e2e8f0;border-top:none">
+        <p style="font-size:15px">Bonjour <strong>{user.nom or user.username}</strong>,</p>
+        <p style="font-size:14px;color:#475569">
+          Vous avez demandé la réinitialisation de votre mot de passe administrateur.<br>
+          Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.
+          <br><strong>Ce lien est valable 1 heure.</strong>
+        </p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="{reset_url}"
+             style="background:#1aabe3;color:#fff;padding:13px 32px;border-radius:8px;
+                    text-decoration:none;font-weight:600;font-size:15px;display:inline-block">
+            🔑 Réinitialiser mon mot de passe
+          </a>
+        </div>
+        <p style="font-size:12px;color:#94a3b8">
+          Si vous n'avez pas fait cette demande, ignorez cet email.<br>
+          Lien : <a href="{reset_url}" style="color:#1aabe3">{reset_url}</a>
+        </p>
+      </div>
+      <div style="background:#f8fafc;padding:12px 24px;border-radius:0 0 10px 10px;
+                  font-size:11px;color:#94a3b8;text-align:center">
+        {soc}{f' — {email_exp}' if email_exp else ''} — Ne pas répondre à cet email
+      </div>
+    </div>"""
+    payload = json.dumps({
+        "subject": f"Réinitialisation de votre mot de passe admin — {soc}",
+        "htmlContent": html,
+        "sender": {"name": soc, "email": email_exp or "no-reply@hps-interventions.fr"},
+        "to": [{"email": user.email, "name": user.nom or user.username}],
+    }).encode('utf-8')
+    try:
+        req = urllib.request.Request(
+            'https://api.brevo.com/v3/smtp/email', data=payload,
+            headers={'api-key': api_key, 'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201, 202):
+                return True, "Email de réinitialisation envoyé."
+            return False, f"Erreur Brevo : statut {resp.status}"
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        return False, f"Erreur Brevo {e.code} : {body}"
+    except Exception as e:
+        return False, str(e)
+
+
 def envoyer_email_reset_portail(client, reset_url):
     """Envoie un email de réinitialisation de mot de passe portail client."""
     api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
@@ -1962,6 +2024,47 @@ def login():
             return redirect(request.args.get('next') or url_for('dashboard'))
         flash('Identifiant ou mot de passe incorrect.', 'danger')
     return render_template('login.html')
+
+@app.route('/login/mot-de-passe-oublie', methods=['GET', 'POST'])
+@limiter.limit("5 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
+def login_reset_request():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        u = User.query.filter_by(username=username).first()
+        # Message neutre dans tous les cas (sécurité : ne pas révéler si le compte/email existe)
+        if u and u.email:
+            reset_tok = secrets.token_urlsafe(48)
+            u.reset_token = reset_tok
+            u.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+            db.session.commit()
+            reset_url = url_for('login_reset_confirm', reset_token=reset_tok, _external=True)
+            threading.Thread(target=lambda: envoyer_email_reset_admin(u, reset_url), daemon=True).start()
+        flash("Si ce compte a un email associé, vous recevrez un lien de réinitialisation sous quelques minutes.", 'info')
+        return redirect(url_for('login'))
+    return render_template('login.html', mode='reset_request')
+
+@app.route('/login/reset/<reset_token>', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
+def login_reset_confirm(reset_token):
+    u = User.query.filter_by(reset_token=reset_token).first()
+    if not u or not u.reset_token_expiry or u.reset_token_expiry < datetime.utcnow():
+        flash("Ce lien de réinitialisation est invalide ou expiré. Veuillez refaire une demande.", 'danger')
+        return redirect(url_for('login_reset_request'))
+    if request.method == 'POST':
+        pwd  = request.form.get('password', '')
+        cpwd = request.form.get('confirm_password', '')
+        if len(pwd) < 6:
+            flash('Mot de passe trop court (6 caractères minimum).', 'danger')
+        elif pwd != cpwd:
+            flash('Les mots de passe ne correspondent pas.', 'danger')
+        else:
+            u.set_password(pwd)
+            u.reset_token = None
+            u.reset_token_expiry = None
+            db.session.commit()
+            flash('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.', 'success')
+            return redirect(url_for('login'))
+    return render_template('login.html', mode='reset_confirm', reset_token=reset_token)
 
 @app.route('/logout')
 @login_required
@@ -4130,6 +4233,8 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_actif BOOLEAN DEFAULT FALSE",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
             """CREATE TABLE IF NOT EXISTS audits_clients (
                 id SERIAL PRIMARY KEY,
                 reference VARCHAR(20) UNIQUE,
@@ -4229,21 +4334,6 @@ def init_db():
             print("  Compte admin cree  :  admin / Admin123!")
             print("  !! Changez ce mot de passe dans Parametres !!")
             print("=" * 55)
-
-        # ── Réinitialisation ponctuelle du mot de passe admin ──────────────
-        # Définir la variable d'environnement RESET_ADMIN_PASSWORD sur Render
-        # puis redéployer : au prochain démarrage, le mot de passe admin est
-        # remplacé par sa valeur. Pensez à RETIRER cette variable ensuite.
-        _reset_pw = os.environ.get('RESET_ADMIN_PASSWORD', '').strip()
-        if _reset_pw:
-            admin = User.query.filter_by(username='admin').first()
-            if admin:
-                admin.set_password(_reset_pw)
-                db.session.commit()
-                print("=" * 55)
-                print("  Mot de passe admin reinitialise via RESET_ADMIN_PASSWORD")
-                print("  !! Retirez cette variable d'environnement maintenant !!")
-                print("=" * 55)
 
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()
