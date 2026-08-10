@@ -155,19 +155,38 @@
                         placeholder="Origines profondes de l'infestation : structure du bâtiment, pratiques d'hygiène, environnement…">{{ audit.causes_profondes or '' if audit else '' }}</textarea>
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Niveau de risque global évalué</label>
-              <div class="d-flex gap-3 flex-wrap mt-1">
-                {% for v, l, c in [('faible','Faible','success'),('moyen','Moyen','warning'),('eleve','Élevé','danger')] %}
+              <label class="form-label fw-semibold">Niveau de risque global (grille AMDEC Fréquence × Gravité)</label>
+              <div class="row g-2">
+                <div class="col-6">
+                  <select id="grille-frequence" name="risque_frequence" class="form-select form-select-sm">
+                    <option value="">Fréquence…</option>
+                    {% for v, l in grille_frequences %}
+                    <option value="{{ v }}" {% if audit and audit.risque_frequence == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-6">
+                  <select id="grille-gravite" name="risque_gravite" class="form-select form-select-sm">
+                    <option value="">Gravité…</option>
+                    {% for v, l in grille_gravites %}
+                    <option value="{{ v }}" {% if audit and audit.risque_gravite == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div id="grille-resultat" class="d-flex gap-3 flex-wrap mt-2">
+                {% for v, info in grille_niveaux.items() if v in ['negligeable','acceptable','indesirable','inacceptable'] %}
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="niveau_risque"
                          id="nr-{{ v }}" value="{{ v }}"
                          {% if audit and audit.niveau_risque == v %}checked{% endif %}>
                   <label class="form-check-label" for="nr-{{ v }}">
-                    <span class="badge bg-{{ c }}">{{ l }}</span>
+                    <span class="badge" style="background-color:{{ info.hex }}">{{ info.label }}</span>
                   </label>
                 </div>
                 {% endfor %}
               </div>
+              <div class="form-text">Calculé automatiquement à partir de la Fréquence et de la Gravité choisies — modifiable manuellement si besoin.</div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">Communication client (§5.3)</label>
@@ -504,5 +523,26 @@ document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('tr-body').children.length === 0) addTr();
   if (document.getElementById('mp-body').children.length === 0) addMp();
 });
+
+// ── Grille AMDEC Fréquence x Gravité → niveau de risque global ──
+const GRILLE_MATRIX = {
+  'frequent|insignifiant': 'acceptable',    'frequent|marginal': 'inacceptable',    'frequent|critique': 'inacceptable',
+  'probable|insignifiant': 'acceptable',    'probable|marginal': 'indesirable',     'probable|critique': 'inacceptable',
+  'occasionnel|insignifiant': 'acceptable', 'occasionnel|marginal': 'indesirable',  'occasionnel|critique': 'inacceptable',
+  'rare|insignifiant': 'negligeable',       'rare|marginal': 'acceptable',          'rare|critique': 'indesirable',
+  'improbable|insignifiant': 'negligeable', 'improbable|marginal': 'negligeable',   'improbable|critique': 'acceptable',
+  'invraisemblable|insignifiant': 'negligeable', 'invraisemblable|marginal': 'negligeable', 'invraisemblable|critique': 'negligeable',
+};
+function calculerNiveauRisque() {
+  const f = document.getElementById('grille-frequence').value;
+  const g = document.getElementById('grille-gravite').value;
+  if (!f || !g) return;
+  const niveau = GRILLE_MATRIX[f + '|' + g];
+  if (!niveau) return;
+  const radio = document.getElementById('nr-' + niveau);
+  if (radio) radio.checked = true;
+}
+document.getElementById('grille-frequence').addEventListener('change', calculerNiveauRisque);
+document.getElementById('grille-gravite').addEventListener('change', calculerNiveauRisque);
 </script>
 {% endblock %}
