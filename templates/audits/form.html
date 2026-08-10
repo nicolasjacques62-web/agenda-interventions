@@ -45,7 +45,7 @@
             <div class="col-sm-3">
               <label class="form-label fw-semibold">Type de site</label>
               <input type="text" name="type_site" class="form-control"
-                     list="site-list" value="{{ audit.type_site or '' }}" placeholder="Restaurant…">
+                     list="site-list" value="{{ audit.type_site if audit else (prefill_type_site or '') }}" placeholder="Restaurant…">
               <datalist id="site-list">
                 {% for s in ['Restaurant / Restauration collective','Entrepôt / Stockage','Logement particulier','Bureau / Tertiaire','Industrie agroalimentaire','Commerce / Surface de vente','Établissement de santé','Hôtel / Hébergement','Autre'] %}
                 <option value="{{ s }}">{% endfor %}
@@ -54,7 +54,7 @@
             <div class="col-sm-3">
               <label class="form-label fw-semibold">Bâtiment</label>
               <input type="text" name="batiment" class="form-control"
-                     value="{{ audit.batiment or '' }}" placeholder="RDC, Bât. A, Zone ext…">
+                     value="{{ audit.batiment if audit else (prefill_batiment or '') }}" placeholder="RDC, Bât. A, Zone ext…">
             </div>
           </div>
         </div>
