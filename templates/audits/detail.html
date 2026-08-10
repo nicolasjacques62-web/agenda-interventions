@@ -131,7 +131,12 @@
           {% if audit.batiment %}<tr><td class="text-muted small fw-semibold">Bâtiment</td><td>{{ audit.batiment }}</td></tr>{% endif %}
           {% if audit.niveau_risque %}
           <tr><td class="text-muted small fw-semibold">Risque</td>
-              <td><span class="badge bg-{{ audit.niveau_couleur }}">{{ audit.niveau_label }}</span></td></tr>
+              <td>
+                <span class="badge" style="background-color:{{ audit.niveau_hex }}">{{ audit.niveau_label }}</span>
+                {% if audit.risque_frequence and audit.risque_gravite %}
+                <span class="text-muted small ms-1">({{ audit.risque_frequence_label }} × {{ audit.risque_gravite_label }})</span>
+                {% endif %}
+              </td></tr>
           {% endif %}
           <tr><td class="text-muted small fw-semibold">Créé le</td><td>{{ audit.created_at.strftime('%d/%m/%Y') }}</td></tr>
           {% if audit.date_finalisation %}
