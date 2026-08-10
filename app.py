@@ -2379,6 +2379,8 @@ def client_patrimoine(id):
 
     secteur = request.args.get('secteur', '')
     commune = request.args.get('commune', '')
+    type_log = request.args.get('type_log', '')
+    nature = request.args.get('nature', '')
     q = request.args.get('q', '').strip()
     page = request.args.get('page', 1, type=int)
 
@@ -2387,12 +2389,21 @@ def client_patrimoine(id):
         query = query.filter(PatrimoineLogement.secteur == secteur)
     if commune:
         query = query.filter(PatrimoineLogement.commune == commune)
+    if type_log:
+        query = query.filter(PatrimoineLogement.type_logement == type_log)
+    if nature:
+        query = query.filter(PatrimoineLogement.nature_batiment == nature)
     if q:
         query = query.filter(db.or_(
             PatrimoineLogement.batiment.ilike(f'%{q}%'),
             PatrimoineLogement.voirie.ilike(f'%{q}%'),
             PatrimoineLogement.numero_logement.ilike(f'%{q}%'),
             PatrimoineLogement.code_batiment.ilike(f'%{q}%'),
+            PatrimoineLogement.module.ilike(f'%{q}%'),
+            PatrimoineLogement.programme.ilike(f'%{q}%'),
+            PatrimoineLogement.tranche.ilike(f'%{q}%'),
+            PatrimoineLogement.code_escalier.ilike(f'%{q}%'),
+            PatrimoineLogement.numero_voirie.ilike(f'%{q}%'),
         ))
 
     pagination = query.order_by(
@@ -2403,11 +2414,17 @@ def client_patrimoine(id):
                 .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.secteur).all() if r[0]]
     communes = [r[0] for r in db.session.query(PatrimoineLogement.commune)
                 .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.commune).all() if r[0]]
+    types_log = [r[0] for r in db.session.query(PatrimoineLogement.type_logement)
+                .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.type_logement).all() if r[0]]
+    natures = [r[0] for r in db.session.query(PatrimoineLogement.nature_batiment)
+                .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.nature_batiment).all() if r[0]]
     total = PatrimoineLogement.query.filter_by(client_id=id).count()
 
     return render_template('clients/patrimoine.html', client=client, pagination=pagination,
                            logements=pagination.items, secteurs=secteurs, communes=communes,
-                           secteur=secteur, commune=commune, q=q, total=total)
+                           types_log=types_log, natures=natures,
+                           secteur=secteur, commune=commune, type_log=type_log, nature=nature,
+                           q=q, total=total)
 
 @app.route('/clients/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
