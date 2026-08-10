@@ -70,6 +70,7 @@
             <th>Étage</th>
             <th>Type</th>
             <th>Nature</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -84,6 +85,13 @@
             <td class="small text-muted">{{ l.etage or '—' }}</td>
             <td class="small"><span class="badge bg-light text-dark border">{{ l.type_logement or '—' }}</span></td>
             <td class="small text-muted">{{ l.nature_batiment or '—' }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('audit_nouveau', id=client.id, batiment=(l.batiment or '') + (' — Log. ' + l.numero_logement if l.numero_logement else '') + (', ' + l.commune if l.commune else ''), type_site='Logement particulier') }}"
+                 title="Créer un audit pour ce logement">
+                <i class="bi bi-plus-lg me-1"></i>Créer audit
+              </a>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
