@@ -200,6 +200,46 @@
       </div>
     </div>
 
+    <!-- Niveau de risque global (grille AMDEC Fréquence x Gravité) -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-shield-exclamation me-2"></i>Niveau de risque global évalué</div>
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Fréquence</label>
+            <select id="grille-frequence" name="risque_frequence" class="form-select form-select-sm">
+              <option value="">Fréquence…</option>
+              {% for v, l in grille_frequences %}
+              <option value="{{ v }}" {% if bon and bon.risque_frequence == v %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Gravité</label>
+            <select id="grille-gravite" name="risque_gravite" class="form-select form-select-sm">
+              <option value="">Gravité…</option>
+              {% for v, l in grille_gravites %}
+              <option value="{{ v }}" {% if bon and bon.risque_gravite == v %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div id="grille-resultat" class="d-flex gap-3 flex-wrap mt-3">
+          {% for v, info in grille_niveaux.items() if v in ['negligeable','acceptable','indesirable','inacceptable'] %}
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="niveau_risque"
+                   id="nr-{{ v }}" value="{{ v }}"
+                   {% if bon and bon.niveau_risque == v %}checked{% endif %}>
+            <label class="form-check-label" for="nr-{{ v }}">
+              <span class="badge" style="background-color:{{ info.hex }}">{{ info.label }}</span>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="form-text">Calculé automatiquement à partir de la Fréquence et de la Gravité choisies — modifiable manuellement si besoin.</div>
+      </div>
+    </div>
+
     {% include "amdec/_embed.html" %}
 
     <!-- ═══════════════════════════════════
@@ -440,5 +480,26 @@ function annulerPhoto() {
   const inp = document.getElementById('photo-input');
   if (inp) inp.value = '';
 }
+
+// ── Grille AMDEC Fréquence x Gravité → niveau de risque global ──
+const GRILLE_MATRIX = {
+  'frequent|insignifiant': 'acceptable',    'frequent|marginal': 'inacceptable',    'frequent|critique': 'inacceptable',
+  'probable|insignifiant': 'acceptable',    'probable|marginal': 'indesirable',     'probable|critique': 'inacceptable',
+  'occasionnel|insignifiant': 'acceptable', 'occasionnel|marginal': 'indesirable',  'occasionnel|critique': 'inacceptable',
+  'rare|insignifiant': 'negligeable',       'rare|marginal': 'acceptable',          'rare|critique': 'indesirable',
+  'improbable|insignifiant': 'negligeable', 'improbable|marginal': 'negligeable',   'improbable|critique': 'acceptable',
+  'invraisemblable|insignifiant': 'negligeable', 'invraisemblable|marginal': 'negligeable', 'invraisemblable|critique': 'negligeable',
+};
+function calculerNiveauRisque() {
+  const f = document.getElementById('grille-frequence').value;
+  const g = document.getElementById('grille-gravite').value;
+  if (!f || !g) return;
+  const niveau = GRILLE_MATRIX[f + '|' + g];
+  if (!niveau) return;
+  const radio = document.getElementById('nr-' + niveau);
+  if (radio) radio.checked = true;
+}
+document.getElementById('grille-frequence').addEventListener('change', calculerNiveauRisque);
+document.getElementById('grille-gravite').addEventListener('change', calculerNiveauRisque);
 </script>
 {% endblock %}
