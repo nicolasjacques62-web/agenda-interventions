@@ -3128,7 +3128,9 @@ def audit_nouveau(id):
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
                            grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX)
+                           grille_niveaux=GRILLE_NIVEAUX,
+                           prefill_batiment=request.args.get('batiment', '').strip(),
+                           prefill_type_site=request.args.get('type_site', '').strip())
 
 @app.route('/audits/<int:id>')
 @login_required
