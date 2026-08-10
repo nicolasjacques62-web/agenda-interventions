@@ -30,15 +30,33 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-4">
-        <label class="form-label small text-muted fw-semibold mb-1">Recherche (bâtiment, voirie, n° logement...)</label>
-        <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Ex: BATIMENT 4, QUAI DE LA PASSERELLE...">
+      <div class="col-md-3">
+        <label class="form-label small text-muted fw-semibold mb-1">Type</label>
+        <select name="type_log" class="form-select form-select-sm">
+          <option value="">Tous les types</option>
+          {% for t in types_log %}
+          <option value="{{ t }}" {% if t == type_log %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted fw-semibold mb-1">Nature</label>
+        <select name="nature" class="form-select form-select-sm">
+          <option value="">Toutes natures</option>
+          {% for n in natures %}
+          <option value="{{ n }}" {% if n == nature %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-10">
+        <label class="form-label small text-muted fw-semibold mb-1">Recherche libre (bâtiment, voirie, n° logement, code bât., module, programme, tranche, escalier...)</label>
+        <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Ex: BATIMENT 4, QUAI DE LA PASSERELLE, FR57, 423CFR0104...">
       </div>
       <div class="col-md-2 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm flex-fill">
           <i class="bi bi-search me-1"></i>Filtrer
         </button>
-        {% if secteur or commune or q %}
+        {% if secteur or commune or type_log or nature or q %}
         <a href="{{ url_for('client_patrimoine', id=client.id) }}" class="btn btn-outline-secondary btn-sm">
           <i class="bi bi-x-lg"></i>
         </a>
@@ -117,11 +135,11 @@
       <span class="small text-muted">Page {{ pagination.page }} / {{ pagination.pages }}</span>
       <div class="btn-group btn-group-sm">
         <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-           href="{{ url_for('client_patrimoine', id=client.id, secteur=secteur, commune=commune, q=q, page=pagination.prev_num) }}">
+           href="{{ url_for('client_patrimoine', id=client.id, secteur=secteur, commune=commune, type_log=type_log, nature=nature, q=q, page=pagination.prev_num) }}">
           <i class="bi bi-chevron-left"></i> Précédent
         </a>
         <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-           href="{{ url_for('client_patrimoine', id=client.id, secteur=secteur, commune=commune, q=q, page=pagination.next_num) }}">
+           href="{{ url_for('client_patrimoine', id=client.id, secteur=secteur, commune=commune, type_log=type_log, nature=nature, q=q, page=pagination.next_num) }}">
           Suivant <i class="bi bi-chevron-right"></i>
         </a>
       </div>
