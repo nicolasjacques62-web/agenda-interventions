@@ -4378,9 +4378,10 @@ def too_many_requests(e):
 
 # ─── INIT ─────────────────────────────────────────────────────────────────────
 
-def _importer_patrimoine_csv(csv_path, nom_client):
+def _importer_patrimoine_csv(csv_path, nom_client, force=False):
     """Importe le CSV patrimoine d'un bailleur (une seule fois — ne réimporte
-    pas si des logements existent déjà pour ce client)."""
+    pas si des logements existent déjà pour ce client, sauf si force=True,
+    auquel cas les anciennes lignes sont supprimées avant réimport)."""
     if not os.path.exists(csv_path):
         print(f"  [patrimoine] Fichier introuvable : {csv_path}")
         return
@@ -4396,8 +4397,12 @@ def _importer_patrimoine_csv(csv_path, nom_client):
 
     deja = PatrimoineLogement.query.filter_by(client_id=client.id).count()
     if deja > 0:
-        print(f"  [patrimoine] Deja {deja} logement(s) pour {nom_client} — import ignore.")
-        return
+        if not force:
+            print(f"  [patrimoine] Deja {deja} logement(s) pour {nom_client} — import ignore.")
+            return
+        PatrimoineLogement.query.filter_by(client_id=client.id).delete()
+        db.session.commit()
+        print(f"  [patrimoine] {deja} ancienne(s) ligne(s) supprimee(s) pour {nom_client} (reimport force).")
 
     try:
         with open(csv_path, encoding='utf-8', newline='') as f:
@@ -4576,14 +4581,16 @@ def init_db():
                 print(f"  Email admin synchronise : {_admin_email}")
 
         # ── Import ponctuel du patrimoine (liste de logements d'un bailleur) ──
-        # Définir la variable d'environnement IMPORT_PATRIMOINE=1 sur Render,
-        # avec le fichier CSV commité dans le repo à data/patrimoine_amsom.csv,
-        # puis redéployer : au démarrage, le patrimoine est importé une seule
-        # fois (ne réimporte pas si des logements existent déjà pour ce client).
-        if os.environ.get('IMPORT_PATRIMOINE', '').strip() == '1':
+        # Définir la variable d'environnement IMPORT_PATRIMOINE sur Render :
+        #   - "1"     → importe une seule fois (ignore si déjà des logements en base)
+        #   - "force" → supprime les logements existants du client puis réimporte
+        #               (utile si un import précédent était incomplet/corrompu)
+        _import_patrimoine = os.environ.get('IMPORT_PATRIMOINE', '').strip().lower()
+        if _import_patrimoine in ('1', 'force'):
             _importer_patrimoine_csv(
                 csv_path=os.path.join(os.path.dirname(__file__), 'data', 'patrimoine_amsom.csv'),
                 nom_client='AMSOM Habitat',
+                force=(_import_patrimoine == 'force'),
             )
 
 # Initialisation automatique au démarrage (local ET production Gunicorn)
