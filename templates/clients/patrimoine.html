@@ -62,10 +62,14 @@
         <thead class="table-light">
           <tr>
             <th>Secteur</th>
+            <th>Programme</th>
+            <th>Tranche</th>
             <th>Commune</th>
             <th>Voirie</th>
+            <th>Code bât.</th>
             <th>Bâtiment</th>
             <th>Escalier</th>
+            <th>Module</th>
             <th>Logement</th>
             <th>Étage</th>
             <th>Type</th>
@@ -77,10 +81,14 @@
           {% for l in logements %}
           <tr>
             <td class="small text-muted">{{ l.secteur or '—' }}</td>
+            <td class="small text-muted">{{ l.programme or '—' }}</td>
+            <td class="small text-muted">{{ l.tranche or '—' }}</td>
             <td class="small fw-semibold">{{ l.commune or '—' }}</td>
             <td class="small">{{ l.numero_voirie or '' }} {{ l.voirie or '' }}</td>
+            <td class="small text-muted">{{ l.code_batiment or '—' }}</td>
             <td class="small">{{ l.batiment or '—' }}</td>
             <td class="small text-muted">{{ l.code_escalier or '—' }}</td>
+            <td class="small text-muted">{{ l.module or '—' }}</td>
             <td class="small">{{ l.numero_logement or '—' }}</td>
             <td class="small text-muted">{{ l.etage or '—' }}</td>
             <td class="small"><span class="badge bg-light text-dark border">{{ l.type_logement or '—' }}</span></td>
