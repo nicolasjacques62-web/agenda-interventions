@@ -617,6 +617,15 @@ class PatrimoineLogement(db.Model):
     def libelle(self):
         return f"{self.batiment or ''} — Log. {self.numero_logement or '?'} (ét. {self.etage or '?'}) — {self.commune or ''}".strip(' —')
 
+    @property
+    def batiment_est_adresse(self):
+        """Heuristique : le champ Bâtiment répète en fait l'adresse (numéro
+        de voirie identique en tête) plutôt qu'un nom de bâtiment court —
+        certains secteurs d'AMSOM saisissent l'adresse complète ici."""
+        if not self.batiment or not self.numero_voirie:
+            return False
+        return self.batiment.strip().upper().startswith(self.numero_voirie.strip().upper())
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 # Noms français des jours et mois (indépendant de la locale système)
