@@ -85,8 +85,14 @@
             <td class="small text-muted">{{ l.tranche or '—' }}</td>
             <td class="small fw-semibold">{{ l.commune or '—' }}</td>
             <td class="small">{{ l.numero_voirie or '' }} {{ l.voirie or '' }}</td>
-            <td class="small text-muted">{{ l.code_batiment or '—' }}</td>
-            <td class="small">{{ l.batiment or '—' }}</td>
+            <td class="small fw-bold">{{ l.code_batiment or '—' }}</td>
+            <td class="small">
+              {% if l.batiment_est_adresse %}
+              <span class="text-muted" title="{{ l.batiment }}">— <span class="small">(= adresse)</span></span>
+              {% else %}
+              {{ l.batiment or '—' }}
+              {% endif %}
+            </td>
             <td class="small text-muted">{{ l.code_escalier or '—' }}</td>
             <td class="small text-muted">{{ l.module or '—' }}</td>
             <td class="small">{{ l.numero_logement or '—' }}</td>
@@ -95,7 +101,7 @@
             <td class="small text-muted">{{ l.nature_batiment or '—' }}</td>
             <td class="text-end">
               <a class="btn btn-sm btn-outline-primary"
-                 href="{{ url_for('audit_nouveau', id=client.id, batiment=(l.batiment or '') + (' — Log. ' + l.numero_logement if l.numero_logement else '') + (', ' + l.commune if l.commune else ''), type_site='Logement particulier') }}"
+                 href="{{ url_for('audit_nouveau', id=client.id, batiment=(l.code_batiment or l.batiment or '') + (' — Log. ' + l.numero_logement if l.numero_logement else '') + (', ' + l.commune if l.commune else ''), type_site='Logement particulier') }}"
                  title="Créer un audit pour ce logement">
                 <i class="bi bi-plus-lg me-1"></i>Créer audit
               </a>
