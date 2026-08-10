@@ -4241,8 +4241,12 @@ def _importer_patrimoine_csv(csv_path, nom_client):
         print(f"  [patrimoine] Deja {deja} logement(s) pour {nom_client} — import ignore.")
         return
 
-    with open(csv_path, encoding='latin-1', newline='') as f:
-        raw_lines = f.readlines()
+    try:
+        with open(csv_path, encoding='utf-8', newline='') as f:
+            raw_lines = f.readlines()
+    except UnicodeDecodeError:
+        with open(csv_path, encoding='latin-1', newline='') as f:
+            raw_lines = f.readlines()
     header_idx = next((i for i, l in enumerate(raw_lines) if l.strip().upper().startswith('SECTEUR')), None)
     if header_idx is None:
         print("  [patrimoine] Ligne d'en-tete (SECTEUR) introuvable dans le CSV.")
