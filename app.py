@@ -244,6 +244,9 @@ class BonIntervention(db.Model):
     date_signature = db.Column(db.DateTime)
     signature_image = db.Column(db.Text)        # base64 PNG de la signature
     signature_technicien = db.Column(db.Text)   # base64 PNG signature technicien
+    niveau_risque = db.Column(db.String(20))
+    risque_frequence = db.Column(db.String(30))   # clé GRILLE_FREQUENCES
+    risque_gravite = db.Column(db.String(20))      # clé GRILLE_GRAVITES
 
     @property
     def statut_label(self):
@@ -254,6 +257,22 @@ class BonIntervention(db.Model):
     def statut_couleur(self):
         return {'brouillon': 'secondary', 'finalise': 'primary',
                 'envoye': 'info', 'signe': 'success'}.get(self.statut, 'secondary')
+
+    @property
+    def niveau_label(self):
+        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('label', '—')
+
+    @property
+    def niveau_hex(self):
+        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('hex', '#95a5a6')
+
+    @property
+    def risque_frequence_label(self):
+        return _label_grille(self.risque_frequence, GRILLE_FREQUENCES)
+
+    @property
+    def risque_gravite_label(self):
+        return _label_grille(self.risque_gravite, GRILLE_GRAVITES)
 
 
 NUISIBLES_TYPES = [
@@ -270,6 +289,49 @@ NUISIBLES_TYPES = [
     ('autres',     'Autres nuisibles'),
 ]
 
+# ─── Grille AMDEC de classification du risque (Fréquence × Gravité) ───────────
+# Grille qualitative à 2 axes utilisée pour le "niveau de risque global" d'un
+# audit ou d'un bon d'intervention. Distincte des fiches AMDEC détaillées
+# (S × O × D → NPR) qui restent utilisées ligne par ligne.
+GRILLE_FREQUENCES = [
+    ('frequent',        'Fréquent'),
+    ('probable',        'Probable'),
+    ('occasionnel',     'Occasionnel'),
+    ('rare',             'Rare'),
+    ('improbable',       'Improbable'),
+    ('invraisemblable',  'Invraisemblable'),
+]
+GRILLE_GRAVITES = [
+    ('insignifiant', 'Insignifiant'),
+    ('marginal',      'Marginal'),
+    ('critique',      'Critique'),
+]
+GRILLE_NIVEAUX = {
+    'negligeable':  {'label': 'Négligeable',  'hex': '#27ae60'},
+    'acceptable':   {'label': 'Acceptable',   'hex': '#f1c40f'},
+    'indesirable':  {'label': 'Indésirable',  'hex': '#e67e22'},
+    'inacceptable': {'label': 'Inacceptable', 'hex': '#e74c3c'},
+    # anciennes valeurs de l'audit (compatibilité descendante des fiches déjà en base) :
+    'faible':  {'label': 'Faible',  'hex': '#27ae60'},
+    'moyen':   {'label': 'Moyen',   'hex': '#f1c40f'},
+    'eleve':   {'label': 'Élevé',   'hex': '#e67e22'},
+}
+GRILLE_MATRIX = {
+    ('frequent', 'insignifiant'): 'acceptable',    ('frequent', 'marginal'): 'inacceptable',    ('frequent', 'critique'): 'inacceptable',
+    ('probable', 'insignifiant'): 'acceptable',    ('probable', 'marginal'): 'indesirable',     ('probable', 'critique'): 'inacceptable',
+    ('occasionnel', 'insignifiant'): 'acceptable', ('occasionnel', 'marginal'): 'indesirable',  ('occasionnel', 'critique'): 'inacceptable',
+    ('rare', 'insignifiant'): 'negligeable',       ('rare', 'marginal'): 'acceptable',          ('rare', 'critique'): 'indesirable',
+    ('improbable', 'insignifiant'): 'negligeable', ('improbable', 'marginal'): 'negligeable',   ('improbable', 'critique'): 'acceptable',
+    ('invraisemblable', 'insignifiant'): 'negligeable', ('invraisemblable', 'marginal'): 'negligeable', ('invraisemblable', 'critique'): 'negligeable',
+}
+
+def calculer_niveau_risque(frequence, gravite):
+    """Fréquence + Gravité (clés GRILLE_FREQUENCES / GRILLE_GRAVITES) → niveau (clé GRILLE_NIVEAUX)."""
+    return GRILLE_MATRIX.get((frequence, gravite))
+
+def _label_grille(cle, source):
+    return dict(source).get(cle, cle or '—')
+
 class AuditClient(db.Model):
     __tablename__ = 'audits_clients'
     id = db.Column(db.Integer, primary_key=True)
@@ -285,6 +347,8 @@ class AuditClient(db.Model):
     causes_profondes = db.Column(db.Text)
     evaluation_prestations = db.Column(db.Text)
     niveau_risque = db.Column(db.String(20))
+    risque_frequence = db.Column(db.String(30))   # clé GRILLE_FREQUENCES
+    risque_gravite = db.Column(db.String(20))      # clé GRILLE_GRAVITES
     communication_client = db.Column(db.String(50))
     # §5.4 Analyse de la situation
     situation_site = db.Column(db.String(30))
@@ -337,11 +401,25 @@ class AuditClient(db.Model):
 
     @property
     def niveau_label(self):
-        return {'faible': 'Faible ✔', 'moyen': 'Moyen ⚠', 'eleve': 'Élevé ⚠', 'critique': 'Critique ⛔'}.get(self.niveau_risque or '', '—')
+        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('label', '—')
+
+    @property
+    def niveau_hex(self):
+        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('hex', '#95a5a6')
 
     @property
     def niveau_couleur(self):
-        return {'faible': 'success', 'moyen': 'warning', 'eleve': 'danger', 'critique': 'danger'}.get(self.niveau_risque or '', 'secondary')
+        # Conservé pour compatibilité (classes Bootstrap approximatives) — préférer niveau_hex.
+        return {'negligeable': 'success', 'acceptable': 'warning', 'indesirable': 'warning', 'inacceptable': 'danger',
+                'faible': 'success', 'moyen': 'warning', 'eleve': 'danger'}.get(self.niveau_risque or '', 'secondary')
+
+    @property
+    def risque_frequence_label(self):
+        return _label_grille(self.risque_frequence, GRILLE_FREQUENCES)
+
+    @property
+    def risque_gravite_label(self):
+        return _label_grille(self.risque_gravite, GRILLE_GRAVITES)
 
     @property
     def situation_site_label(self):
@@ -650,6 +728,8 @@ def _parse_audit_form(form):
         causes_profondes=form.get('causes_profondes', '').strip(),
         evaluation_prestations=form.get('evaluation_prestations', '').strip(),
         niveau_risque=form.get('niveau_risque', '').strip(),
+        risque_frequence=form.get('risque_frequence', '').strip() or None,
+        risque_gravite=form.get('risque_gravite', '').strip() or None,
         communication_client=','.join(v for v in form.getlist('communication_client') if v),
         situation_site=form.get('situation_site', '').strip(),
         points_entree=form.get('points_entree', '').strip(),
@@ -724,6 +804,62 @@ def _sig_to_image(b64_data, max_w=7*cm, max_h=3*cm):
         return img
     except Exception:
         return ''
+
+def _pdf_bloc_grille_risque(styles, frequence, gravite, niveau):
+    """Retourne les flowables ReportLab affichant la grille AMDEC Fréquence x
+    Gravité complète, avec la cellule correspondant au risque évalué mise en
+    évidence (bordure épaisse). Retourne [] si aucune notation n'a été saisie."""
+    if not frequence or not gravite:
+        return []
+    s_h2 = ParagraphStyle('gh2', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', spaceAfter=3, spaceBefore=6)
+    s_cell = ParagraphStyle('gc', parent=styles['Normal'], fontSize=7.5, alignment=TA_CENTER)
+    s_cell_b = ParagraphStyle('gcb', parent=styles['Normal'], fontSize=7.5, alignment=TA_CENTER, fontName='Helvetica-Bold')
+
+    freq_keys = [k for k, _ in GRILLE_FREQUENCES]
+    grav_keys = [k for k, _ in GRILLE_GRAVITES]
+
+    header = [Paragraph('<b>Fréquence \\ Gravité</b>', s_cell_b)] + \
+             [Paragraph(f"<b>{l}</b>", s_cell_b) for _, l in GRILLE_GRAVITES]
+    data = [header]
+    row_idx_select = col_idx_select = None
+    for ri, (fk, fl) in enumerate(GRILLE_FREQUENCES, start=1):
+        row = [Paragraph(fl, s_cell_b)]
+        for ci, (gk, gl) in enumerate(GRILLE_GRAVITES, start=1):
+            niv = GRILLE_MATRIX.get((fk, gk))
+            label = GRILLE_NIVEAUX.get(niv, {}).get('label', '')
+            is_selected = (fk == frequence and gk == gravite)
+            if is_selected:
+                row_idx_select, col_idx_select = ri, ci
+                row.append(Paragraph(f"<b>{label}</b>", s_cell_b))
+            else:
+                row.append(Paragraph(label, s_cell))
+        data.append(row)
+
+    t = Table(data, colWidths=[3.3*cm] + [3.5*cm]*3)
+    style_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f0f6fa')),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 5),
+    ]
+    for ri, (fk, _) in enumerate(GRILLE_FREQUENCES, start=1):
+        for ci, (gk, _) in enumerate(GRILLE_GRAVITES, start=1):
+            niv = GRILLE_MATRIX.get((fk, gk))
+            hexcol = GRILLE_NIVEAUX.get(niv, {}).get('hex', '#ffffff')
+            style_cmds.append(('BACKGROUND', (ci, ri), (ci, ri), colors.HexColor(hexcol)))
+    if row_idx_select is not None:
+        style_cmds.append(('BOX', (col_idx_select, row_idx_select), (col_idx_select, row_idx_select), 2.2, colors.HexColor('#000000')))
+    t.setStyle(TableStyle(style_cmds))
+
+    niv_info = GRILLE_NIVEAUX.get(niveau or '', {})
+    resultat = Paragraph(
+        f"Risque évalué : <b><font color='{niv_info.get('hex', '#000')}'>{niv_info.get('label', '—')}</font></b> "
+        f"(Fréquence : {_label_grille(frequence, GRILLE_FREQUENCES)} — Gravité : {_label_grille(gravite, GRILLE_GRAVITES)})",
+        ParagraphStyle('gres', parent=styles['Normal'], fontSize=8.5, spaceBefore=4))
+
+    return [Paragraph("NIVEAU DE RISQUE GLOBAL — GRILLE AMDEC", s_h2), t, resultat, Spacer(1, 0.4*cm)]
 
 def generer_pdf(bon):
     if not PDF_OK:
@@ -818,6 +954,9 @@ def generer_pdf(bon):
     ]))
     elems.append(t)
     elems.append(Spacer(1, 0.5*cm))
+
+    # ── Grille AMDEC Fréquence x Gravité (case surlignée) ──
+    elems.extend(_pdf_bloc_grille_risque(styles, bon.risque_frequence, bon.risque_gravite, bon.niveau_risque))
 
     if inter.description:
         elems.append(Paragraph("Description :", s_h))
@@ -1436,13 +1575,13 @@ def generer_pdf_audit(audit):
     elems.append(Spacer(1, 0.4*cm))
 
     # ── Titre ──
-    titre_couleur = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}.get(audit.niveau_risque or '', '#1aabe3')
+    titre_couleur = audit.niveau_hex if audit.niveau_risque else '#1aabe3'
     elems.append(Paragraph("DIAGNOSTIC D'INFESTATION & PLAN DE GESTION DES NUISIBLES", s_titre))
     elems.append(Paragraph(f"Référence : <b>{audit.reference}</b>", ParagraphStyle('ref', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, spaceAfter=6)))
     elems.append(Spacer(1, 0.3*cm))
 
     # ── Identification du site ──
-    niv_couleur_hex = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}.get(audit.niveau_risque or '', '#1aabe3')
+    niv_couleur_hex = audit.niveau_hex if audit.niveau_risque else '#1aabe3'
     adresse_cli = f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip()
     info_data = [
         ['SOCIÉTÉ / CLIENT', cli.nom_affichage,           'DATE DIAGNOSTIC', audit.date_audit.strftime('%d/%m/%Y')],
@@ -1463,6 +1602,9 @@ def generer_pdf_audit(audit):
     ]))
     elems.append(ti)
     elems.append(Spacer(1, 0.5*cm))
+
+    # ── Grille AMDEC Fréquence x Gravité (case surlignée) ──
+    elems.extend(_pdf_bloc_grille_risque(styles, audit.risque_frequence, audit.risque_gravite, audit.niveau_risque))
 
     # ── VUE D'ENSEMBLE — Avancement de l'audit (miroir de la page web) ──
     ck_pre = audit.checklist
@@ -2578,6 +2720,9 @@ def bon_nouveau():
             recommandations=request.form.get('recommandations','').strip(),
             temps_passe=int(request.form['temps_passe']) if request.form.get('temps_passe') else None,
             materiaux_utilises=json.dumps(mats, ensure_ascii=False) if mats else None,
+            niveau_risque=request.form.get('niveau_risque', '').strip() or None,
+            risque_frequence=request.form.get('risque_frequence', '').strip() or None,
+            risque_gravite=request.form.get('risque_gravite', '').strip() or None,
         )
         db.session.add(b)
         inter.statut = 'terminee'
@@ -2608,7 +2753,9 @@ def bon_nouveau():
                            preconisations_modeles=PRECONISATIONS_MODELES,
                            amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
-                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[])
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
+                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
+                           grille_niveaux=GRILLE_NIVEAUX)
 
 @app.route('/bons/<int:id>')
 @login_required
@@ -2646,6 +2793,9 @@ def bon_modifier(id):
         b.observations = request.form.get('observations','').strip()
         b.recommandations = request.form.get('recommandations','').strip()
         b.temps_passe = int(request.form['temps_passe']) if request.form.get('temps_passe') else None
+        b.niveau_risque = request.form.get('niveau_risque', '').strip() or None
+        b.risque_frequence = request.form.get('risque_frequence', '').strip() or None
+        b.risque_gravite = request.form.get('risque_gravite', '').strip() or None
         mats = _extract_mats(request)
         b.materiaux_utilises = json.dumps(mats, ensure_ascii=False) if mats else None
         if request.form.get('finaliser'):
@@ -2691,7 +2841,9 @@ def bon_modifier(id):
                            amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=b.amdec_fiches,
-                           amdec_fiches_json=_amdec_fiches_json(b.amdec_fiches))
+                           amdec_fiches_json=_amdec_fiches_json(b.amdec_fiches),
+                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
+                           grille_niveaux=GRILLE_NIVEAUX)
 
 def _extract_mats(req):
     desig = req.form.getlist('mat_designation[]')
@@ -2974,7 +3126,9 @@ def audit_nouveau(id):
                            nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
                            today=today, amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
-                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[])
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
+                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
+                           grille_niveaux=GRILLE_NIVEAUX)
 
 @app.route('/audits/<int:id>')
 @login_required
@@ -3001,7 +3155,9 @@ def audit_modifier(id):
                            today=today, amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=audit.amdec_fiches,
-                           amdec_fiches_json=_amdec_fiches_json(audit.amdec_fiches))
+                           amdec_fiches_json=_amdec_fiches_json(audit.amdec_fiches),
+                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
+                           grille_niveaux=GRILLE_NIVEAUX)
 
 @app.route('/audits/<int:id>/finaliser', methods=['POST'])
 @login_required
@@ -4301,6 +4457,11 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_frequence VARCHAR(30)",
+            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_gravite VARCHAR(20)",
+            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS niveau_risque VARCHAR(20)",
+            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS risque_frequence VARCHAR(30)",
+            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS risque_gravite VARCHAR(20)",
             """CREATE TABLE IF NOT EXISTS audits_clients (
                 id SERIAL PRIMARY KEY,
                 reference VARCHAR(20) UNIQUE,
