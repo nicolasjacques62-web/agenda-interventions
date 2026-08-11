@@ -219,6 +219,28 @@ class Client(db.Model):
         return check_password_hash(self.portal_password_hash, p) if self.portal_password_hash else False
 
 
+class PortalContact(db.Model):
+    """Interlocuteur supplémentaire d'un client — son propre lien + mot de
+    passe pour accéder au même espace portail que le client principal."""
+    __tablename__ = 'portal_contacts'
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    nom = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120))
+    access_token = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
+    portal_password_hash = db.Column(db.String(256))
+    actif = db.Column(db.Boolean, default=True)
+    reset_token = db.Column(db.String(64))
+    reset_token_expiry = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    derniere_connexion = db.Column(db.DateTime)
+    client = db.relationship('Client', backref=db.backref('portal_contacts', cascade='all, delete-orphan'))
+
+    def set_portal_password(self, p): self.portal_password_hash = generate_password_hash(p)
+    def check_portal_password(self, p):
+        return check_password_hash(self.portal_password_hash, p) if self.portal_password_hash else False
+
+
 class Intervention(db.Model):
     __tablename__ = 'interventions'
     id = db.Column(db.Integer, primary_key=True)
@@ -1428,7 +1450,7 @@ def envoyer_email_reset_portail(client, reset_url):
         return False, "Pas d'email pour ce client."
     soc = get_param('societe', 'HPS')
     email_exp = get_param('email', '')
-    prenom = client.prenom or client.nom
+    prenom = getattr(client, 'prenom', None) or client.nom
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
       <div style="background:#1e293b;padding:20px 24px;border-radius:10px 10px 0 0">
@@ -2573,6 +2595,43 @@ def portail_regenerer(id):
     flash('Lien régénéré. L\'ancien lien est invalidé.', 'success')
     return redirect(url_for('client_detail', id=id))
 
+@app.route('/clients/<int:id>/portail/interlocuteurs/ajouter', methods=['POST'])
+@login_required
+def portail_contact_ajouter(id):
+    c = Client.query.get_or_404(id)
+    nom = request.form.get('nom', '').strip()
+    email = request.form.get('email', '').strip()
+    if not nom:
+        flash('Indiquez un nom pour cet interlocuteur.', 'warning')
+        return redirect(url_for('client_detail', id=id))
+    contact = PortalContact(client_id=c.id, nom=nom, email=email or None)
+    db.session.add(contact)
+    db.session.commit()
+    flash(f'Interlocuteur « {nom} » ajouté — un lien de connexion dédié a été créé.', 'success')
+    return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/portail/interlocuteurs/<int:contact_id>/desactiver', methods=['POST'])
+@login_required
+def portail_contact_desactiver(contact_id):
+    contact = PortalContact.query.get_or_404(contact_id)
+    cid = contact.client_id
+    contact.actif = not contact.actif
+    db.session.commit()
+    etat = "réactivé" if contact.actif else "désactivé"
+    flash(f'Accès de « {contact.nom} » {etat}.', 'success')
+    return redirect(url_for('client_detail', id=cid))
+
+@app.route('/clients/portail/interlocuteurs/<int:contact_id>/supprimer', methods=['POST'])
+@login_required
+def portail_contact_supprimer(contact_id):
+    contact = PortalContact.query.get_or_404(contact_id)
+    cid = contact.client_id
+    nom = contact.nom
+    db.session.delete(contact)
+    db.session.commit()
+    flash(f'Interlocuteur « {nom} » supprimé.', 'info')
+    return redirect(url_for('client_detail', id=cid))
+
 # ─── AGENDA / INTERVENTIONS ───────────────────────────────────────────────────
 
 @app.route('/agenda')
@@ -3363,7 +3422,8 @@ def amdec_supprimer(id):
 
 @app.route('/portail/<token>/audits/<int:aid>')
 def portail_audit_detail(token, aid):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     audit = AuditClient.query.filter_by(id=aid, client_id=c.id, statut='finalise').first_or_404()
@@ -3371,7 +3431,8 @@ def portail_audit_detail(token, aid):
 
 @app.route('/portail/<token>/audits/<int:aid>/pdf')
 def portail_audit_pdf(token, aid):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     audit = AuditClient.query.filter_by(id=aid, client_id=c.id, statut='finalise').first_or_404()
@@ -3504,7 +3565,8 @@ def document_supprimer(id):
 
 @app.route('/portail/<token>/documents')
 def portail_documents(token):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     # Si le client a des documents spécifiquement associés → les utiliser
@@ -3532,7 +3594,8 @@ def portail_documents(token):
 
 @app.route('/portail/<token>/documents/<int:did>/voir')
 def portail_document_voir(token, did):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     doc = DocumentTechnique.query.get_or_404(did)
@@ -4083,14 +4146,28 @@ def bon_photo_supprimer(photo_id):
 
 # ─── PORTAIL CLIENT ───────────────────────────────────────────────────────────
 
+def _portail_resoudre(token):
+    """Résout un token de portail — soit le token historique du client
+    (Client.access_token), soit celui d'un interlocuteur secondaire
+    (PortalContact.access_token). Retourne (client, contact) où contact vaut
+    None si c'est le lien principal du client. (None, None) si invalide."""
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
+    if c:
+        return c, None
+    contact = PortalContact.query.filter_by(access_token=token, actif=True).first()
+    if contact and contact.client and contact.client.portal_actif:
+        return contact.client, contact
+    return None, None
+
 @app.route('/portail/<token>', methods=['GET', 'POST'])
 @limiter.limit("15 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_access(token):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
+    c, contact = _portail_resoudre(token)
     if not c: abort(404)
+    viewer = contact or c   # objet qui porte le mot de passe (interlocuteur ou client principal)
     if request.method == 'POST':
         action = request.form.get('action')
-        if action == 'register' and not c.portal_password_hash:
+        if action == 'register' and not viewer.portal_password_hash:
             pwd = request.form.get('password','')
             cpwd = request.form.get('confirm_password','')
             if len(pwd) < 8:
@@ -4098,35 +4175,42 @@ def portail_access(token):
             elif pwd != cpwd:
                 flash('Les mots de passe ne correspondent pas.', 'danger')
             else:
-                c.set_portal_password(pwd)
+                viewer.set_portal_password(pwd)
+                if contact:
+                    contact.derniere_connexion = datetime.utcnow()
                 db.session.commit()
                 flask_session['portal_cid'] = c.id
                 flash('Compte créé ! Bienvenue.', 'success')
                 return redirect(url_for('portail_dashboard', token=token))
         elif action == 'login':
-            if c.check_portal_password(request.form.get('password','')):
+            if viewer.check_portal_password(request.form.get('password','')):
+                if contact:
+                    contact.derniere_connexion = datetime.utcnow()
+                    db.session.commit()
                 flask_session['portal_cid'] = c.id
-                flash(f'Bienvenue, {c.prenom or c.nom} !', 'success')
+                nom_bienvenue = contact.nom if contact else (c.prenom or c.nom)
+                flash(f'Bienvenue, {nom_bienvenue} !', 'success')
                 return redirect(url_for('portail_dashboard', token=token))
             flash('Mot de passe incorrect.', 'danger')
     return render_template('portal/access.html', client=c, token=token,
-                           is_registered=bool(c.portal_password_hash), mode='default')
+                           is_registered=bool(viewer.portal_password_hash), mode='default')
 
 @app.route('/portail/<token>/mot-de-passe-oublie', methods=['GET', 'POST'])
 @limiter.limit("5 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_reset_request(token):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
+    c, contact = _portail_resoudre(token)
     if not c: abort(404)
+    viewer = contact or c
     if request.method == 'POST':
         email_saisi = request.form.get('email', '').strip().lower()
         # Vérifier sans révéler si l'email existe ou non (sécurité)
-        if c.email and email_saisi == c.email.lower():
+        if viewer.email and email_saisi == viewer.email.lower():
             reset_tok = secrets.token_urlsafe(48)
-            c.reset_token = reset_tok
-            c.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+            viewer.reset_token = reset_tok
+            viewer.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
             db.session.commit()
             reset_url = url_for('portail_reset_confirm', reset_token=reset_tok, _external=True)
-            threading.Thread(target=lambda: envoyer_email_reset_portail(c, reset_url), daemon=True).start()
+            threading.Thread(target=lambda: envoyer_email_reset_portail(viewer, reset_url), daemon=True).start()
         # Message neutre dans tous les cas
         flash('Si cette adresse correspond à votre compte, vous recevrez un email sous quelques minutes.', 'info')
         return redirect(url_for('portail_access', token=token))
@@ -4136,8 +4220,10 @@ def portail_reset_request(token):
 @app.route('/portail/reset/<reset_token>', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_reset_confirm(reset_token):
-    c = Client.query.filter_by(reset_token=reset_token).first()
-    if not c or not c.reset_token_expiry or c.reset_token_expiry < datetime.utcnow():
+    contact = PortalContact.query.filter_by(reset_token=reset_token).first()
+    c = contact.client if contact else Client.query.filter_by(reset_token=reset_token).first()
+    viewer = contact or c
+    if not viewer or not viewer.reset_token_expiry or viewer.reset_token_expiry < datetime.utcnow():
         flash('Ce lien de réinitialisation est invalide ou expiré. Veuillez refaire une demande.', 'danger')
         return render_template('portal/access.html', client=None, token=None,
                                is_registered=True, mode='reset_expired')
@@ -4149,18 +4235,19 @@ def portail_reset_confirm(reset_token):
         elif pwd != cpwd:
             flash('Les mots de passe ne correspondent pas.', 'danger')
         else:
-            c.set_portal_password(pwd)
-            c.reset_token = None
-            c.reset_token_expiry = None
+            viewer.set_portal_password(pwd)
+            viewer.reset_token = None
+            viewer.reset_token_expiry = None
             db.session.commit()
             flash('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.', 'success')
-            return redirect(url_for('portail_access', token=c.access_token))
-    return render_template('portal/access.html', client=c, token=c.access_token,
+            return redirect(url_for('portail_access', token=viewer.access_token if contact else c.access_token))
+    return render_template('portal/access.html', client=c, token=viewer.access_token if contact else c.access_token,
                            is_registered=True, mode='reset_confirm', reset_token=reset_token)
 
 @app.route('/portail/<token>/dashboard')
 def portail_dashboard(token):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     now = datetime.now()
@@ -4189,7 +4276,8 @@ def portail_dashboard(token):
 
 @app.route('/portail/<token>/bon/<int:bid>/pdf')
 def portail_bon_pdf(token, bid):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     b = BonIntervention.query.get_or_404(bid)
@@ -4199,7 +4287,8 @@ def portail_bon_pdf(token, bid):
 
 @app.route('/portail/<token>/bon/<int:bid>/signer', methods=['POST'])
 def portail_signer(token, bid):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     b = BonIntervention.query.get_or_404(bid)
@@ -4226,7 +4315,8 @@ def portail_deconnexion(token):
 @app.route('/portail/<token>/intervention/<int:iid>/reporter', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=["POST"])
 def portail_reporter(token, iid):
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
+    c, _pc = _portail_resoudre(token)
+    if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     inter = Intervention.query.filter_by(id=iid, client_id=c.id).first_or_404()
@@ -4550,6 +4640,19 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
+            """CREATE TABLE IF NOT EXISTS portal_contacts (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER NOT NULL REFERENCES clients(id),
+                nom VARCHAR(100) NOT NULL,
+                email VARCHAR(120),
+                access_token VARCHAR(36) UNIQUE,
+                portal_password_hash VARCHAR(256),
+                actif BOOLEAN DEFAULT TRUE,
+                reset_token VARCHAR(64),
+                reset_token_expiry TIMESTAMP,
+                created_at TIMESTAMP,
+                derniere_connexion TIMESTAMP
+            )""",
             "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_frequence VARCHAR(30)",
             "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_gravite VARCHAR(20)",
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS niveau_risque VARCHAR(20)",
