@@ -10,5 +10,5 @@ Pillow>=10.0.0
 python-dotenv==1.0.1
 
 # Production uniquement
-gunicorn==22.0.0
+gunicorn==23.0.0
 psycopg[binary]>=3.1
