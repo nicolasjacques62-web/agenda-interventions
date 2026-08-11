@@ -1,4 +1,4 @@
-import os, uuid, io, csv, json, threading, time, base64, urllib.request, urllib.error, secrets
+import os, uuid, io, csv, json, threading, time, base64, urllib.request, urllib.error, urllib.parse, secrets
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import wraps
@@ -64,6 +64,9 @@ if _db_url.startswith('sqlite'):
 else:
     _connect_args = {'prepare_threshold': None}
 
+# Cookies sécurisés en production (HTTPS Render) — désactivés en local (SQLite, souvent http://localhost)
+_is_production = not _db_url.startswith('sqlite')
+
 app.config.update(
     SECRET_KEY=_secret,
     SQLALCHEMY_DATABASE_URI=_db_url,
@@ -75,6 +78,16 @@ app.config.update(
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,   # 16 Mo max par upload (rejeté par Flask avant traitement)
     WTF_CSRF_TIME_LIMIT=3600,               # Token CSRF valide 1 heure
     WTF_CSRF_SSL_STRICT=False,              # Render proxy : ne pas vérifier Referer strict
+    # ── Cookies de session ──
+    SESSION_COOKIE_HTTPONLY=True,           # inaccessible en JS (anti-vol via XSS)
+    SESSION_COOKIE_SAMESITE='Lax',          # anti-CSRF de base
+    SESSION_COOKIE_SECURE=_is_production,   # transmis en HTTPS uniquement en prod
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    # ── Cookie "Rester connecté" (Flask-Login) ──
+    REMEMBER_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_SAMESITE='Lax',
+    REMEMBER_COOKIE_SECURE=_is_production,
+    REMEMBER_COOKIE_DURATION=timedelta(days=14),
 )
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -95,6 +108,18 @@ limiter = Limiter(
 )
 
 # ── En-têtes de sécurité HTTP sur toutes les réponses ──
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://www.waze.com; "
+    "font-src 'self' https://cdn.jsdelivr.net data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'self'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Frame-Options']        = 'SAMEORIGIN'
@@ -102,7 +127,18 @@ def set_security_headers(response):
     response.headers['X-XSS-Protection']       = '1; mode=block'
     response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy']     = 'geolocation=(), microphone=()'
+    response.headers['Content-Security-Policy'] = _CSP
+    if _is_production:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
+
+# ── Protection anti open-redirect : n'autorise que les URLs relatives internes ──
+def _is_safe_redirect_url(target):
+    if not target:
+        return False
+    ref_url = urllib.parse.urlparse(request.host_url)
+    test_url = urllib.parse.urlparse(urllib.parse.urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
 
 # ── Gestionnaire d'erreur CSRF ──
 @app.errorhandler(CSRFError)
@@ -111,7 +147,8 @@ def handle_csrf_error(e):
     # Si l'utilisateur n'est pas connecté → rediriger vers login
     if not current_user.is_authenticated:
         return redirect(url_for('login'))
-    return redirect(request.referrer or url_for('dashboard'))
+    ref = request.referrer
+    return redirect(ref if ref and _is_safe_redirect_url(ref) else url_for('dashboard'))
 
 # ─── MODÈLES ──────────────────────────────────────────────────────────────────
 
@@ -2172,7 +2209,10 @@ def login():
         if u and u.check_password(request.form.get('password', '')):
             login_user(u, remember='remember' in request.form)
             flash(f'Bienvenue, {u.nom or u.username} !', 'success')
-            return redirect(request.args.get('next') or url_for('dashboard'))
+            next_url = request.args.get('next')
+            if next_url and _is_safe_redirect_url(next_url):
+                return redirect(next_url)
+            return redirect(url_for('dashboard'))
         flash('Identifiant ou mot de passe incorrect.', 'danger')
     return render_template('login.html')
 
@@ -2204,8 +2244,8 @@ def login_reset_confirm(reset_token):
     if request.method == 'POST':
         pwd  = request.form.get('password', '')
         cpwd = request.form.get('confirm_password', '')
-        if len(pwd) < 6:
-            flash('Mot de passe trop court (6 caractères minimum).', 'danger')
+        if len(pwd) < 8:
+            flash('Mot de passe trop court (8 caractères minimum).', 'danger')
         elif pwd != cpwd:
             flash('Les mots de passe ne correspondent pas.', 'danger')
         else:
@@ -3418,18 +3458,36 @@ def document_nouveau():
                            existing_types=existing_types,
                            types_prestation=TYPES_PRESTATION)
 
+# ── Types MIME autorisés à s'afficher "inline" dans le navigateur ──
+# Tout le reste (html, svg, js, xml...) est forcé en téléchargement pour
+# empêcher qu'un fichier uploadé avec un type MIME falsifié ne s'exécute
+# dans le navigateur au sein de l'origine de l'application (anti-XSS stocké).
+_MIME_INLINE_SAFE = {
+    'application/pdf', 'image/png', 'image/jpeg', 'image/jpg',
+    'image/gif', 'image/webp', 'image/bmp',
+}
+
+def _servir_document_technique(doc):
+    """Sert un DocumentTechnique en base64 de façon sûre : nom de fichier
+    assaini (anti-injection d'en-tête) et affichage inline restreint aux
+    types MIME sans risque d'exécution (PDF/images)."""
+    raw = base64.b64decode(doc.data)
+    mimetype = doc.mimetype or 'application/octet-stream'
+    dl = request.args.get('dl', '0') == '1'
+    as_attachment = dl or mimetype not in _MIME_INLINE_SAFE
+    return send_file(
+        io.BytesIO(raw),
+        mimetype=mimetype if mimetype in _MIME_INLINE_SAFE else 'application/octet-stream',
+        as_attachment=as_attachment,
+        download_name=doc.filename_orig or doc.nom or 'document',
+    )
+
 @app.route('/documents/<int:id>/voir')
 @login_required
 def document_voir(id):
     doc = DocumentTechnique.query.get_or_404(id)
     try:
-        raw = base64.b64decode(doc.data)
-        resp = make_response(raw)
-        resp.headers['Content-Type'] = doc.mimetype
-        dl = request.args.get('dl', '0') == '1'
-        disp = 'attachment' if dl else 'inline'
-        resp.headers['Content-Disposition'] = f'{disp}; filename="{doc.filename_orig or doc.nom}"'
-        return resp
+        return _servir_document_technique(doc)
     except Exception:
         flash('Erreur lors de l\'ouverture du document.', 'danger')
         return redirect(url_for('documents_liste'))
@@ -3479,13 +3537,7 @@ def portail_document_voir(token, did):
         return redirect(url_for('portail_access', token=token))
     doc = DocumentTechnique.query.get_or_404(did)
     try:
-        raw = base64.b64decode(doc.data)
-        resp = make_response(raw)
-        resp.headers['Content-Type'] = doc.mimetype
-        dl = request.args.get('dl', '0') == '1'
-        disp = 'attachment' if dl else 'inline'
-        resp.headers['Content-Disposition'] = f'{disp}; filename="{doc.filename_orig or doc.nom}"'
-        return resp
+        return _servir_document_technique(doc)
     except Exception:
         return redirect(url_for('portail_dashboard', token=token))
 
@@ -3964,8 +4016,9 @@ def plan_voir(plan_id):
     p = PlanAppatage.query.get_or_404(plan_id)
     data = base64.b64decode(p.data)
     ext = 'pdf' if p.mimetype == 'application/pdf' else p.nom.rsplit('.',1)[-1] if '.' in p.nom else 'jpg'
-    return send_file(io.BytesIO(data), mimetype=p.mimetype,
-                     download_name=f"plan_{p.client_id}_{p.id}.{ext}")
+    safe = p.mimetype in _MIME_INLINE_SAFE
+    return send_file(io.BytesIO(data), mimetype=p.mimetype if safe else 'application/octet-stream',
+                     as_attachment=not safe, download_name=f"plan_{p.client_id}_{p.id}.{ext}")
 
 @app.route('/clients/plans/<int:plan_id>/supprimer', methods=['POST'])
 @login_required
@@ -4014,8 +4067,9 @@ def bon_photo_ajouter(id):
 def bon_photo_voir(photo_id):
     p = BonPhoto.query.get_or_404(photo_id)
     img_bytes = base64.b64decode(p.data)
-    return send_file(io.BytesIO(img_bytes), mimetype=p.mimetype,
-                     download_name=p.nom)
+    safe = p.mimetype in _MIME_INLINE_SAFE
+    return send_file(io.BytesIO(img_bytes), mimetype=p.mimetype if safe else 'application/octet-stream',
+                     as_attachment=not safe, download_name=p.nom)
 
 @app.route('/bons/photos/<int:photo_id>/supprimer', methods=['POST'])
 @login_required
@@ -4039,8 +4093,8 @@ def portail_access(token):
         if action == 'register' and not c.portal_password_hash:
             pwd = request.form.get('password','')
             cpwd = request.form.get('confirm_password','')
-            if len(pwd) < 6:
-                flash('Mot de passe trop court (6 caractères minimum).', 'danger')
+            if len(pwd) < 8:
+                flash('Mot de passe trop court (8 caractères minimum).', 'danger')
             elif pwd != cpwd:
                 flash('Les mots de passe ne correspondent pas.', 'danger')
             else:
@@ -4090,8 +4144,8 @@ def portail_reset_confirm(reset_token):
     if request.method == 'POST':
         pwd  = request.form.get('password', '')
         cpwd = request.form.get('confirm_password', '')
-        if len(pwd) < 6:
-            flash('Mot de passe trop court (6 caractères minimum).', 'danger')
+        if len(pwd) < 8:
+            flash('Mot de passe trop court (8 caractères minimum).', 'danger')
         elif pwd != cpwd:
             flash('Les mots de passe ne correspondent pas.', 'danger')
         else:
@@ -4326,9 +4380,13 @@ def parametres():
                   'mail_use_tls','base_url','techniciens','types_intervention',
                   'adresse_depart']:
             if k in request.form:
+                if k == 'mail_password' and not request.form[k]:
+                    continue  # champ laissé vide = ne pas écraser le mot de passe SMTP existant
                 set_param(k, request.form[k])
         if request.form.get('nouveau_mdp'):
-            if request.form['nouveau_mdp'] == request.form.get('confirm_mdp',''):
+            if len(request.form['nouveau_mdp']) < 8:
+                flash('Mot de passe trop court (8 caractères minimum).', 'danger')
+            elif request.form['nouveau_mdp'] == request.form.get('confirm_mdp',''):
                 current_user.set_password(request.form['nouveau_mdp'])
                 db.session.commit()
                 flash('Mot de passe mis à jour.', 'success')
@@ -4337,7 +4395,8 @@ def parametres():
         flash('Paramètres enregistrés.', 'success')
         return redirect(url_for('parametres'))
     params = {p.cle: p.valeur for p in Parametre.query.all()}
-    return render_template('parametres.html', params=params)
+    mail_password_configure = bool(params.pop('mail_password', ''))
+    return render_template('parametres.html', params=params, mail_password_configure=mail_password_configure)
 
 @app.route('/parametres/maintenance/programmer', methods=['POST'])
 @login_required
@@ -4400,7 +4459,8 @@ def server_error(e):
 @app.errorhandler(429)
 def too_many_requests(e):
     flash('Trop de tentatives. Veuillez patienter une minute avant de réessayer.', 'warning')
-    return redirect(request.referrer or url_for('login'))
+    ref = request.referrer
+    return redirect(ref if ref and _is_safe_redirect_url(ref) else url_for('login'))
 
 # ─── INIT ─────────────────────────────────────────────────────────────────────
 
