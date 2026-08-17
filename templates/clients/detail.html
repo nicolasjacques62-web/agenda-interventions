@@ -391,14 +391,18 @@
         <div class="table-responsive">
           <table class="table table-hover mb-0">
             <thead class="table-light">
-              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
+              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>Adresse</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
             </thead>
             <tbody>
               {% for i in interventions %}
+              {% set adr = i.adresse or (client.adresse if client.adresse and client.adresse != 'None' else '') %}
               <tr class="priority-{{ i.priorite }}">
                 <td><small class="text-muted">{{ i.reference }}</small></td>
                 <td class="text-nowrap small">{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}</td>
                 <td>{{ i.titre }}</td>
+                <td class="small text-muted" style="max-width:200px" title="{{ adr }}">
+                  {% if adr %}<i class="bi bi-geo-alt me-1"></i>{{ adr | truncate(35) }}{% else %}—{% endif %}
+                </td>
                 <td>
                   {% if i.priorite == 'urgente' %}<span class="badge bg-danger">Urgente</span>
                   {% elif i.priorite == 'normale' %}<span class="badge bg-primary">Normale</span>
