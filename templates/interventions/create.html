@@ -39,6 +39,13 @@
                    value="{{ intervention.numero_bon_commande if intervention else '' }}"
                    placeholder="Ex : BC-2026-0456">
           </div>
+          <div class="col-md-6" id="portalContactWrap" style="display:none">
+            <label class="form-label fw-semibold">Sous-portail destinataire</label>
+            <select name="portal_contact_id" id="portalContactSelect" class="form-select">
+              <option value="">— Aucun (visible uniquement par le contact principal) —</option>
+            </select>
+            <div class="form-text">Ce client a des interlocuteurs secondaires (sous-portails) : choisissez lequel doit voir cette intervention dans son espace. Laissez vide pour que seul le contact principal la voie.</div>
+          </div>
           <div class="col-12">
             <label class="form-label fw-semibold">Titre <span class="text-danger">*</span></label>
             <input type="text" name="titre" class="form-control" required
@@ -153,6 +160,40 @@ document.addEventListener('DOMContentLoaded', () => {
   {% if not intervention %}
   autoFillAdresse(); // pré-remplissage initial si un client est déjà présélectionné
   {% endif %}
+});
+
+// Peuple le menu "Sous-portail destinataire" selon le client choisi.
+// contactsMap : {client_id: [{id, nom, email}, ...]} — seulement les clients
+// ayant des interlocuteurs secondaires y figurent.
+document.addEventListener('DOMContentLoaded', () => {
+  const contactsMap = {{ contacts_map | tojson }};
+  const clientSelect  = document.getElementById('clientSelect');
+  const wrap          = document.getElementById('portalContactWrap');
+  const contactSelect = document.getElementById('portalContactSelect');
+  if (!clientSelect || !wrap || !contactSelect) return;
+
+  const currentValue = "{{ intervention.portal_contact_id if intervention and intervention.portal_contact_id else '' }}";
+
+  function refreshContacts(preselect) {
+    const clientId = clientSelect.value;
+    const list = contactsMap[clientId] || [];
+    contactSelect.innerHTML = '<option value="">— Aucun (visible uniquement par le contact principal) —</option>';
+    if (!list.length) {
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = '';
+    list.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.nom + (c.email ? ' (' + c.email + ')' : '');
+      if (preselect && String(c.id) === String(preselect)) opt.selected = true;
+      contactSelect.appendChild(opt);
+    });
+  }
+
+  clientSelect.addEventListener('change', () => refreshContacts(null));
+  refreshContacts(currentValue); // état initial (création avec client présélectionné, ou modification)
 });
 </script>
 {% endblock %}

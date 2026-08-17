@@ -257,6 +257,7 @@ class Intervention(db.Model):
     notes = db.Column(db.Text)
     adresse = db.Column(db.Text)                       # adresse du site d'intervention (si différente de celle du client)
     numero_bon_commande = db.Column(db.String(50))      # n° de bon de commande client
+    portal_contact_id = db.Column(db.Integer, db.ForeignKey('portal_contacts.id'))  # sous-portail destinataire (optionnel)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Demande de report par le client depuis son portail
     demande_report_date    = db.Column(db.DateTime)       # date souhaitée par le client
@@ -265,6 +266,7 @@ class Intervention(db.Model):
     demande_report_at      = db.Column(db.DateTime)       # horodatage de la demande
     bon = db.relationship('BonIntervention', backref='intervention', uselist=False,
                           cascade='all, delete-orphan')
+    portal_contact = db.relationship('PortalContact', backref='interventions')
 
     @property
     def couleur(self):
@@ -2714,6 +2716,16 @@ def interventions_liste():
                            statut=statut, priorite=priorite, cid=cid,
                            vue=vue)
 
+def _portal_contacts_map():
+    """Retourne {client_id: [{id, nom, email}, ...]} pour tous les interlocuteurs
+    de portail actifs — utilisé pour peupler dynamiquement le menu déroulant
+    'Sous-portail destinataire' selon le client choisi dans le formulaire."""
+    contacts = PortalContact.query.filter_by(actif=True).order_by(PortalContact.nom).all()
+    m = {}
+    for c in contacts:
+        m.setdefault(c.client_id, []).append({'id': c.id, 'nom': c.nom, 'email': c.email or ''})
+    return m
+
 @app.route('/interventions/nouvelle', methods=['GET', 'POST'])
 @login_required
 def intervention_nouvelle():
@@ -2722,9 +2734,17 @@ def intervention_nouvelle():
             dp = datetime.strptime(request.form['date_planifiee'], '%Y-%m-%dT%H:%M')
         except ValueError:
             dp = datetime.strptime(request.form['date_planifiee'], '%Y-%m-%d %H:%M')
+        client_id = int(request.form['client_id'])
+        pc_id = request.form.get('portal_contact_id', '').strip()
+        portal_contact_id = int(pc_id) if pc_id else None
+        # Sécurité : l'interlocuteur choisi doit bien appartenir au client sélectionné
+        if portal_contact_id:
+            pc = PortalContact.query.get(portal_contact_id)
+            if not pc or pc.client_id != client_id:
+                portal_contact_id = None
         i = Intervention(
             reference=next_ref(Intervention, 'INT'),
-            client_id=int(request.form['client_id']),
+            client_id=client_id,
             titre=request.form['titre'].strip(),
             description=request.form.get('description','').strip(),
             type_intervention=request.form.get('type_intervention','').strip(),
@@ -2735,6 +2755,7 @@ def intervention_nouvelle():
             notes=request.form.get('notes','').strip(),
             adresse=request.form.get('adresse','').strip(),
             numero_bon_commande=request.form.get('numero_bon_commande','').strip(),
+            portal_contact_id=portal_contact_id,
         )
         db.session.add(i)
         db.session.commit()
@@ -2763,9 +2784,11 @@ def intervention_nouvelle():
     cid = request.args.get('client_id')
     techniciens = get_param('techniciens', '')
     types_inter = get_param('types_intervention', '')
+    contacts_map = _portal_contacts_map()
     return render_template('interventions/create.html', intervention=None,
                            clients=clients, cid=int(cid) if cid else None,
-                           techniciens=techniciens, types_inter=types_inter)
+                           techniciens=techniciens, types_inter=types_inter,
+                           contacts_map=contacts_map)
 
 @app.route('/interventions/<int:id>')
 @login_required
@@ -2793,15 +2816,24 @@ def intervention_modifier(id):
         i.notes = request.form.get('notes','').strip()
         i.adresse = request.form.get('adresse','').strip()
         i.numero_bon_commande = request.form.get('numero_bon_commande','').strip()
+        pc_id = request.form.get('portal_contact_id', '').strip()
+        portal_contact_id = int(pc_id) if pc_id else None
+        if portal_contact_id:
+            pc = PortalContact.query.get(portal_contact_id)
+            if not pc or pc.client_id != i.client_id:
+                portal_contact_id = None
+        i.portal_contact_id = portal_contact_id
         db.session.commit()
         flash('Intervention mise à jour.', 'success')
         return redirect(url_for('intervention_detail', id=id))
     clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
     techniciens = get_param('techniciens', '')
     types_inter = get_param('types_intervention', '')
+    contacts_map = _portal_contacts_map()
     return render_template('interventions/create.html', intervention=i,
                            clients=clients, cid=i.client_id,
-                           techniciens=techniciens, types_inter=types_inter)
+                           techniciens=techniciens, types_inter=types_inter,
+                           contacts_map=contacts_map)
 
 @app.route('/interventions/<int:id>/statut', methods=['POST'])
 @login_required
@@ -4252,22 +4284,26 @@ def portail_reset_confirm(reset_token):
 
 @app.route('/portail/<token>/dashboard')
 def portail_dashboard(token):
-    c, _pc = _portail_resoudre(token)
+    c, contact = _portail_resoudre(token)
     if not c: abort(404)
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     now = datetime.now()
-    a_venir = Intervention.query.filter_by(client_id=c.id)\
-        .filter(Intervention.date_planifiee >= now,
-                Intervention.statut.in_(['planifiee', 'en_cours']))\
+    inter_q = Intervention.query.filter_by(client_id=c.id)
+    bons_q = BonIntervention.query.join(Intervention).filter(Intervention.client_id == c.id)
+    # Interlocuteur secondaire (sous-portail) : ne voit que les interventions
+    # qui lui ont été explicitement assignées à la planification. Le contact
+    # principal du client (lien historique) continue de tout voir.
+    if contact:
+        inter_q = inter_q.filter(Intervention.portal_contact_id == contact.id)
+        bons_q = bons_q.filter(Intervention.portal_contact_id == contact.id)
+    a_venir = inter_q.filter(Intervention.date_planifiee >= now,
+                              Intervention.statut.in_(['planifiee', 'en_cours']))\
         .order_by(Intervention.date_planifiee.asc()).all()
-    passes = Intervention.query.filter_by(client_id=c.id)\
-        .filter(db.or_(Intervention.date_planifiee < now,
-                       Intervention.statut.in_(['terminee', 'annulee'])))\
+    passes = inter_q.filter(db.or_(Intervention.date_planifiee < now,
+                                    Intervention.statut.in_(['terminee', 'annulee'])))\
         .order_by(Intervention.date_planifiee.desc()).all()
-    bons = BonIntervention.query.join(Intervention)\
-        .filter(Intervention.client_id == c.id,
-                BonIntervention.statut.in_(['finalise', 'envoye', 'signe']))\
+    bons = bons_q.filter(BonIntervention.statut.in_(['finalise', 'envoye', 'signe']))\
         .order_by(BonIntervention.date_creation.desc()).all()
     audits = AuditClient.query.filter_by(client_id=c.id, statut='finalise')\
         .order_by(AuditClient.date_audit.desc()).all()
@@ -4714,6 +4750,7 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_at TIMESTAMP",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS adresse TEXT",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS portal_contact_id INTEGER REFERENCES portal_contacts(id)",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),

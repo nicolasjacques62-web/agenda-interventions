@@ -391,7 +391,7 @@
         <div class="table-responsive">
           <table class="table table-hover mb-0">
             <thead class="table-light">
-              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>Adresse</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
+              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>Adresse</th><th>Portail</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
             </thead>
             <tbody>
               {% for i in interventions %}
@@ -402,6 +402,10 @@
                 <td>{{ i.titre }}</td>
                 <td class="small text-muted" style="max-width:200px" title="{{ adr }}">
                   {% if adr %}<i class="bi bi-geo-alt me-1"></i>{{ adr | truncate(35) }}{% else %}—{% endif %}
+                </td>
+                <td class="small">
+                  {% if i.portal_contact %}<span class="badge bg-info text-dark">{{ i.portal_contact.nom }}</span>
+                  {% else %}<span class="text-muted">—</span>{% endif %}
                 </td>
                 <td>
                   {% if i.priorite == 'urgente' %}<span class="badge bg-danger">Urgente</span>

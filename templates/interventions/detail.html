@@ -39,6 +39,12 @@
           {% if intervention.numero_bon_commande %}
           <tr><td class="text-muted small fw-semibold">N° bon de commande</td><td>{{ intervention.numero_bon_commande }}</td></tr>
           {% endif %}
+          <tr><td class="text-muted small fw-semibold">Sous-portail</td>
+            <td>{% if intervention.portal_contact %}
+                  <span class="badge bg-info text-dark">{{ intervention.portal_contact.nom }}</span>
+                {% else %}
+                  <span class="text-muted small">Contact principal uniquement</span>
+                {% endif %}</td></tr>
         </table>
         {% if intervention.adresse %}
         <hr class="my-2">
