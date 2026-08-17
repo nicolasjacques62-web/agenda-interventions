@@ -14,8 +14,104 @@
 </a>
 {% endblock %}
 
+{#- ───────── Calculs d'avancement (hors blocks pour être visibles dans content ET scripts) ───────── #}
+{% set ck = audit.checklist %}
+{% set ck_items = [
+  ('especes_identifiees',    'Identification des espèces détectées'),
+  ('localisation_niveau',    'Localisation et niveau de l\'infestation'),
+  ('facteurs_favorisants',   'Facteurs locaux favorisant la prolifération'),
+  ('mesures_preventives',    'Mesures préventives pour éviter les proliférations'),
+  ('causes_profondes',       'Analyse des causes profondes et recommandations'),
+  ('evaluation_prestations', 'Évaluation des prestations précédentes'),
+] %}
+{% set ck_total = ck_items|length %}
+{% set ck_state = namespace(done=0) %}
+{% for field, label in ck_items %}{% if ck.get(field) %}{% set ck_state.done = ck_state.done + 1 %}{% endif %}{% endfor %}
+{% set ck_pct = ((ck_state.done / ck_total * 100)|round|int) if ck_total else 0 %}
+
+{% set niv = namespace(faible=0, moyen=0, eleve=0, critique=0) %}
+{% for n in audit.nuisibles %}
+  {% if n.niveau == 'faible' %}{% set niv.faible = niv.faible + 1 %}
+  {% elif n.niveau == 'moyen' %}{% set niv.moyen = niv.moyen + 1 %}
+  {% elif n.niveau == 'eleve' %}{% set niv.eleve = niv.eleve + 1 %}
+  {% elif n.niveau == 'critique' %}{% set niv.critique = niv.critique + 1 %}
+  {% endif %}
+{% endfor %}
+
+{% set diag_ok = (ck_state.done > 0) or (audit.nuisibles|length > 0) %}
+{% set plan_ok = (audit.traitements|length > 0) or (audit.mesures|length > 0) %}
+{% set reco_ok = audit.recommandations and audit.recommandations|trim|length > 0 %}
+{% set fin_ok  = audit.statut == 'finalise' %}
+{% set stage_state = namespace(n=0) %}
+{% for ok in [diag_ok, plan_ok, reco_ok, fin_ok] %}{% if ok %}{% set stage_state.n = stage_state.n + 1 %}{% endif %}{% endfor %}
+{% set overall_pct = (stage_state.n / 4 * 100)|round|int %}
+
 {% block content %}
 <div class="row g-3">
+
+  <!-- Vue d'ensemble : avancement + graphiques -->
+  <div class="col-12">
+    <div class="card mb-1">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-speedometer me-2"></i>Vue d'ensemble — Avancement de l'audit</span>
+        <span class="badge bg-{{ audit.statut_couleur }} fs-6">{{ audit.statut_label }}</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Stepper -->
+        <div class="d-flex align-items-center justify-content-between position-relative mb-4 px-2 audit-stepper">
+          {% set steps = [
+            ('Diagnostic', diag_ok, 'bi-clipboard2-check'),
+            ('Plan de gestion', plan_ok, 'bi-shield-check'),
+            ('Recommandations', reco_ok, 'bi-lightbulb'),
+            ('Finalisation', fin_ok, 'bi-check-circle'),
+          ] %}
+          {% for label, ok, icon in steps %}
+          <div class="text-center flex-fill position-relative step-item">
+            <div class="step-circle mx-auto {% if ok %}step-done{% else %}step-todo{% endif %}">
+              <i class="bi {{ icon }}"></i>
+            </div>
+            <div class="small mt-1 {% if ok %}fw-semibold text-dark{% else %}text-muted{% endif %}">{{ label }}</div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="progress mb-4" style="height:10px;">
+          <div class="progress-bar bg-{{ 'success' if overall_pct == 100 else 'primary' }}" role="progressbar"
+               style="width:{{ overall_pct }}%;" aria-valuenow="{{ overall_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+
+        <div class="row g-3 align-items-center">
+          <!-- Graphique complétude diagnostic -->
+          <div class="col-md-4 text-center">
+            <div style="height:150px;"><canvas id="chartDiag"></canvas></div>
+            <div class="small text-muted mt-2">Complétude du diagnostic (§4) : <strong>{{ ck_state.done }}/{{ ck_total }}</strong></div>
+          </div>
+
+          <!-- Graphique nuisibles par niveau -->
+          <div class="col-md-4 text-center">
+            <div style="height:150px;"><canvas id="chartNuisibles"></canvas></div>
+            <div class="small text-muted mt-2">Nuisibles par niveau de risque</div>
+          </div>
+
+          <!-- Tableau récap -->
+          <div class="col-md-4">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Étape</th><th class="text-end">Statut</th></tr></thead>
+              <tbody>
+                <tr><td class="small">Diagnostic (§4)</td><td class="text-end">{% if diag_ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td></tr>
+                <tr><td class="small">Plan de gestion (§5)</td><td class="text-end">{% if plan_ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td></tr>
+                <tr><td class="small">Recommandations</td><td class="text-end">{% if reco_ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td></tr>
+                <tr><td class="small">Finalisation</td><td class="text-end">{% if fin_ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td></tr>
+                <tr class="table-light"><td class="fw-semibold small">Avancement global</td><td class="text-end fw-bold">{{ overall_pct }}%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
   <!-- Sidebar -->
   <div class="col-lg-3">
@@ -35,7 +131,12 @@
           {% if audit.batiment %}<tr><td class="text-muted small fw-semibold">Bâtiment</td><td>{{ audit.batiment }}</td></tr>{% endif %}
           {% if audit.niveau_risque %}
           <tr><td class="text-muted small fw-semibold">Risque</td>
-              <td><span class="badge bg-{{ audit.niveau_couleur }}">{{ audit.niveau_label }}</span></td></tr>
+              <td>
+                <span class="badge" style="background-color:{{ audit.niveau_hex }}">{{ audit.niveau_label }}</span>
+                {% if audit.risque_frequence and audit.risque_gravite %}
+                <span class="text-muted small ms-1">({{ audit.risque_frequence_label }} × {{ audit.risque_gravite_label }})</span>
+                {% endif %}
+              </td></tr>
           {% endif %}
           <tr><td class="text-muted small fw-semibold">Créé le</td><td>{{ audit.created_at.strftime('%d/%m/%Y') }}</td></tr>
           {% if audit.date_finalisation %}
@@ -71,214 +172,390 @@
     </div>
   </div>
 
-  <!-- Contenu principal -->
+  <!-- Contenu principal : accordéon -->
   <div class="col-lg-9">
+    <div class="accordion" id="auditAccordion">
 
-    <!-- §4 Diagnostic d'infestation -->
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>§4 — Diagnostic d'infestation <small class="fw-normal opacity-75">(§5.3)</small></div>
-      <div class="card-body">
+      <!-- §4 Diagnostic d'infestation -->
+      <div class="accordion-item mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDiag" aria-expanded="true" aria-controls="collapseDiag">
+            <i class="bi bi-clipboard2-check me-2"></i>§4 — Diagnostic d'infestation
+            <small class="fw-normal opacity-75 ms-2">(§5.3)</small>
+            <span class="badge {% if diag_ok %}bg-success{% else %}bg-secondary{% endif %} ms-auto me-3">{{ ck_state.done }}/{{ ck_total }}</span>
+          </button>
+        </h2>
+        <div id="collapseDiag" class="accordion-collapse collapse show" data-bs-parent="#auditAccordion">
+          <div class="accordion-body">
 
-        <!-- Checklist -->
-        {% set ck = audit.checklist %}
-        {% if ck %}
-        {% set ck_items = [
-          ('especes_identifiees',    'Identification des espèces détectées'),
-          ('localisation_niveau',    'Localisation et niveau de l\'infestation'),
-          ('facteurs_favorisants',   'Facteurs locaux favorisant la prolifération'),
-          ('mesures_preventives',    'Mesures préventives pour éviter les proliférations'),
-          ('causes_profondes',       'Analyse des causes profondes et recommandations'),
-          ('evaluation_prestations', 'Évaluation des prestations précédentes'),
-        ] %}
-        <div class="mb-3">
-          <div class="fw-semibold small text-muted mb-2">Éléments obligatoires du diagnostic :</div>
-          <div class="row g-1">
-            {% for field, label in ck_items %}
-            <div class="col-md-6">
-              <span class="{% if ck.get(field) %}text-success{% else %}text-muted{% endif %} small">
-                <i class="bi bi-{% if ck.get(field) %}check-square-fill{% else %}square{% endif %} me-1"></i>{{ label }}
-              </span>
+            <!-- Sous-menu : Checklist -->
+            {% if ck %}
+            <div class="subsection mb-2">
+              <button class="btn btn-light btn-sm w-100 d-flex justify-content-between align-items-center subsection-toggle"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#subChecklist" aria-expanded="true" aria-controls="subChecklist">
+                <span><i class="bi bi-list-check me-1"></i>Éléments obligatoires du diagnostic</span>
+                <span>
+                  <span class="badge {% if diag_ok %}bg-success{% else %}bg-secondary{% endif %} me-2">{{ ck_state.done }}/{{ ck_total }}</span>
+                  <i class="bi bi-chevron-down"></i>
+                </span>
+              </button>
+              <div id="subChecklist" class="collapse show">
+                <div class="row g-1 pt-2 px-1">
+                  {% for field, label in ck_items %}
+                  <div class="col-md-6">
+                    <span class="{% if ck.get(field) %}text-success{% else %}text-muted{% endif %} small">
+                      <i class="bi bi-{% if ck.get(field) %}check-square-fill{% else %}square{% endif %} me-1"></i>{{ label }}
+                    </span>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
             </div>
-            {% endfor %}
+            {% endif %}
+
+            <!-- Sous-menu : Nuisibles -->
+            <div class="subsection mb-2">
+              <button class="btn btn-light btn-sm w-100 d-flex justify-content-between align-items-center subsection-toggle"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#subNuisibles" aria-expanded="{{ 'true' if audit.nuisibles else 'false' }}" aria-controls="subNuisibles">
+                <span><i class="bi bi-bug me-1"></i>Nuisibles détectés</span>
+                <span>
+                  <span class="badge {% if audit.nuisibles %}bg-danger{% else %}bg-secondary{% endif %} me-2">{{ audit.nuisibles|length }}</span>
+                  <i class="bi bi-chevron-down"></i>
+                </span>
+              </button>
+              <div id="subNuisibles" class="collapse {% if audit.nuisibles %}show{% endif %}">
+                <div class="pt-2">
+                  {% if audit.nuisibles %}
+                  <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                      <thead class="table-dark">
+                        <tr><th>Nuisible</th><th>Localisation & Niveau</th><th>Facteurs défav.</th><th>Risque</th><th>Actions préc.</th></tr>
+                      </thead>
+                      <tbody>
+                        {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
+                        {% for n in audit.nuisibles %}
+                        <tr>
+                          <td class="fw-semibold small">{{ n.label }}</td>
+                          <td class="small">{{ n.zones or '—' }}<br><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
+                          <td class="small text-muted">{{ n.facteurs or '—' }}</td>
+                          <td><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
+                          <td class="small text-muted">{{ n.actions_prec or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p class="text-muted small mb-0">Aucun nuisible détecté lors de cet audit.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+
+            <!-- Sous-menu : Causes profondes & communication -->
+            {% if audit.causes_profondes or audit.communication_labels %}
+            <div class="subsection mb-2">
+              <button class="btn btn-light btn-sm w-100 d-flex justify-content-between align-items-center subsection-toggle"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#subCauses" aria-expanded="false" aria-controls="subCauses">
+                <span><i class="bi bi-search me-1"></i>Causes profondes & communication client</span>
+                <i class="bi bi-chevron-down"></i>
+              </button>
+              <div id="subCauses" class="collapse">
+                <div class="row g-3 small pt-2 px-1">
+                  {% if audit.causes_profondes %}
+                  <div class="col-12">
+                    <div class="fw-semibold mb-1">Causes profondes identifiées</div>
+                    <p class="mb-0">{{ audit.causes_profondes }}</p>
+                  </div>{% endif %}
+                  {% if audit.communication_labels %}
+                  <div class="col-12">
+                    <div class="fw-semibold mb-1">Communication client (§5.3)</div>
+                    {% for lbl in audit.communication_labels %}
+                    <span class="badge bg-info text-dark me-1">{{ lbl }}</span>
+                    {% endfor %}
+                  </div>{% endif %}
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
           </div>
         </div>
-        {% endif %}
+      </div>
 
-        <!-- Nuisibles -->
-        {% if audit.nuisibles %}
-        <div class="fw-semibold small mb-2">Nuisibles détectés :</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm table-hover">
-            <thead class="table-dark">
-              <tr><th>Nuisible</th><th>Localisation & Niveau</th><th>Facteurs défav.</th><th>Risque</th><th>Actions préc.</th></tr>
-            </thead>
-            <tbody>
-              {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
-              {% for n in audit.nuisibles %}
-              <tr>
-                <td class="fw-semibold small">{{ n.label }}</td>
-                <td class="small">{{ n.zones or '—' }}<br><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
-                <td class="small text-muted">{{ n.facteurs or '—' }}</td>
-                <td><span class="badge bg-{{ niv_c.get(n.niveau,'secondary') }}">{{ n.niveau|capitalize }}</span></td>
-                <td class="small text-muted">{{ n.actions_prec or '—' }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <p class="text-muted small mb-3">Aucun nuisible détecté lors de cet audit.</p>
-        {% endif %}
+      <!-- §5 Plan de gestion -->
+      <div class="accordion-item mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button {% if not plan_ok %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePlan" aria-expanded="{{ 'true' if plan_ok else 'false' }}" aria-controls="collapsePlan">
+            <i class="bi bi-clipboard2-check me-2"></i>§5 — Plan de gestion des nuisibles
+            <small class="fw-normal opacity-75 ms-2">(§5.4, 5.5, 5.6)</small>
+            <span class="badge {% if plan_ok %}bg-success{% else %}bg-secondary{% endif %} ms-auto me-3">{% if plan_ok %}Rempli{% else %}Vide{% endif %}</span>
+          </button>
+        </h2>
+        <div id="collapsePlan" class="accordion-collapse collapse {% if plan_ok %}show{% endif %}" data-bs-parent="#auditAccordion">
+          <div class="accordion-body">
 
-        <div class="row g-3 small">
-          {% if audit.causes_profondes %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Causes profondes identifiées</div>
-            <p class="mb-0">{{ audit.causes_profondes }}</p>
-          </div>{% endif %}
-          {% if audit.communication_labels %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Communication client (§5.3)</div>
-            {% for lbl in audit.communication_labels %}
-            <span class="badge bg-info text-dark me-1">{{ lbl }}</span>
-            {% endfor %}
-          </div>{% endif %}
+            {% if audit.mesures_immediates %}
+            <div class="alert alert-warning py-2 small mb-3">
+              <strong><i class="bi bi-exclamation-triangle me-1"></i>Mesures immédiates :</strong> {{ audit.mesures_immediates }}
+            </div>{% endif %}
+
+            <!-- Sous-menu : Situation sur site & évaluation -->
+            <div class="subsection mb-2">
+              <button class="btn btn-light btn-sm w-100 d-flex justify-content-between align-items-center subsection-toggle"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#subSituation" aria-expanded="true" aria-controls="subSituation">
+                <span><i class="bi bi-geo-alt me-1"></i>Situation sur site & évaluation</span>
+                <i class="bi bi-chevron-down"></i>
+              </button>
+              <div id="subSituation" class="collapse show">
+                <div class="pt-2">
+                  {% if audit.situation_site %}
+                  <div class="mb-3">
+                    <div class="fw-semibold small text-muted mb-1">Situation sur site (§5.4)</div>
+                    <span class="badge {% if audit.situation_site == 'infestation_active' %}bg-danger{% elif audit.situation_site == 'risque_significatif' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                      {{ audit.situation_site_label }}
+                    </span>
+                  </div>{% endif %}
+                  <div class="row g-3 small">
+                    {% if audit.points_entree %}
+                    <div class="col-md-6">
+                      <div class="fw-semibold mb-1">Points d'entrée identifiés</div>
+                      <p class="mb-0">{{ audit.points_entree }}</p>
+                    </div>{% endif %}
+                    {% if audit.facteurs_favorisants %}
+                    <div class="col-md-6">
+                      <div class="fw-semibold mb-1">Observations terrain</div>
+                      <p class="mb-0">{{ audit.facteurs_favorisants }}</p>
+                    </div>{% endif %}
+                    {% if audit.evaluation_prestations %}
+                    <div class="col-12">
+                      <div class="fw-semibold mb-1">Évaluation des prestations précédentes</div>
+                      <p class="mb-0">{{ audit.evaluation_prestations }}</p>
+                    </div>{% endif %}
+                    {% if audit.conformite_haccp and audit.conformite_haccp != 'na' %}
+                    <div class="col-12">
+                      <div class="fw-semibold mb-1">Conformité HACCP (§5.5)</div>
+                      {% if audit.conformite_haccp == 'conforme' %}
+                        <span class="badge bg-success">✔ Conforme</span>
+                      {% else %}
+                        <span class="badge bg-danger">✘ Non conforme</span>
+                        {% if audit.non_conformites %}<p class="small mt-1 mb-0 text-danger">{{ audit.non_conformites }}</p>{% endif %}
+                      {% endif %}
+                    </div>{% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sous-menu : Traitements -->
+            <div class="subsection mb-2">
+              <button class="btn btn-light btn-sm w-100 d-flex justify-content-between align-items-center subsection-toggle"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#subTraitements" aria-expanded="{{ 'true' if audit.traitements else 'false' }}" aria-controls="subTraitements">
+                <span><i class="bi bi-droplet me-1"></i>Traitements préconisés (§5.6)</span>
+                <span>
+                  <span class="badge {% if audit.traitements %}bg-primary{% else %}bg-secondary{% endif %} me-2">{{ audit.traitements|length }}</span>
+                  <i class="bi bi-chevron-down"></i>
+                </span>
+              </button>
+              <div id="subTraitements" class="collapse {% if audit.traitements %}show{% endif %}">
+                <div class="pt-2">
+                  {% if audit.traitements %}
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                      <thead class="table-secondary"><tr><th>Traitement</th><th>Zones</th><th>Fréquence</th><th>Produit / Méthode</th></tr></thead>
+                      <tbody>
+                        {% for t in audit.traitements %}
+                        <tr class="small"><td>{{ t.type }}</td><td>{{ t.zones or '—' }}</td><td>{{ t.frequence or '—' }}</td><td>{{ t.produit or '—' }}</td></tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p class="text-muted small mb-0">Aucun traitement préconisé.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+
+            <!-- Sous-menu : Mesures préventives PCO / CLIENT -->
+            <div class="subsection mb-2">
+              <button class="btn btn-light btn-sm w-100 d-flex justify-content-between align-items-center subsection-toggle"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#subMesures" aria-expanded="{{ 'true' if audit.mesures else 'false' }}" aria-controls="subMesures">
+                <span><i class="bi bi-list-ul me-1"></i>Mesures préventives — PCO / Client</span>
+                <span>
+                  <span class="badge {% if audit.mesures %}bg-primary{% else %}bg-secondary{% endif %} me-2">{{ audit.mesures|length }}</span>
+                  <i class="bi bi-chevron-down"></i>
+                </span>
+              </button>
+              <div id="subMesures" class="collapse {% if audit.mesures %}show{% endif %}">
+                <div class="pt-2">
+                  {% if audit.mesures %}
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                      <thead style="background:#1e293b;color:#fff"><tr><th>Mesure préventive</th><th class="text-center">PCO</th><th class="text-center">Client</th></tr></thead>
+                      <tbody>
+                        {% for m in audit.mesures %}{% set i = loop.index %}
+                        <tr class="small">
+                          <td>{{ i }}. {{ m.mesure }}</td>
+                          <td class="text-center">{% if m.pco %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
+                          <td class="text-center">{% if m.client %}<i class="bi bi-check-circle-fill text-primary"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p class="text-muted small mb-0">Aucune mesure préventive renseignée.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-2 small mt-1">
+              {% if audit.frequence %}
+              <div class="col-sm-6"><strong>Fréquence recommandée :</strong> {{ audit.frequence }}</div>{% endif %}
+              {% if audit.prochaine_visite %}
+              <div class="col-sm-6"><strong>Prochaine visite :</strong> <span class="text-primary fw-semibold">{{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</span></div>{% endif %}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- §5 Plan de gestion -->
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-clipboard2-check me-2"></i>§5 — Plan de gestion des nuisibles <small class="fw-normal opacity-75">(§5.4, 5.5, 5.6)</small></div>
-      <div class="card-body">
-
-        <!-- Situation sur site -->
-        {% if audit.situation_site %}
-        <div class="mb-3">
-          <div class="fw-semibold small text-muted mb-1">Situation sur site (§5.4)</div>
-          <span class="badge {% if audit.situation_site == 'infestation_active' %}bg-danger{% elif audit.situation_site == 'risque_significatif' %}bg-warning text-dark{% else %}bg-success{% endif %}">
-            {{ audit.situation_site_label }}
-          </span>
-        </div>{% endif %}
-
-        <!-- Obs / points d'entrée / eval -->
-        <div class="row g-3 small mb-3">
-          {% if audit.points_entree %}
-          <div class="col-md-6">
-            <div class="fw-semibold mb-1">Points d'entrée identifiés</div>
-            <p class="mb-0">{{ audit.points_entree }}</p>
-          </div>{% endif %}
-          {% if audit.facteurs_favorisants %}
-          <div class="col-md-6">
-            <div class="fw-semibold mb-1">Observations terrain</div>
-            <p class="mb-0">{{ audit.facteurs_favorisants }}</p>
-          </div>{% endif %}
-          {% if audit.evaluation_prestations %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Évaluation des prestations précédentes</div>
-            <p class="mb-0">{{ audit.evaluation_prestations }}</p>
-          </div>{% endif %}
-          {% if audit.conformite_haccp and audit.conformite_haccp != 'na' %}
-          <div class="col-12">
-            <div class="fw-semibold mb-1">Conformité HACCP (§5.5)</div>
-            {% if audit.conformite_haccp == 'conforme' %}
-              <span class="badge bg-success">✔ Conforme</span>
-            {% else %}
-              <span class="badge bg-danger">✘ Non conforme</span>
-              {% if audit.non_conformites %}<p class="small mt-1 mb-0 text-danger">{{ audit.non_conformites }}</p>{% endif %}
-            {% endif %}
-          </div>{% endif %}
-        </div>
-
-        {% if audit.mesures_immediates %}
-        <div class="alert alert-warning py-2 small mb-3">
-          <strong><i class="bi bi-exclamation-triangle me-1"></i>Mesures immédiates :</strong> {{ audit.mesures_immediates }}
-        </div>{% endif %}
-
-        <!-- Traitements -->
-        {% if audit.traitements %}
-        <div class="fw-semibold small mb-2">Traitements préconisés (§5.6)</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm table-bordered">
-            <thead class="table-secondary"><tr><th>Traitement</th><th>Zones</th><th>Fréquence</th><th>Produit / Méthode</th></tr></thead>
-            <tbody>
-              {% for t in audit.traitements %}
-              <tr class="small"><td>{{ t.type }}</td><td>{{ t.zones or '—' }}</td><td>{{ t.frequence or '—' }}</td><td>{{ t.produit or '—' }}</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>{% endif %}
-
-        <!-- Mesures préventives PCO / CLIENT -->
-        {% if audit.mesures %}
-        <div class="fw-semibold small mb-2">Mesures préventives — Responsabilité PCO / Client</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm table-bordered">
-            <thead style="background:#1e293b;color:#fff"><tr><th>Mesure préventive</th><th class="text-center">PCO</th><th class="text-center">Client</th></tr></thead>
-            <tbody>
-              {% for m in audit.mesures %}{% set i = loop.index %}
-              <tr class="small">
-                <td>{{ i }}. {{ m.mesure }}</td>
-                <td class="text-center">{% if m.pco %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
-                <td class="text-center">{% if m.client %}<i class="bi bi-check-circle-fill text-primary"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>{% endif %}
-
-        <div class="row g-2 small">
-          {% if audit.frequence %}
-          <div class="col-sm-6"><strong>Fréquence recommandée :</strong> {{ audit.frequence }}</div>{% endif %}
-          {% if audit.prochaine_visite %}
-          <div class="col-sm-6"><strong>Prochaine visite :</strong> <span class="text-primary fw-semibold">{{ audit.prochaine_visite.strftime('%d/%m/%Y') }}</span></div>{% endif %}
+      <!-- Recommandations -->
+      {% if audit.recommandations %}
+      <div class="accordion-item mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReco" aria-expanded="false" aria-controls="collapseReco">
+            <i class="bi bi-lightbulb me-2"></i>Recommandations
+            <span class="badge bg-success ms-auto me-3">Rempli</span>
+          </button>
+        </h2>
+        <div id="collapseReco" class="accordion-collapse collapse" data-bs-parent="#auditAccordion">
+          <div class="accordion-body small">{{ audit.recommandations }}</div>
         </div>
       </div>
-    </div>
-
-    <!-- Recommandations -->
-    {% if audit.recommandations %}
-    <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recommandations</div>
-      <div class="card-body small">{{ audit.recommandations }}</div>
-    </div>{% endif %}
-
-    <!-- AMDEC -->
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-shield-exclamation me-2"></i>AMDEC — Analyse des risques</span>
-        <a href="{{ url_for('amdec_nouvelle', client_id=audit.client_id, audit_id=audit.id, categorie='metier') }}"
-           class="btn btn-outline-primary btn-sm">
-          <i class="bi bi-plus-lg me-1"></i>Ajouter une fiche
-        </a>
-      </div>
-      {% if audit.amdec_fiches %}
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0">
-            <thead class="table-light">
-              <tr><th>Mode de défaillance</th><th class="text-center">G</th><th class="text-center">F</th><th class="text-center">D</th><th class="text-center">Criticité</th><th></th></tr>
-            </thead>
-            <tbody>
-              {% for f in audit.amdec_fiches|sort(attribute='criticite', reverse=true) %}
-              <tr>
-                <td class="small">{{ f.mode_defaillance[:60] }}{% if f.mode_defaillance|length > 60 %}…{% endif %}</td>
-                <td class="text-center small">{{ f.gravite }}</td>
-                <td class="text-center small">{{ f.frequence }}</td>
-                <td class="text-center small">{{ f.detectabilite }}</td>
-                <td class="text-center"><span class="badge bg-{{ f.niveau[1] }}">{{ f.criticite }}</span></td>
-                <td class="text-end"><a href="{{ url_for('amdec_detail', id=f.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {% else %}
-      <div class="card-body text-muted small">Aucune fiche AMDEC liée à cet audit. Les fiches liées apparaissent aussi dans le PDF du rapport.</div>
       {% endif %}
-    </div>
 
+      <!-- AMDEC -->
+      <div class="accordion-item mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAmdec" aria-expanded="false" aria-controls="collapseAmdec">
+            <i class="bi bi-shield-exclamation me-2"></i>AMDEC — Analyse des risques
+            <span class="badge {% if audit.amdec_fiches %}bg-primary{% else %}bg-secondary{% endif %} ms-auto me-3">{{ audit.amdec_fiches|length }}</span>
+          </button>
+        </h2>
+        <div id="collapseAmdec" class="accordion-collapse collapse" data-bs-parent="#auditAccordion">
+          <div class="accordion-body p-0">
+            <div class="d-flex justify-content-end p-2">
+              <a href="{{ url_for('amdec_nouvelle', client_id=audit.client_id, audit_id=audit.id, categorie='metier') }}"
+                 class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-plus-lg me-1"></i>Ajouter une fiche
+              </a>
+            </div>
+            {% if audit.amdec_fiches %}
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                  <tr><th>Mode de défaillance</th><th class="text-center">G</th><th class="text-center">F</th><th class="text-center">D</th><th class="text-center">Criticité</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {% for f in audit.amdec_fiches|sort(attribute='criticite', reverse=true) %}
+                  <tr>
+                    <td class="small">{{ f.mode_defaillance[:60] }}{% if f.mode_defaillance|length > 60 %}…{% endif %}</td>
+                    <td class="text-center small">{{ f.gravite }}</td>
+                    <td class="text-center small">{{ f.frequence }}</td>
+                    <td class="text-center small">{{ f.detectabilite }}</td>
+                    <td class="text-center"><span class="badge bg-{{ f.niveau[1] }}">{{ f.criticite }}</span></td>
+                    <td class="text-end"><a href="{{ url_for('amdec_detail', id=f.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="p-3 text-muted small">Aucune fiche AMDEC liée à cet audit. Les fiches liées apparaissent aussi dans le PDF du rapport.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
+
+<style>
+.audit-stepper::before {
+  content: "";
+  position: absolute;
+  top: 21px; left: 8%; right: 8%;
+  height: 2px;
+  background: #dee2e6;
+  z-index: 0;
+}
+.step-item { z-index: 1; }
+.step-circle {
+  width: 42px; height: 42px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; border: 2px solid #dee2e6; background: #fff;
+}
+.step-done { border-color: var(--hps-blue, #1AABE3); background: var(--hps-blue, #1AABE3); color: #fff; }
+.step-todo { color: #adb5bd; }
+.accordion-button:not(.collapsed) { background-color: var(--hps-blue-light, #E8F6FC); color: var(--hps-dark, #0a1628); }
+.accordion-button:focus { box-shadow: none; }
+
+.subsection-toggle {
+  border: 1px solid #e8f0f6;
+  font-weight: 600;
+  color: var(--hps-dark, #0a1628);
+}
+.subsection-toggle:hover { background-color: var(--hps-blue-light, #E8F6FC); }
+.subsection-toggle .bi-chevron-down { transition: transform .2s ease; }
+.subsection-toggle[aria-expanded="true"] .bi-chevron-down { transform: rotate(180deg); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var diagCtx = document.getElementById('chartDiag');
+  if (diagCtx) {
+    new Chart(diagCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Complété', 'Restant'],
+        datasets: [{
+          data: [{{ ck_state.done }}, {{ ck_total - ck_state.done }}],
+          backgroundColor: ['#1AABE3', '#e9ecef'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '70%',
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  var nuisCtx = document.getElementById('chartNuisibles');
+  if (nuisCtx) {
+    new Chart(nuisCtx, {
+      type: 'bar',
+      data: {
+        labels: ['Faible', 'Moyen', 'Élevé', 'Critique'],
+        datasets: [{
+          data: [{{ niv.faible }}, {{ niv.moyen }}, {{ niv.eleve }}, {{ niv.critique }}],
+          backgroundColor: ['#27ae60', '#f39c12', '#e74c3c', '#c0392b'],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  }
+});
+</script>
 {% endblock %}

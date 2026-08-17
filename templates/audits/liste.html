@@ -39,7 +39,7 @@
             <td class="small text-muted">{{ a.type_site or '—' }}</td>
             <td>
               {% if a.niveau_risque %}
-              <span class="badge bg-{{ niv_c.get(a.niveau_risque, 'secondary') }}">{{ a.niveau_label }}</span>
+              <span class="badge" style="background-color:{{ a.niveau_hex }}">{{ a.niveau_label }}</span>
               {% else %}—{% endif %}
             </td>
             <td><span class="badge bg-{{ a.statut_couleur }}">{{ a.statut_label }}</span></td>

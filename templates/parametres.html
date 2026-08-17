@@ -152,8 +152,9 @@
           <div class="col-12">
             <label class="form-label fw-semibold">Mot de passe SMTP</label>
             <input type="password" name="mail_password" class="form-control"
-                   value="{{ params.get('mail_password','') }}" placeholder="••••••••">
-            <div class="form-text">Pour Gmail : utilisez un mot de passe d'application.</div>
+                   value="" placeholder="{{ '•••••••• (déjà configuré — laisser vide pour ne pas modifier)' if mail_password_configure else 'Mot de passe / mot de passe application' }}"
+                   autocomplete="new-password">
+            <div class="form-text">Pour Gmail : utilisez un mot de passe d'application. Laissez ce champ vide pour conserver le mot de passe actuellement enregistré.</div>
           </div>
           <div class="col-12">
             <div class="form-check">

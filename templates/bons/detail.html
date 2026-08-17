@@ -60,6 +60,15 @@
             <td>{% set h = bon.temps_passe // 60 %}{% set m = bon.temps_passe % 60 %}
               {{ h ~ 'h' ~ '%02d'|format(m) if h else m|string ~ ' min' }}</td></tr>
           {% endif %}
+          {% if bon.niveau_risque %}
+          <tr><td class="text-muted small fw-semibold">Risque</td>
+              <td>
+                <span class="badge" style="background-color:{{ bon.niveau_hex }}">{{ bon.niveau_label }}</span>
+                {% if bon.risque_frequence and bon.risque_gravite %}
+                <span class="text-muted small ms-1">({{ bon.risque_frequence_label }} × {{ bon.risque_gravite_label }})</span>
+                {% endif %}
+              </td></tr>
+          {% endif %}
         </table>
 
         {% if bon.signature_client %}

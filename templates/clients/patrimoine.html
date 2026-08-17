@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Patrimoine — {{ client.nom_affichage }}{% endblock %}
+{% block page_title %}<i class="bi bi-buildings me-2"></i>Patrimoine — {{ client.nom_affichage }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('client_detail', id=client.id) }}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-arrow-left me-1"></i>Retour au client
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small text-muted fw-semibold mb-1">Secteur</label>
+        <select name="secteur" class="form-select form-select-sm">
+          <option value="">Tous les secteurs</option>
+          {% for s in secteurs %}
+          <option value="{{ s }}" {% if s == secteur %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted fw-semibold mb-1">Commune</label>
+        <select name="commune" class="form-select form-select-sm">
+          <option value="">Toutes les communes</option>
+          {% for c in communes %}
+          <option value="{{ c }}" {% if c == commune %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted fw-semibold mb-1">Type</label>
+        <select name="type_log" class="form-select form-select-sm">
+          <option value="">Tous les types</option>
+          {% for t in types_log %}
+          <option value="{{ t }}" {% if t == type_log %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted fw-semibold mb-1">Nature</label>
+        <select name="nature" class="form-select form-select-sm">
+          <option value="">Toutes natures</option>
+          {% for n in natures %}
+          <option value="{{ n }}" {% if n == nature %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-10">
+        <label class="form-label small text-muted fw-semibold mb-1">Recherche libre (bâtiment, voirie, n° logement, code bât., module, programme, tranche, escalier...)</label>
+        <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Ex: BATIMENT 4, QUAI DE LA PASSERELLE, FR57, 423CFR0104...">
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm flex-fill">
+          <i class="bi bi-search me-1"></i>Filtrer
+        </button>
+        {% if secteur or commune or type_log or nature or q %}
+        <a href="{{ url_for('client_patrimoine', id=client.id) }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-x-lg"></i>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-buildings me-2"></i>Logements</span>
+    <span class="badge bg-light text-dark border">
+      {{ pagination.total }} résultat(s) {% if pagination.total != total %}sur {{ total }} au total{% endif %}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    {% if logements %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Secteur</th>
+            <th>Programme</th>
+            <th>Tranche</th>
+            <th>Commune</th>
+            <th>Voirie</th>
+            <th>Code bât.</th>
+            <th>Bâtiment</th>
+            <th>Escalier</th>
+            <th>Module</th>
+            <th>Logement</th>
+            <th>Étage</th>
+            <th>Type</th>
+            <th>Nature</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in logements %}
+          <tr>
+            <td class="small text-muted">{{ l.secteur or '—' }}</td>
+            <td class="small text-muted">{{ l.programme or '—' }}</td>
+            <td class="small text-muted">{{ l.tranche or '—' }}</td>
+            <td class="small fw-semibold">{{ l.commune or '—' }}</td>
+            <td class="small">{{ l.numero_voirie or '' }} {{ l.voirie or '' }}</td>
+            <td class="small fw-bold">{{ l.code_batiment or '—' }}</td>
+            <td class="small">
+              {% if l.batiment_est_adresse %}
+              <span class="text-muted" title="{{ l.batiment }}">— <span class="small">(= adresse)</span></span>
+              {% else %}
+              {{ l.batiment or '—' }}
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ l.code_escalier or '—' }}</td>
+            <td class="small text-muted">{{ l.module or '—' }}</td>
+            <td class="small">{{ l.numero_logement or '—' }}</td>
+            <td class="small text-muted">{{ l.etage or '—' }}</td>
+            <td class="small"><span class="badge bg-light text-dark border">{{ l.type_logement or '—' }}</span></td>
+            <td class="small text-muted">{{ l.nature_batiment or '—' }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('audit_nouveau', id=client.id, batiment=(l.code_batiment or l.batiment or '') + (' — Log. ' + l.numero_logement if l.numero_logement else '') + (', ' + l.commune if l.commune else ''), type_site='Logement particulier') }}"
+                 title="Créer un audit pour ce logement">
+                <i class="bi bi-plus-lg me-1"></i>Créer audit
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pagination.pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center p-3 border-top">
+      <span class="small text-muted">Page {{ pagination.page }} / {{ pagination.pages }}</span>
+      <div class="btn-group btn-group-sm">
+        <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
+           href="{{ url_for('client_patrimoine', id=client.id, secteur=secteur, commune=commune, type_log=type_log, nature=nature, q=q, page=pagination.prev_num) }}">
+          <i class="bi bi-chevron-left"></i> Précédent
+        </a>
+        <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
+           href="{{ url_for('client_patrimoine', id=client.id, secteur=secteur, commune=commune, type_log=type_log, nature=nature, q=q, page=pagination.next_num) }}">
+          Suivant <i class="bi bi-chevron-right"></i>
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-buildings fs-1 d-block mb-3"></i>
+      <p class="mb-0">Aucun logement ne correspond à ces critères.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

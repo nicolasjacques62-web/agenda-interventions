@@ -1,4 +1,4 @@
-import os, uuid, io, csv, json, threading, time, base64, urllib.request, urllib.error, urllib.parse, secrets
+import os, uuid, io, json, threading, time, base64, urllib.request, urllib.error, secrets
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import wraps
@@ -64,9 +64,6 @@ if _db_url.startswith('sqlite'):
 else:
     _connect_args = {'prepare_threshold': None}
 
-# Cookies sécurisés en production (HTTPS Render) — désactivés en local (SQLite, souvent http://localhost)
-_is_production = not _db_url.startswith('sqlite')
-
 app.config.update(
     SECRET_KEY=_secret,
     SQLALCHEMY_DATABASE_URI=_db_url,
@@ -78,16 +75,6 @@ app.config.update(
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,   # 16 Mo max par upload (rejeté par Flask avant traitement)
     WTF_CSRF_TIME_LIMIT=3600,               # Token CSRF valide 1 heure
     WTF_CSRF_SSL_STRICT=False,              # Render proxy : ne pas vérifier Referer strict
-    # ── Cookies de session ──
-    SESSION_COOKIE_HTTPONLY=True,           # inaccessible en JS (anti-vol via XSS)
-    SESSION_COOKIE_SAMESITE='Lax',          # anti-CSRF de base
-    SESSION_COOKIE_SECURE=_is_production,   # transmis en HTTPS uniquement en prod
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
-    # ── Cookie "Rester connecté" (Flask-Login) ──
-    REMEMBER_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_SAMESITE='Lax',
-    REMEMBER_COOKIE_SECURE=_is_production,
-    REMEMBER_COOKIE_DURATION=timedelta(days=14),
 )
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -108,18 +95,6 @@ limiter = Limiter(
 )
 
 # ── En-têtes de sécurité HTTP sur toutes les réponses ──
-_CSP = (
-    "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
-    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://www.waze.com; "
-    "font-src 'self' https://cdn.jsdelivr.net data:; "
-    "connect-src 'self'; "
-    "frame-ancestors 'self'; "
-    "base-uri 'self'; "
-    "form-action 'self'"
-)
-
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Frame-Options']        = 'SAMEORIGIN'
@@ -127,18 +102,7 @@ def set_security_headers(response):
     response.headers['X-XSS-Protection']       = '1; mode=block'
     response.headers['Referrer-Policy']        = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy']     = 'geolocation=(), microphone=()'
-    response.headers['Content-Security-Policy'] = _CSP
-    if _is_production:
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
-
-# ── Protection anti open-redirect : n'autorise que les URLs relatives internes ──
-def _is_safe_redirect_url(target):
-    if not target:
-        return False
-    ref_url = urllib.parse.urlparse(request.host_url)
-    test_url = urllib.parse.urlparse(urllib.parse.urljoin(request.host_url, target))
-    return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
 
 # ── Gestionnaire d'erreur CSRF ──
 @app.errorhandler(CSRFError)
@@ -147,8 +111,7 @@ def handle_csrf_error(e):
     # Si l'utilisateur n'est pas connecté → rediriger vers login
     if not current_user.is_authenticated:
         return redirect(url_for('login'))
-    ref = request.referrer
-    return redirect(ref if ref and _is_safe_redirect_url(ref) else url_for('dashboard'))
+    return redirect(request.referrer or url_for('dashboard'))
 
 # ─── MODÈLES ──────────────────────────────────────────────────────────────────
 
@@ -160,8 +123,6 @@ class User(UserMixin, db.Model):
     nom = db.Column(db.String(100))
     email = db.Column(db.String(120))
     is_admin = db.Column(db.Boolean, default=True)
-    reset_token = db.Column(db.String(64))                 # token réinitialisation MDP admin
-    reset_token_expiry = db.Column(db.DateTime)            # expiration du token (1h)
 
     def set_password(self, p): self.password_hash = generate_password_hash(p)
     def check_password(self, p): return check_password_hash(self.password_hash, p)
@@ -219,28 +180,6 @@ class Client(db.Model):
         return check_password_hash(self.portal_password_hash, p) if self.portal_password_hash else False
 
 
-class PortalContact(db.Model):
-    """Interlocuteur supplémentaire d'un client — son propre lien + mot de
-    passe pour accéder au même espace portail que le client principal."""
-    __tablename__ = 'portal_contacts'
-    id = db.Column(db.Integer, primary_key=True)
-    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
-    nom = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120))
-    access_token = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
-    portal_password_hash = db.Column(db.String(256))
-    actif = db.Column(db.Boolean, default=True)
-    reset_token = db.Column(db.String(64))
-    reset_token_expiry = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    derniere_connexion = db.Column(db.DateTime)
-    client = db.relationship('Client', backref=db.backref('portal_contacts', cascade='all, delete-orphan'))
-
-    def set_portal_password(self, p): self.portal_password_hash = generate_password_hash(p)
-    def check_portal_password(self, p):
-        return check_password_hash(self.portal_password_hash, p) if self.portal_password_hash else False
-
-
 class Intervention(db.Model):
     __tablename__ = 'interventions'
     id = db.Column(db.Integer, primary_key=True)
@@ -255,8 +194,6 @@ class Intervention(db.Model):
     duree_estimee = db.Column(db.Integer, default=60)
     technicien = db.Column(db.String(100))
     notes = db.Column(db.Text)
-    adresse = db.Column(db.Text)                       # adresse du site d'intervention (si différente de celle du client)
-    numero_bon_commande = db.Column(db.String(50))      # n° de bon de commande client
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Demande de report par le client depuis son portail
     demande_report_date    = db.Column(db.DateTime)       # date souhaitée par le client
@@ -305,9 +242,6 @@ class BonIntervention(db.Model):
     date_signature = db.Column(db.DateTime)
     signature_image = db.Column(db.Text)        # base64 PNG de la signature
     signature_technicien = db.Column(db.Text)   # base64 PNG signature technicien
-    niveau_risque = db.Column(db.String(20))
-    risque_frequence = db.Column(db.String(30))   # clé GRILLE_FREQUENCES
-    risque_gravite = db.Column(db.String(20))      # clé GRILLE_GRAVITES
 
     @property
     def statut_label(self):
@@ -318,22 +252,6 @@ class BonIntervention(db.Model):
     def statut_couleur(self):
         return {'brouillon': 'secondary', 'finalise': 'primary',
                 'envoye': 'info', 'signe': 'success'}.get(self.statut, 'secondary')
-
-    @property
-    def niveau_label(self):
-        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('label', '—')
-
-    @property
-    def niveau_hex(self):
-        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('hex', '#95a5a6')
-
-    @property
-    def risque_frequence_label(self):
-        return _label_grille(self.risque_frequence, GRILLE_FREQUENCES)
-
-    @property
-    def risque_gravite_label(self):
-        return _label_grille(self.risque_gravite, GRILLE_GRAVITES)
 
 
 NUISIBLES_TYPES = [
@@ -350,49 +268,6 @@ NUISIBLES_TYPES = [
     ('autres',     'Autres nuisibles'),
 ]
 
-# ─── Grille AMDEC de classification du risque (Fréquence × Gravité) ───────────
-# Grille qualitative à 2 axes utilisée pour le "niveau de risque global" d'un
-# audit ou d'un bon d'intervention. Distincte des fiches AMDEC détaillées
-# (S × O × D → NPR) qui restent utilisées ligne par ligne.
-GRILLE_FREQUENCES = [
-    ('frequent',        'Fréquent'),
-    ('probable',        'Probable'),
-    ('occasionnel',     'Occasionnel'),
-    ('rare',             'Rare'),
-    ('improbable',       'Improbable'),
-    ('invraisemblable',  'Invraisemblable'),
-]
-GRILLE_GRAVITES = [
-    ('insignifiant', 'Insignifiant'),
-    ('marginal',      'Marginal'),
-    ('critique',      'Critique'),
-]
-GRILLE_NIVEAUX = {
-    'negligeable':  {'label': 'Négligeable',  'hex': '#27ae60'},
-    'acceptable':   {'label': 'Acceptable',   'hex': '#f1c40f'},
-    'indesirable':  {'label': 'Indésirable',  'hex': '#e67e22'},
-    'inacceptable': {'label': 'Inacceptable', 'hex': '#e74c3c'},
-    # anciennes valeurs de l'audit (compatibilité descendante des fiches déjà en base) :
-    'faible':  {'label': 'Faible',  'hex': '#27ae60'},
-    'moyen':   {'label': 'Moyen',   'hex': '#f1c40f'},
-    'eleve':   {'label': 'Élevé',   'hex': '#e67e22'},
-}
-GRILLE_MATRIX = {
-    ('frequent', 'insignifiant'): 'acceptable',    ('frequent', 'marginal'): 'inacceptable',    ('frequent', 'critique'): 'inacceptable',
-    ('probable', 'insignifiant'): 'acceptable',    ('probable', 'marginal'): 'indesirable',     ('probable', 'critique'): 'inacceptable',
-    ('occasionnel', 'insignifiant'): 'acceptable', ('occasionnel', 'marginal'): 'indesirable',  ('occasionnel', 'critique'): 'inacceptable',
-    ('rare', 'insignifiant'): 'negligeable',       ('rare', 'marginal'): 'acceptable',          ('rare', 'critique'): 'indesirable',
-    ('improbable', 'insignifiant'): 'negligeable', ('improbable', 'marginal'): 'negligeable',   ('improbable', 'critique'): 'acceptable',
-    ('invraisemblable', 'insignifiant'): 'negligeable', ('invraisemblable', 'marginal'): 'negligeable', ('invraisemblable', 'critique'): 'negligeable',
-}
-
-def calculer_niveau_risque(frequence, gravite):
-    """Fréquence + Gravité (clés GRILLE_FREQUENCES / GRILLE_GRAVITES) → niveau (clé GRILLE_NIVEAUX)."""
-    return GRILLE_MATRIX.get((frequence, gravite))
-
-def _label_grille(cle, source):
-    return dict(source).get(cle, cle or '—')
-
 class AuditClient(db.Model):
     __tablename__ = 'audits_clients'
     id = db.Column(db.Integer, primary_key=True)
@@ -408,8 +283,6 @@ class AuditClient(db.Model):
     causes_profondes = db.Column(db.Text)
     evaluation_prestations = db.Column(db.Text)
     niveau_risque = db.Column(db.String(20))
-    risque_frequence = db.Column(db.String(30))   # clé GRILLE_FREQUENCES
-    risque_gravite = db.Column(db.String(20))      # clé GRILLE_GRAVITES
     communication_client = db.Column(db.String(50))
     # §5.4 Analyse de la situation
     situation_site = db.Column(db.String(30))
@@ -462,25 +335,11 @@ class AuditClient(db.Model):
 
     @property
     def niveau_label(self):
-        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('label', '—')
-
-    @property
-    def niveau_hex(self):
-        return GRILLE_NIVEAUX.get(self.niveau_risque or '', {}).get('hex', '#95a5a6')
+        return {'faible': 'Faible ✔', 'moyen': 'Moyen ⚠', 'eleve': 'Élevé ⚠', 'critique': 'Critique ⛔'}.get(self.niveau_risque or '', '—')
 
     @property
     def niveau_couleur(self):
-        # Conservé pour compatibilité (classes Bootstrap approximatives) — préférer niveau_hex.
-        return {'negligeable': 'success', 'acceptable': 'warning', 'indesirable': 'warning', 'inacceptable': 'danger',
-                'faible': 'success', 'moyen': 'warning', 'eleve': 'danger'}.get(self.niveau_risque or '', 'secondary')
-
-    @property
-    def risque_frequence_label(self):
-        return _label_grille(self.risque_frequence, GRILLE_FREQUENCES)
-
-    @property
-    def risque_gravite_label(self):
-        return _label_grille(self.risque_gravite, GRILLE_GRAVITES)
+        return {'faible': 'success', 'moyen': 'warning', 'eleve': 'danger', 'critique': 'danger'}.get(self.niveau_risque or '', 'secondary')
 
     @property
     def situation_site_label(self):
@@ -678,15 +537,6 @@ class PatrimoineLogement(db.Model):
     def libelle(self):
         return f"{self.batiment or ''} — Log. {self.numero_logement or '?'} (ét. {self.etage or '?'}) — {self.commune or ''}".strip(' —')
 
-    @property
-    def batiment_est_adresse(self):
-        """Heuristique : le champ Bâtiment répète en fait l'adresse (numéro
-        de voirie identique en tête) plutôt qu'un nom de bâtiment court —
-        certains secteurs d'AMSOM saisissent l'adresse complète ici."""
-        if not self.batiment or not self.numero_voirie:
-            return False
-        return self.batiment.strip().upper().startswith(self.numero_voirie.strip().upper())
-
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 # Noms français des jours et mois (indépendant de la locale système)
@@ -798,8 +648,6 @@ def _parse_audit_form(form):
         causes_profondes=form.get('causes_profondes', '').strip(),
         evaluation_prestations=form.get('evaluation_prestations', '').strip(),
         niveau_risque=form.get('niveau_risque', '').strip(),
-        risque_frequence=form.get('risque_frequence', '').strip() or None,
-        risque_gravite=form.get('risque_gravite', '').strip() or None,
         communication_client=','.join(v for v in form.getlist('communication_client') if v),
         situation_site=form.get('situation_site', '').strip(),
         points_entree=form.get('points_entree', '').strip(),
@@ -874,62 +722,6 @@ def _sig_to_image(b64_data, max_w=7*cm, max_h=3*cm):
         return img
     except Exception:
         return ''
-
-def _pdf_bloc_grille_risque(styles, frequence, gravite, niveau):
-    """Retourne les flowables ReportLab affichant la grille AMDEC Fréquence x
-    Gravité complète, avec la cellule correspondant au risque évalué mise en
-    évidence (bordure épaisse). Retourne [] si aucune notation n'a été saisie."""
-    if not frequence or not gravite:
-        return []
-    s_h2 = ParagraphStyle('gh2', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', spaceAfter=3, spaceBefore=6)
-    s_cell = ParagraphStyle('gc', parent=styles['Normal'], fontSize=7.5, alignment=TA_CENTER)
-    s_cell_b = ParagraphStyle('gcb', parent=styles['Normal'], fontSize=7.5, alignment=TA_CENTER, fontName='Helvetica-Bold')
-
-    freq_keys = [k for k, _ in GRILLE_FREQUENCES]
-    grav_keys = [k for k, _ in GRILLE_GRAVITES]
-
-    header = [Paragraph('<b>Fréquence \\ Gravité</b>', s_cell_b)] + \
-             [Paragraph(f"<b>{l}</b>", s_cell_b) for _, l in GRILLE_GRAVITES]
-    data = [header]
-    row_idx_select = col_idx_select = None
-    for ri, (fk, fl) in enumerate(GRILLE_FREQUENCES, start=1):
-        row = [Paragraph(fl, s_cell_b)]
-        for ci, (gk, gl) in enumerate(GRILLE_GRAVITES, start=1):
-            niv = GRILLE_MATRIX.get((fk, gk))
-            label = GRILLE_NIVEAUX.get(niv, {}).get('label', '')
-            is_selected = (fk == frequence and gk == gravite)
-            if is_selected:
-                row_idx_select, col_idx_select = ri, ci
-                row.append(Paragraph(f"<b>{label}</b>", s_cell_b))
-            else:
-                row.append(Paragraph(label, s_cell))
-        data.append(row)
-
-    t = Table(data, colWidths=[3.3*cm] + [3.5*cm]*3)
-    style_cmds = [
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#f0f6fa')),
-        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('PADDING', (0, 0), (-1, -1), 5),
-    ]
-    for ri, (fk, _) in enumerate(GRILLE_FREQUENCES, start=1):
-        for ci, (gk, _) in enumerate(GRILLE_GRAVITES, start=1):
-            niv = GRILLE_MATRIX.get((fk, gk))
-            hexcol = GRILLE_NIVEAUX.get(niv, {}).get('hex', '#ffffff')
-            style_cmds.append(('BACKGROUND', (ci, ri), (ci, ri), colors.HexColor(hexcol)))
-    if row_idx_select is not None:
-        style_cmds.append(('BOX', (col_idx_select, row_idx_select), (col_idx_select, row_idx_select), 2.2, colors.HexColor('#000000')))
-    t.setStyle(TableStyle(style_cmds))
-
-    niv_info = GRILLE_NIVEAUX.get(niveau or '', {})
-    resultat = Paragraph(
-        f"Risque évalué : <b><font color='{niv_info.get('hex', '#000')}'>{niv_info.get('label', '—')}</font></b> "
-        f"(Fréquence : {_label_grille(frequence, GRILLE_FREQUENCES)} — Gravité : {_label_grille(gravite, GRILLE_GRAVITES)})",
-        ParagraphStyle('gres', parent=styles['Normal'], fontSize=8.5, spaceBefore=4))
-
-    return [Paragraph("NIVEAU DE RISQUE GLOBAL — GRILLE AMDEC", s_h2), t, resultat, Spacer(1, 0.4*cm)]
 
 def generer_pdf(bon):
     if not PDF_OK:
@@ -1024,9 +816,6 @@ def generer_pdf(bon):
     ]))
     elems.append(t)
     elems.append(Spacer(1, 0.5*cm))
-
-    # ── Grille AMDEC Fréquence x Gravité (case surlignée) ──
-    elems.extend(_pdf_bloc_grille_risque(styles, bon.risque_frequence, bon.risque_gravite, bon.niveau_risque))
 
     if inter.description:
         elems.append(Paragraph("Description :", s_h))
@@ -1383,66 +1172,6 @@ def envoyer_notif_client(client, sujet, titre_notif, corps_texte, lien_portail=N
         return False, str(e)
 
 
-def envoyer_email_reset_admin(user, reset_url):
-    """Envoie un email de réinitialisation de mot de passe pour un compte admin."""
-    api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
-    if not api_key:
-        return False, "Clé API Brevo manquante."
-    if not user.email:
-        return False, "Pas d'email pour ce compte."
-    soc = get_param('societe', 'HPS')
-    email_exp = get_param('email', '')
-    html = f"""
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
-      <div style="background:#1e293b;padding:20px 24px;border-radius:10px 10px 0 0">
-        <h2 style="color:#fff;margin:0;font-size:18px">{soc}</h2>
-        <p style="color:#94a3b8;margin:4px 0 0;font-size:13px">Espace administration</p>
-      </div>
-      <div style="background:#fff;padding:28px 24px;border:1px solid #e2e8f0;border-top:none">
-        <p style="font-size:15px">Bonjour <strong>{user.nom or user.username}</strong>,</p>
-        <p style="font-size:14px;color:#475569">
-          Vous avez demandé la réinitialisation de votre mot de passe administrateur.<br>
-          Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.
-          <br><strong>Ce lien est valable 1 heure.</strong>
-        </p>
-        <div style="text-align:center;margin:28px 0">
-          <a href="{reset_url}"
-             style="background:#1aabe3;color:#fff;padding:13px 32px;border-radius:8px;
-                    text-decoration:none;font-weight:600;font-size:15px;display:inline-block">
-            🔑 Réinitialiser mon mot de passe
-          </a>
-        </div>
-        <p style="font-size:12px;color:#94a3b8">
-          Si vous n'avez pas fait cette demande, ignorez cet email.<br>
-          Lien : <a href="{reset_url}" style="color:#1aabe3">{reset_url}</a>
-        </p>
-      </div>
-      <div style="background:#f8fafc;padding:12px 24px;border-radius:0 0 10px 10px;
-                  font-size:11px;color:#94a3b8;text-align:center">
-        {soc}{f' — {email_exp}' if email_exp else ''} — Ne pas répondre à cet email
-      </div>
-    </div>"""
-    payload = json.dumps({
-        "subject": f"Réinitialisation de votre mot de passe admin — {soc}",
-        "htmlContent": html,
-        "sender": {"name": soc, "email": email_exp or "no-reply@hps-interventions.fr"},
-        "to": [{"email": user.email, "name": user.nom or user.username}],
-    }).encode('utf-8')
-    try:
-        req = urllib.request.Request(
-            'https://api.brevo.com/v3/smtp/email', data=payload,
-            headers={'api-key': api_key, 'Content-Type': 'application/json'}, method='POST')
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if resp.status in (200, 201, 202):
-                return True, "Email de réinitialisation envoyé."
-            return False, f"Erreur Brevo : statut {resp.status}"
-    except urllib.error.HTTPError as e:
-        body = e.read().decode('utf-8', errors='replace')
-        return False, f"Erreur Brevo {e.code} : {body}"
-    except Exception as e:
-        return False, str(e)
-
-
 def envoyer_email_reset_portail(client, reset_url):
     """Envoie un email de réinitialisation de mot de passe portail client."""
     api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
@@ -1452,7 +1181,7 @@ def envoyer_email_reset_portail(client, reset_url):
         return False, "Pas d'email pour ce client."
     soc = get_param('societe', 'HPS')
     email_exp = get_param('email', '')
-    prenom = getattr(client, 'prenom', None) or client.nom
+    prenom = client.prenom or client.nom
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
       <div style="background:#1e293b;padding:20px 24px;border-radius:10px 10px 0 0">
@@ -1645,13 +1374,13 @@ def generer_pdf_audit(audit):
     elems.append(Spacer(1, 0.4*cm))
 
     # ── Titre ──
-    titre_couleur = audit.niveau_hex if audit.niveau_risque else '#1aabe3'
+    titre_couleur = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}.get(audit.niveau_risque or '', '#1aabe3')
     elems.append(Paragraph("DIAGNOSTIC D'INFESTATION & PLAN DE GESTION DES NUISIBLES", s_titre))
     elems.append(Paragraph(f"Référence : <b>{audit.reference}</b>", ParagraphStyle('ref', parent=styles['Normal'], fontSize=9, alignment=TA_CENTER, spaceAfter=6)))
     elems.append(Spacer(1, 0.3*cm))
 
     # ── Identification du site ──
-    niv_couleur_hex = audit.niveau_hex if audit.niveau_risque else '#1aabe3'
+    niv_couleur_hex = {'faible':'#27ae60','moyen':'#f39c12','eleve':'#e74c3c','critique':'#c0392b'}.get(audit.niveau_risque or '', '#1aabe3')
     adresse_cli = f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip()
     info_data = [
         ['SOCIÉTÉ / CLIENT', cli.nom_affichage,           'DATE DIAGNOSTIC', audit.date_audit.strftime('%d/%m/%Y')],
@@ -1672,9 +1401,6 @@ def generer_pdf_audit(audit):
     ]))
     elems.append(ti)
     elems.append(Spacer(1, 0.5*cm))
-
-    # ── Grille AMDEC Fréquence x Gravité (case surlignée) ──
-    elems.extend(_pdf_bloc_grille_risque(styles, audit.risque_frequence, audit.risque_gravite, audit.niveau_risque))
 
     # ── VUE D'ENSEMBLE — Avancement de l'audit (miroir de la page web) ──
     ck_pre = audit.checklist
@@ -2233,53 +1959,9 @@ def login():
         if u and u.check_password(request.form.get('password', '')):
             login_user(u, remember='remember' in request.form)
             flash(f'Bienvenue, {u.nom or u.username} !', 'success')
-            next_url = request.args.get('next')
-            if next_url and _is_safe_redirect_url(next_url):
-                return redirect(next_url)
-            return redirect(url_for('dashboard'))
+            return redirect(request.args.get('next') or url_for('dashboard'))
         flash('Identifiant ou mot de passe incorrect.', 'danger')
     return render_template('login.html')
-
-@app.route('/login/mot-de-passe-oublie', methods=['GET', 'POST'])
-@limiter.limit("5 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
-def login_reset_request():
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        u = User.query.filter_by(username=username).first()
-        # Message neutre dans tous les cas (sécurité : ne pas révéler si le compte/email existe)
-        if u and u.email:
-            reset_tok = secrets.token_urlsafe(48)
-            u.reset_token = reset_tok
-            u.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
-            db.session.commit()
-            reset_url = url_for('login_reset_confirm', reset_token=reset_tok, _external=True)
-            threading.Thread(target=lambda: envoyer_email_reset_admin(u, reset_url), daemon=True).start()
-        flash("Si ce compte a un email associé, vous recevrez un lien de réinitialisation sous quelques minutes.", 'info')
-        return redirect(url_for('login'))
-    return render_template('login.html', mode='reset_request')
-
-@app.route('/login/reset/<reset_token>', methods=['GET', 'POST'])
-@limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
-def login_reset_confirm(reset_token):
-    u = User.query.filter_by(reset_token=reset_token).first()
-    if not u or not u.reset_token_expiry or u.reset_token_expiry < datetime.utcnow():
-        flash("Ce lien de réinitialisation est invalide ou expiré. Veuillez refaire une demande.", 'danger')
-        return redirect(url_for('login_reset_request'))
-    if request.method == 'POST':
-        pwd  = request.form.get('password', '')
-        cpwd = request.form.get('confirm_password', '')
-        if len(pwd) < 8:
-            flash('Mot de passe trop court (8 caractères minimum).', 'danger')
-        elif pwd != cpwd:
-            flash('Les mots de passe ne correspondent pas.', 'danger')
-        else:
-            u.set_password(pwd)
-            u.reset_token = None
-            u.reset_token_expiry = None
-            db.session.commit()
-            flash('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.', 'success')
-            return redirect(url_for('login'))
-    return render_template('login.html', mode='reset_confirm', reset_token=reset_token)
 
 @app.route('/logout')
 @login_required
@@ -2443,8 +2125,6 @@ def client_patrimoine(id):
 
     secteur = request.args.get('secteur', '')
     commune = request.args.get('commune', '')
-    type_log = request.args.get('type_log', '')
-    nature = request.args.get('nature', '')
     q = request.args.get('q', '').strip()
     page = request.args.get('page', 1, type=int)
 
@@ -2453,21 +2133,12 @@ def client_patrimoine(id):
         query = query.filter(PatrimoineLogement.secteur == secteur)
     if commune:
         query = query.filter(PatrimoineLogement.commune == commune)
-    if type_log:
-        query = query.filter(PatrimoineLogement.type_logement == type_log)
-    if nature:
-        query = query.filter(PatrimoineLogement.nature_batiment == nature)
     if q:
         query = query.filter(db.or_(
             PatrimoineLogement.batiment.ilike(f'%{q}%'),
             PatrimoineLogement.voirie.ilike(f'%{q}%'),
             PatrimoineLogement.numero_logement.ilike(f'%{q}%'),
             PatrimoineLogement.code_batiment.ilike(f'%{q}%'),
-            PatrimoineLogement.module.ilike(f'%{q}%'),
-            PatrimoineLogement.programme.ilike(f'%{q}%'),
-            PatrimoineLogement.tranche.ilike(f'%{q}%'),
-            PatrimoineLogement.code_escalier.ilike(f'%{q}%'),
-            PatrimoineLogement.numero_voirie.ilike(f'%{q}%'),
         ))
 
     pagination = query.order_by(
@@ -2478,17 +2149,11 @@ def client_patrimoine(id):
                 .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.secteur).all() if r[0]]
     communes = [r[0] for r in db.session.query(PatrimoineLogement.commune)
                 .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.commune).all() if r[0]]
-    types_log = [r[0] for r in db.session.query(PatrimoineLogement.type_logement)
-                .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.type_logement).all() if r[0]]
-    natures = [r[0] for r in db.session.query(PatrimoineLogement.nature_batiment)
-                .filter_by(client_id=id).distinct().order_by(PatrimoineLogement.nature_batiment).all() if r[0]]
     total = PatrimoineLogement.query.filter_by(client_id=id).count()
 
     return render_template('clients/patrimoine.html', client=client, pagination=pagination,
                            logements=pagination.items, secteurs=secteurs, communes=communes,
-                           types_log=types_log, natures=natures,
-                           secteur=secteur, commune=commune, type_log=type_log, nature=nature,
-                           q=q, total=total)
+                           secteur=secteur, commune=commune, q=q, total=total)
 
 @app.route('/clients/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
@@ -2597,43 +2262,6 @@ def portail_regenerer(id):
     flash('Lien régénéré. L\'ancien lien est invalidé.', 'success')
     return redirect(url_for('client_detail', id=id))
 
-@app.route('/clients/<int:id>/portail/interlocuteurs/ajouter', methods=['POST'])
-@login_required
-def portail_contact_ajouter(id):
-    c = Client.query.get_or_404(id)
-    nom = request.form.get('nom', '').strip()
-    email = request.form.get('email', '').strip()
-    if not nom:
-        flash('Indiquez un nom pour cet interlocuteur.', 'warning')
-        return redirect(url_for('client_detail', id=id))
-    contact = PortalContact(client_id=c.id, nom=nom, email=email or None)
-    db.session.add(contact)
-    db.session.commit()
-    flash(f'Interlocuteur « {nom} » ajouté — un lien de connexion dédié a été créé.', 'success')
-    return redirect(url_for('client_detail', id=id))
-
-@app.route('/clients/portail/interlocuteurs/<int:contact_id>/desactiver', methods=['POST'])
-@login_required
-def portail_contact_desactiver(contact_id):
-    contact = PortalContact.query.get_or_404(contact_id)
-    cid = contact.client_id
-    contact.actif = not contact.actif
-    db.session.commit()
-    etat = "réactivé" if contact.actif else "désactivé"
-    flash(f'Accès de « {contact.nom} » {etat}.', 'success')
-    return redirect(url_for('client_detail', id=cid))
-
-@app.route('/clients/portail/interlocuteurs/<int:contact_id>/supprimer', methods=['POST'])
-@login_required
-def portail_contact_supprimer(contact_id):
-    contact = PortalContact.query.get_or_404(contact_id)
-    cid = contact.client_id
-    nom = contact.nom
-    db.session.delete(contact)
-    db.session.commit()
-    flash(f'Interlocuteur « {nom} » supprimé.', 'info')
-    return redirect(url_for('client_detail', id=cid))
-
 # ─── AGENDA / INTERVENTIONS ───────────────────────────────────────────────────
 
 @app.route('/agenda')
@@ -2733,8 +2361,6 @@ def intervention_nouvelle():
             duree_estimee=int(request.form.get('duree_estimee', 60) or 60),
             technicien=request.form.get('technicien','').strip(),
             notes=request.form.get('notes','').strip(),
-            adresse=request.form.get('adresse','').strip(),
-            numero_bon_commande=request.form.get('numero_bon_commande','').strip(),
         )
         db.session.add(i)
         db.session.commit()
@@ -2791,8 +2417,6 @@ def intervention_modifier(id):
         i.duree_estimee = int(request.form.get('duree_estimee', 60) or 60)
         i.technicien = request.form.get('technicien','').strip()
         i.notes = request.form.get('notes','').strip()
-        i.adresse = request.form.get('adresse','').strip()
-        i.numero_bon_commande = request.form.get('numero_bon_commande','').strip()
         db.session.commit()
         flash('Intervention mise à jour.', 'success')
         return redirect(url_for('intervention_detail', id=id))
@@ -2851,9 +2475,6 @@ def bon_nouveau():
             recommandations=request.form.get('recommandations','').strip(),
             temps_passe=int(request.form['temps_passe']) if request.form.get('temps_passe') else None,
             materiaux_utilises=json.dumps(mats, ensure_ascii=False) if mats else None,
-            niveau_risque=request.form.get('niveau_risque', '').strip() or None,
-            risque_frequence=request.form.get('risque_frequence', '').strip() or None,
-            risque_gravite=request.form.get('risque_gravite', '').strip() or None,
         )
         db.session.add(b)
         inter.statut = 'terminee'
@@ -2884,9 +2505,7 @@ def bon_nouveau():
                            preconisations_modeles=PRECONISATIONS_MODELES,
                            amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
-                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
-                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX)
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[])
 
 @app.route('/bons/<int:id>')
 @login_required
@@ -2924,9 +2543,6 @@ def bon_modifier(id):
         b.observations = request.form.get('observations','').strip()
         b.recommandations = request.form.get('recommandations','').strip()
         b.temps_passe = int(request.form['temps_passe']) if request.form.get('temps_passe') else None
-        b.niveau_risque = request.form.get('niveau_risque', '').strip() or None
-        b.risque_frequence = request.form.get('risque_frequence', '').strip() or None
-        b.risque_gravite = request.form.get('risque_gravite', '').strip() or None
         mats = _extract_mats(request)
         b.materiaux_utilises = json.dumps(mats, ensure_ascii=False) if mats else None
         if request.form.get('finaliser'):
@@ -2972,9 +2588,7 @@ def bon_modifier(id):
                            amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=b.amdec_fiches,
-                           amdec_fiches_json=_amdec_fiches_json(b.amdec_fiches),
-                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX)
+                           amdec_fiches_json=_amdec_fiches_json(b.amdec_fiches))
 
 def _extract_mats(req):
     desig = req.form.getlist('mat_designation[]')
@@ -3257,11 +2871,7 @@ def audit_nouveau(id):
                            nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
                            today=today, amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
-                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
-                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX,
-                           prefill_batiment=request.args.get('batiment', '').strip(),
-                           prefill_type_site=request.args.get('type_site', '').strip())
+                           amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[])
 
 @app.route('/audits/<int:id>')
 @login_required
@@ -3288,9 +2898,7 @@ def audit_modifier(id):
                            today=today, amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=audit.amdec_fiches,
-                           amdec_fiches_json=_amdec_fiches_json(audit.amdec_fiches),
-                           grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX)
+                           amdec_fiches_json=_amdec_fiches_json(audit.amdec_fiches))
 
 @app.route('/audits/<int:id>/finaliser', methods=['POST'])
 @login_required
@@ -3428,8 +3036,7 @@ def amdec_supprimer(id):
 
 @app.route('/portail/<token>/audits/<int:aid>')
 def portail_audit_detail(token, aid):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     audit = AuditClient.query.filter_by(id=aid, client_id=c.id, statut='finalise').first_or_404()
@@ -3437,8 +3044,7 @@ def portail_audit_detail(token, aid):
 
 @app.route('/portail/<token>/audits/<int:aid>/pdf')
 def portail_audit_pdf(token, aid):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     audit = AuditClient.query.filter_by(id=aid, client_id=c.id, statut='finalise').first_or_404()
@@ -3525,36 +3131,18 @@ def document_nouveau():
                            existing_types=existing_types,
                            types_prestation=TYPES_PRESTATION)
 
-# ── Types MIME autorisés à s'afficher "inline" dans le navigateur ──
-# Tout le reste (html, svg, js, xml...) est forcé en téléchargement pour
-# empêcher qu'un fichier uploadé avec un type MIME falsifié ne s'exécute
-# dans le navigateur au sein de l'origine de l'application (anti-XSS stocké).
-_MIME_INLINE_SAFE = {
-    'application/pdf', 'image/png', 'image/jpeg', 'image/jpg',
-    'image/gif', 'image/webp', 'image/bmp',
-}
-
-def _servir_document_technique(doc):
-    """Sert un DocumentTechnique en base64 de façon sûre : nom de fichier
-    assaini (anti-injection d'en-tête) et affichage inline restreint aux
-    types MIME sans risque d'exécution (PDF/images)."""
-    raw = base64.b64decode(doc.data)
-    mimetype = doc.mimetype or 'application/octet-stream'
-    dl = request.args.get('dl', '0') == '1'
-    as_attachment = dl or mimetype not in _MIME_INLINE_SAFE
-    return send_file(
-        io.BytesIO(raw),
-        mimetype=mimetype if mimetype in _MIME_INLINE_SAFE else 'application/octet-stream',
-        as_attachment=as_attachment,
-        download_name=doc.filename_orig or doc.nom or 'document',
-    )
-
 @app.route('/documents/<int:id>/voir')
 @login_required
 def document_voir(id):
     doc = DocumentTechnique.query.get_or_404(id)
     try:
-        return _servir_document_technique(doc)
+        raw = base64.b64decode(doc.data)
+        resp = make_response(raw)
+        resp.headers['Content-Type'] = doc.mimetype
+        dl = request.args.get('dl', '0') == '1'
+        disp = 'attachment' if dl else 'inline'
+        resp.headers['Content-Disposition'] = f'{disp}; filename="{doc.filename_orig or doc.nom}"'
+        return resp
     except Exception:
         flash('Erreur lors de l\'ouverture du document.', 'danger')
         return redirect(url_for('documents_liste'))
@@ -3571,8 +3159,7 @@ def document_supprimer(id):
 
 @app.route('/portail/<token>/documents')
 def portail_documents(token):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     # Si le client a des documents spécifiquement associés → les utiliser
@@ -3600,13 +3187,18 @@ def portail_documents(token):
 
 @app.route('/portail/<token>/documents/<int:did>/voir')
 def portail_document_voir(token, did):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     doc = DocumentTechnique.query.get_or_404(did)
     try:
-        return _servir_document_technique(doc)
+        raw = base64.b64decode(doc.data)
+        resp = make_response(raw)
+        resp.headers['Content-Type'] = doc.mimetype
+        dl = request.args.get('dl', '0') == '1'
+        disp = 'attachment' if dl else 'inline'
+        resp.headers['Content-Disposition'] = f'{disp}; filename="{doc.filename_orig or doc.nom}"'
+        return resp
     except Exception:
         return redirect(url_for('portail_dashboard', token=token))
 
@@ -4085,9 +3677,8 @@ def plan_voir(plan_id):
     p = PlanAppatage.query.get_or_404(plan_id)
     data = base64.b64decode(p.data)
     ext = 'pdf' if p.mimetype == 'application/pdf' else p.nom.rsplit('.',1)[-1] if '.' in p.nom else 'jpg'
-    safe = p.mimetype in _MIME_INLINE_SAFE
-    return send_file(io.BytesIO(data), mimetype=p.mimetype if safe else 'application/octet-stream',
-                     as_attachment=not safe, download_name=f"plan_{p.client_id}_{p.id}.{ext}")
+    return send_file(io.BytesIO(data), mimetype=p.mimetype,
+                     download_name=f"plan_{p.client_id}_{p.id}.{ext}")
 
 @app.route('/clients/plans/<int:plan_id>/supprimer', methods=['POST'])
 @login_required
@@ -4136,9 +3727,8 @@ def bon_photo_ajouter(id):
 def bon_photo_voir(photo_id):
     p = BonPhoto.query.get_or_404(photo_id)
     img_bytes = base64.b64decode(p.data)
-    safe = p.mimetype in _MIME_INLINE_SAFE
-    return send_file(io.BytesIO(img_bytes), mimetype=p.mimetype if safe else 'application/octet-stream',
-                     as_attachment=not safe, download_name=p.nom)
+    return send_file(io.BytesIO(img_bytes), mimetype=p.mimetype,
+                     download_name=p.nom)
 
 @app.route('/bons/photos/<int:photo_id>/supprimer', methods=['POST'])
 @login_required
@@ -4152,71 +3742,50 @@ def bon_photo_supprimer(photo_id):
 
 # ─── PORTAIL CLIENT ───────────────────────────────────────────────────────────
 
-def _portail_resoudre(token):
-    """Résout un token de portail — soit le token historique du client
-    (Client.access_token), soit celui d'un interlocuteur secondaire
-    (PortalContact.access_token). Retourne (client, contact) où contact vaut
-    None si c'est le lien principal du client. (None, None) si invalide."""
-    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
-    if c:
-        return c, None
-    contact = PortalContact.query.filter_by(access_token=token, actif=True).first()
-    if contact and contact.client and contact.client.portal_actif:
-        return contact.client, contact
-    return None, None
-
 @app.route('/portail/<token>', methods=['GET', 'POST'])
 @limiter.limit("15 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_access(token):
-    c, contact = _portail_resoudre(token)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
     if not c: abort(404)
-    viewer = contact or c   # objet qui porte le mot de passe (interlocuteur ou client principal)
     if request.method == 'POST':
         action = request.form.get('action')
-        if action == 'register' and not viewer.portal_password_hash:
+        if action == 'register' and not c.portal_password_hash:
             pwd = request.form.get('password','')
             cpwd = request.form.get('confirm_password','')
-            if len(pwd) < 8:
-                flash('Mot de passe trop court (8 caractères minimum).', 'danger')
+            if len(pwd) < 6:
+                flash('Mot de passe trop court (6 caractères minimum).', 'danger')
             elif pwd != cpwd:
                 flash('Les mots de passe ne correspondent pas.', 'danger')
             else:
-                viewer.set_portal_password(pwd)
-                if contact:
-                    contact.derniere_connexion = datetime.utcnow()
+                c.set_portal_password(pwd)
                 db.session.commit()
                 flask_session['portal_cid'] = c.id
                 flash('Compte créé ! Bienvenue.', 'success')
                 return redirect(url_for('portail_dashboard', token=token))
         elif action == 'login':
-            if viewer.check_portal_password(request.form.get('password','')):
-                if contact:
-                    contact.derniere_connexion = datetime.utcnow()
-                    db.session.commit()
+            if c.check_portal_password(request.form.get('password','')):
                 flask_session['portal_cid'] = c.id
-                nom_bienvenue = contact.nom if contact else (c.prenom or c.nom)
-                flash(f'Bienvenue, {nom_bienvenue} !', 'success')
+                flash(f'Bienvenue, {c.prenom or c.nom} !', 'success')
                 return redirect(url_for('portail_dashboard', token=token))
             flash('Mot de passe incorrect.', 'danger')
     return render_template('portal/access.html', client=c, token=token,
-                           is_registered=bool(viewer.portal_password_hash), mode='default')
+                           is_registered=bool(c.portal_password_hash), mode='default')
 
 @app.route('/portail/<token>/mot-de-passe-oublie', methods=['GET', 'POST'])
 @limiter.limit("5 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_reset_request(token):
-    c, contact = _portail_resoudre(token)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first()
     if not c: abort(404)
-    viewer = contact or c
     if request.method == 'POST':
         email_saisi = request.form.get('email', '').strip().lower()
         # Vérifier sans révéler si l'email existe ou non (sécurité)
-        if viewer.email and email_saisi == viewer.email.lower():
+        if c.email and email_saisi == c.email.lower():
             reset_tok = secrets.token_urlsafe(48)
-            viewer.reset_token = reset_tok
-            viewer.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+            c.reset_token = reset_tok
+            c.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
             db.session.commit()
             reset_url = url_for('portail_reset_confirm', reset_token=reset_tok, _external=True)
-            threading.Thread(target=lambda: envoyer_email_reset_portail(viewer, reset_url), daemon=True).start()
+            threading.Thread(target=lambda: envoyer_email_reset_portail(c, reset_url), daemon=True).start()
         # Message neutre dans tous les cas
         flash('Si cette adresse correspond à votre compte, vous recevrez un email sous quelques minutes.', 'info')
         return redirect(url_for('portail_access', token=token))
@@ -4226,34 +3795,31 @@ def portail_reset_request(token):
 @app.route('/portail/reset/<reset_token>', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=["POST"], error_message="Trop de tentatives. Réessayez dans 1 minute.")
 def portail_reset_confirm(reset_token):
-    contact = PortalContact.query.filter_by(reset_token=reset_token).first()
-    c = contact.client if contact else Client.query.filter_by(reset_token=reset_token).first()
-    viewer = contact or c
-    if not viewer or not viewer.reset_token_expiry or viewer.reset_token_expiry < datetime.utcnow():
+    c = Client.query.filter_by(reset_token=reset_token).first()
+    if not c or not c.reset_token_expiry or c.reset_token_expiry < datetime.utcnow():
         flash('Ce lien de réinitialisation est invalide ou expiré. Veuillez refaire une demande.', 'danger')
         return render_template('portal/access.html', client=None, token=None,
                                is_registered=True, mode='reset_expired')
     if request.method == 'POST':
         pwd  = request.form.get('password', '')
         cpwd = request.form.get('confirm_password', '')
-        if len(pwd) < 8:
-            flash('Mot de passe trop court (8 caractères minimum).', 'danger')
+        if len(pwd) < 6:
+            flash('Mot de passe trop court (6 caractères minimum).', 'danger')
         elif pwd != cpwd:
             flash('Les mots de passe ne correspondent pas.', 'danger')
         else:
-            viewer.set_portal_password(pwd)
-            viewer.reset_token = None
-            viewer.reset_token_expiry = None
+            c.set_portal_password(pwd)
+            c.reset_token = None
+            c.reset_token_expiry = None
             db.session.commit()
             flash('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.', 'success')
-            return redirect(url_for('portail_access', token=viewer.access_token if contact else c.access_token))
-    return render_template('portal/access.html', client=c, token=viewer.access_token if contact else c.access_token,
+            return redirect(url_for('portail_access', token=c.access_token))
+    return render_template('portal/access.html', client=c, token=c.access_token,
                            is_registered=True, mode='reset_confirm', reset_token=reset_token)
 
 @app.route('/portail/<token>/dashboard')
 def portail_dashboard(token):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     now = datetime.now()
@@ -4282,8 +3848,7 @@ def portail_dashboard(token):
 
 @app.route('/portail/<token>/bon/<int:bid>/pdf')
 def portail_bon_pdf(token, bid):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     b = BonIntervention.query.get_or_404(bid)
@@ -4293,8 +3858,7 @@ def portail_bon_pdf(token, bid):
 
 @app.route('/portail/<token>/bon/<int:bid>/signer', methods=['POST'])
 def portail_signer(token, bid):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     b = BonIntervention.query.get_or_404(bid)
@@ -4321,8 +3885,7 @@ def portail_deconnexion(token):
 @app.route('/portail/<token>/intervention/<int:iid>/reporter', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", methods=["POST"])
 def portail_reporter(token, iid):
-    c, _pc = _portail_resoudre(token)
-    if not c: abort(404)
+    c = Client.query.filter_by(access_token=token, portal_actif=True).first_or_404()
     if flask_session.get('portal_cid') != c.id:
         return redirect(url_for('portail_access', token=token))
     inter = Intervention.query.filter_by(id=iid, client_id=c.id).first_or_404()
@@ -4476,13 +4039,9 @@ def parametres():
                   'mail_use_tls','base_url','techniciens','types_intervention',
                   'adresse_depart']:
             if k in request.form:
-                if k == 'mail_password' and not request.form[k]:
-                    continue  # champ laissé vide = ne pas écraser le mot de passe SMTP existant
                 set_param(k, request.form[k])
         if request.form.get('nouveau_mdp'):
-            if len(request.form['nouveau_mdp']) < 8:
-                flash('Mot de passe trop court (8 caractères minimum).', 'danger')
-            elif request.form['nouveau_mdp'] == request.form.get('confirm_mdp',''):
+            if request.form['nouveau_mdp'] == request.form.get('confirm_mdp',''):
                 current_user.set_password(request.form['nouveau_mdp'])
                 db.session.commit()
                 flash('Mot de passe mis à jour.', 'success')
@@ -4491,8 +4050,7 @@ def parametres():
         flash('Paramètres enregistrés.', 'success')
         return redirect(url_for('parametres'))
     params = {p.cle: p.valeur for p in Parametre.query.all()}
-    mail_password_configure = bool(params.pop('mail_password', ''))
-    return render_template('parametres.html', params=params, mail_password_configure=mail_password_configure)
+    return render_template('parametres.html', params=params)
 
 @app.route('/parametres/maintenance/programmer', methods=['POST'])
 @login_required
@@ -4555,81 +4113,9 @@ def server_error(e):
 @app.errorhandler(429)
 def too_many_requests(e):
     flash('Trop de tentatives. Veuillez patienter une minute avant de réessayer.', 'warning')
-    ref = request.referrer
-    return redirect(ref if ref and _is_safe_redirect_url(ref) else url_for('login'))
+    return redirect(request.referrer or url_for('login'))
 
 # ─── INIT ─────────────────────────────────────────────────────────────────────
-
-def _importer_patrimoine_csv(csv_path, nom_client, force=False):
-    """Importe le CSV patrimoine d'un bailleur (une seule fois — ne réimporte
-    pas si des logements existent déjà pour ce client, sauf si force=True,
-    auquel cas les anciennes lignes sont supprimées avant réimport)."""
-    if not os.path.exists(csv_path):
-        print(f"  [patrimoine] Fichier introuvable : {csv_path}")
-        return
-
-    client = Client.query.filter(
-        db.or_(Client.societe == nom_client, Client.nom == nom_client)
-    ).first()
-    if not client:
-        client = Client(nom=nom_client, societe=nom_client, type_client='professionnel', actif=True)
-        db.session.add(client)
-        db.session.commit()
-        print(f"  [patrimoine] Client cree : #{client.id} — {nom_client}")
-
-    deja = PatrimoineLogement.query.filter_by(client_id=client.id).count()
-    if deja > 0:
-        if not force:
-            print(f"  [patrimoine] Deja {deja} logement(s) pour {nom_client} — import ignore.")
-            return
-        PatrimoineLogement.query.filter_by(client_id=client.id).delete()
-        db.session.commit()
-        print(f"  [patrimoine] {deja} ancienne(s) ligne(s) supprimee(s) pour {nom_client} (reimport force).")
-
-    try:
-        with open(csv_path, encoding='utf-8', newline='') as f:
-            raw_lines = f.readlines()
-    except UnicodeDecodeError:
-        with open(csv_path, encoding='latin-1', newline='') as f:
-            raw_lines = f.readlines()
-    header_idx = next((i for i, l in enumerate(raw_lines) if l.strip().upper().startswith('SECTEUR')), None)
-    if header_idx is None:
-        print("  [patrimoine] Ligne d'en-tete (SECTEUR) introuvable dans le CSV.")
-        return
-
-    reader = csv.DictReader(io.StringIO(''.join(raw_lines[header_idx:])), delimiter=';')
-    count = 0
-    batch = []
-    for row in reader:
-        if not row.get('SECTEUR') and not row.get('BÂTIMENT'):
-            continue
-        batch.append(PatrimoineLogement(
-            client_id=client.id,
-            secteur=row.get('SECTEUR'),
-            programme=row.get('PROGRAMME'),
-            tranche=row.get('TRANCHE'),
-            code_batiment=row.get('Code bâtiment'),
-            batiment=row.get('BÂTIMENT'),
-            code_escalier=row.get('Code Escalier'),
-            numero_voirie=row.get('Numéro de Voirie'),
-            voirie=row.get('VOIRIE'),
-            module=row.get('MODULE'),
-            numero_logement=row.get('Numéro du logement'),
-            etage=row.get('ETAGE'),
-            commune=row.get('COMMUNE'),
-            type_logement=row.get('Type'),
-            nature_batiment=row.get('Nature Bâtiment'),
-        ))
-        count += 1
-        if len(batch) >= 500:
-            db.session.bulk_save_objects(batch)
-            db.session.commit()
-            batch = []
-    if batch:
-        db.session.bulk_save_objects(batch)
-        db.session.commit()
-    print(f"  [patrimoine] Import termine : {count} logement(s) pour {nom_client} (client #{client.id}).")
-
 
 def init_db():
     with app.app_context():
@@ -4644,26 +4130,6 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_actif BOOLEAN DEFAULT FALSE",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64)",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP",
-            """CREATE TABLE IF NOT EXISTS portal_contacts (
-                id SERIAL PRIMARY KEY,
-                client_id INTEGER NOT NULL REFERENCES clients(id),
-                nom VARCHAR(100) NOT NULL,
-                email VARCHAR(120),
-                access_token VARCHAR(36) UNIQUE,
-                portal_password_hash VARCHAR(256),
-                actif BOOLEAN DEFAULT TRUE,
-                reset_token VARCHAR(64),
-                reset_token_expiry TIMESTAMP,
-                created_at TIMESTAMP,
-                derniere_connexion TIMESTAMP
-            )""",
-            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_frequence VARCHAR(30)",
-            "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_gravite VARCHAR(20)",
-            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS niveau_risque VARCHAR(20)",
-            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS risque_frequence VARCHAR(30)",
-            "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS risque_gravite VARCHAR(20)",
             """CREATE TABLE IF NOT EXISTS audits_clients (
                 id SERIAL PRIMARY KEY,
                 reference VARCHAR(20) UNIQUE,
@@ -4712,8 +4178,6 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_statut VARCHAR(20)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_message TEXT",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_at TIMESTAMP",
-            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS adresse TEXT",
-            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),
@@ -4766,29 +4230,20 @@ def init_db():
             print("  !! Changez ce mot de passe dans Parametres !!")
             print("=" * 55)
 
-        # ── Email du compte admin (pour la réinitialisation de mot de passe) ──
-        # Définir la variable d'environnement ADMIN_EMAIL sur Render pour que
-        # les demandes de "mot de passe oublié" partent vers cette adresse.
-        _admin_email = os.environ.get('ADMIN_EMAIL', '').strip()
-        if _admin_email:
+        # ── Réinitialisation ponctuelle du mot de passe admin ──────────────
+        # Définir la variable d'environnement RESET_ADMIN_PASSWORD sur Render
+        # puis redéployer : au prochain démarrage, le mot de passe admin est
+        # remplacé par sa valeur. Pensez à RETIRER cette variable ensuite.
+        _reset_pw = os.environ.get('RESET_ADMIN_PASSWORD', '').strip()
+        if _reset_pw:
             admin = User.query.filter_by(username='admin').first()
-            if admin and admin.email != _admin_email:
-                admin.email = _admin_email
+            if admin:
+                admin.set_password(_reset_pw)
                 db.session.commit()
-                print(f"  Email admin synchronise : {_admin_email}")
-
-        # ── Import ponctuel du patrimoine (liste de logements d'un bailleur) ──
-        # Définir la variable d'environnement IMPORT_PATRIMOINE sur Render :
-        #   - "1"     → importe une seule fois (ignore si déjà des logements en base)
-        #   - "force" → supprime les logements existants du client puis réimporte
-        #               (utile si un import précédent était incomplet/corrompu)
-        _import_patrimoine = os.environ.get('IMPORT_PATRIMOINE', '').strip().lower()
-        if _import_patrimoine in ('1', 'force'):
-            _importer_patrimoine_csv(
-                csv_path=os.path.join(os.path.dirname(__file__), 'data', 'patrimoine_amsom.csv'),
-                nom_client='AMSOM Habitat',
-                force=(_import_patrimoine == 'force'),
-            )
+                print("=" * 55)
+                print("  Mot de passe admin reinitialise via RESET_ADMIN_PASSWORD")
+                print("  !! Retirez cette variable d'environnement maintenant !!")
+                print("=" * 55)
 
 # Initialisation automatique au démarrage (local ET production Gunicorn)
 init_db()

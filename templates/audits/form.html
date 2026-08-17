@@ -45,7 +45,7 @@
             <div class="col-sm-3">
               <label class="form-label fw-semibold">Type de site</label>
               <input type="text" name="type_site" class="form-control"
-                     list="site-list" value="{{ audit.type_site or '' }}" placeholder="Restaurant…">
+                     list="site-list" value="{{ audit.type_site if audit else (prefill_type_site or '') }}" placeholder="Restaurant…">
               <datalist id="site-list">
                 {% for s in ['Restaurant / Restauration collective','Entrepôt / Stockage','Logement particulier','Bureau / Tertiaire','Industrie agroalimentaire','Commerce / Surface de vente','Établissement de santé','Hôtel / Hébergement','Autre'] %}
                 <option value="{{ s }}">{% endfor %}
@@ -54,7 +54,7 @@
             <div class="col-sm-3">
               <label class="form-label fw-semibold">Bâtiment</label>
               <input type="text" name="batiment" class="form-control"
-                     value="{{ audit.batiment or '' }}" placeholder="RDC, Bât. A, Zone ext…">
+                     value="{{ audit.batiment if audit else (prefill_batiment or '') }}" placeholder="RDC, Bât. A, Zone ext…">
             </div>
           </div>
         </div>
@@ -142,23 +142,51 @@
           <div class="row g-3 mt-1">
             <div class="col-12">
               <label class="form-label fw-semibold">Causes profondes identifiées</label>
-              <textarea name="causes_profondes" class="form-control" rows="2"
+              <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-causes_profondes')">
+                <option value="">+ Insérer une suggestion…</option>
+                <option value="Présence de déchets alimentaires non protégés">Déchets alimentaires non protégés</option>
+                <option value="Stockage inadapté des marchandises (au sol, contre les murs)">Stockage inadapté des marchandises</option>
+                <option value="Défaut d'étanchéité des ouvertures (portes, quais de déchargement)">Défaut d'étanchéité des ouvertures</option>
+                <option value="Végétation dense à proximité des bâtiments">Végétation dense à proximité</option>
+                <option value="Absence de plan de nettoyage rigoureux">Absence de plan de nettoyage rigoureux</option>
+                <option value="Défaut d'entretien des espaces extérieurs">Défaut d'entretien des espaces extérieurs</option>
+              </select>
+              <textarea id="ta-causes_profondes" name="causes_profondes" class="form-control" rows="2"
                         placeholder="Origines profondes de l'infestation : structure du bâtiment, pratiques d'hygiène, environnement…">{{ audit.causes_profondes or '' if audit else '' }}</textarea>
             </div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Niveau de risque global évalué</label>
-              <div class="d-flex gap-3 flex-wrap mt-1">
-                {% for v, l, c in [('faible','Faible','success'),('moyen','Moyen','warning'),('eleve','Élevé','danger')] %}
+              <label class="form-label fw-semibold">Niveau de risque global (grille AMDEC Fréquence × Gravité)</label>
+              <div class="row g-2">
+                <div class="col-6">
+                  <select id="grille-frequence" name="risque_frequence" class="form-select form-select-sm">
+                    <option value="">Fréquence…</option>
+                    {% for v, l in grille_frequences %}
+                    <option value="{{ v }}" {% if audit and audit.risque_frequence == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-6">
+                  <select id="grille-gravite" name="risque_gravite" class="form-select form-select-sm">
+                    <option value="">Gravité…</option>
+                    {% for v, l in grille_gravites %}
+                    <option value="{{ v }}" {% if audit and audit.risque_gravite == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div id="grille-resultat" class="d-flex gap-3 flex-wrap mt-2">
+                {% for v, info in grille_niveaux.items() if v in ['negligeable','acceptable','indesirable','inacceptable'] %}
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="niveau_risque"
                          id="nr-{{ v }}" value="{{ v }}"
                          {% if audit and audit.niveau_risque == v %}checked{% endif %}>
                   <label class="form-check-label" for="nr-{{ v }}">
-                    <span class="badge bg-{{ c }}">{{ l }}</span>
+                    <span class="badge" style="background-color:{{ info.hex }}">{{ info.label }}</span>
                   </label>
                 </div>
                 {% endfor %}
               </div>
+              <div class="form-text">Calculé automatiquement à partir de la Fréquence et de la Gravité choisies — modifiable manuellement si besoin.</div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">Communication client (§5.3)</label>
@@ -212,17 +240,43 @@
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label fw-semibold">Points d'entrée identifiés</label>
-              <textarea name="points_entree" class="form-control" rows="2"
+              <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-points_entree')">
+                <option value="">+ Insérer une suggestion…</option>
+                <option value="Fissures dans les murs ou fondations">Fissures dans murs/fondations</option>
+                <option value="Portes et fenêtres mal jointées">Portes/fenêtres mal jointées</option>
+                <option value="Passages de gaines techniques non obturés">Gaines techniques non obturées</option>
+                <option value="Grilles d'aération non protégées">Grilles d'aération non protégées</option>
+                <option value="Quais de déchargement ouverts">Quais de déchargement ouverts</option>
+                <option value="Canalisations et siphons de sol défectueux">Canalisations/siphons défectueux</option>
+              </select>
+              <textarea id="ta-points_entree" name="points_entree" class="form-control" rows="2"
                         placeholder="Fissures, passages de gaines, portes mal jointées…">{{ audit.points_entree or '' if audit else '' }}</textarea>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">Observations terrain</label>
-              <textarea name="facteurs_favorisants" class="form-control" rows="2"
+              <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-facteurs_favorisants')">
+                <option value="">+ Insérer une suggestion…</option>
+                <option value="Humidité excessive">Humidité excessive</option>
+                <option value="Présence de végétation dense">Végétation dense</option>
+                <option value="Déchets stockés à proximité">Déchets stockés à proximité</option>
+                <option value="Éclairage extérieur attractif pour les nuisibles volants">Éclairage extérieur attractif</option>
+                <option value="Points d'eau stagnante">Points d'eau stagnante</option>
+                <option value="Absence de zone tampon autour du bâtiment">Absence de zone tampon</option>
+              </select>
+              <textarea id="ta-facteurs_favorisants" name="facteurs_favorisants" class="form-control" rows="2"
                         placeholder="Humidité, végétation dense, déchets…">{{ audit.facteurs_favorisants or '' if audit else '' }}</textarea>
             </div>
             <div class="col-12">
               <label class="form-label fw-semibold">Évaluation des prestations précédentes</label>
-              <textarea name="evaluation_prestations" class="form-control" rows="2"
+              <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-evaluation_prestations')">
+                <option value="">+ Insérer une suggestion…</option>
+                <option value="Traitements précédents efficaces, aucune récidive constatée">Traitements précédents efficaces</option>
+                <option value="Efficacité partielle, réinfestation observée">Efficacité partielle, réinfestation</option>
+                <option value="Aucune action corrective mise en place par le client depuis le dernier audit">Aucune action corrective du client</option>
+                <option value="Client réactif, mesures correctives appliquées rapidement">Client réactif</option>
+                <option value="Premier audit réalisé sur ce site">Premier audit sur ce site</option>
+              </select>
+              <textarea id="ta-evaluation_prestations" name="evaluation_prestations" class="form-control" rows="2"
                         placeholder="Résultats des traitements antérieurs, actions déjà réalisées par le client…">{{ audit.evaluation_prestations or '' if audit else '' }}</textarea>
             </div>
             <div class="col-md-6">
@@ -235,7 +289,14 @@
             </div>
             <div class="col-md-6" id="nc-block" {% if not audit or audit.conformite_haccp != 'non_conforme' %}style="display:none"{% endif %}>
               <label class="form-label fw-semibold">Non-conformités relevées</label>
-              <textarea name="non_conformites" class="form-control" rows="2"
+              <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-non_conformites')">
+                <option value="">+ Insérer une suggestion…</option>
+                <option value="Absence de plan de biosécurité formalisé">Absence de plan de biosécurité</option>
+                <option value="Zones de stockage non conformes aux exigences HACCP">Stockage non conforme HACCP</option>
+                <option value="Traçabilité des interventions incomplète">Traçabilité incomplète</option>
+                <option value="Formation du personnel insuffisante">Formation du personnel insuffisante</option>
+              </select>
+              <textarea id="ta-non_conformites" name="non_conformites" class="form-control" rows="2"
                         placeholder="Détaillez les non-conformités…">{{ audit.non_conformites or '' if audit else '' }}</textarea>
             </div>
           </div>
@@ -243,7 +304,14 @@
           <!-- Mesures immédiates -->
           <div class="mb-3">
             <label class="form-label fw-semibold">Mesures immédiates requises</label>
-            <textarea name="mesures_immediates" class="form-control" rows="2"
+            <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-mesures_immediates')">
+              <option value="">+ Insérer une suggestion…</option>
+              <option value="Pose d'appâts sécurisés en urgence">Pose d'appâts sécurisés en urgence</option>
+              <option value="Nettoyage immédiat des zones à risque">Nettoyage immédiat des zones à risque</option>
+              <option value="Obturation provisoire des points d'entrée identifiés">Obturation provisoire des points d'entrée</option>
+              <option value="Isolement de la zone infestée">Isolement de la zone infestée</option>
+            </select>
+            <textarea id="ta-mesures_immediates" name="mesures_immediates" class="form-control" rows="2"
                       placeholder="Actions à réaliser en urgence avant la prochaine visite…">{{ audit.mesures_immediates or '' if audit else '' }}</textarea>
           </div>
 
@@ -336,7 +404,15 @@
       <div class="card mb-3 section-card">
         <div class="card-header"><i class="bi bi-lightbulb me-2"></i>Recommandations finales</div>
         <div class="card-body">
-          <textarea name="recommandations" class="form-control" rows="4"
+          <select class="form-select form-select-sm mb-1" onchange="insertSuggestion(this,'ta-recommandations')">
+            <option value="">+ Insérer une suggestion…</option>
+            <option value="Renforcer la vigilance sur le stockage des denrées alimentaires">Renforcer vigilance stockage denrées</option>
+            <option value="Effectuer un contrôle mensuel jusqu'à résorption complète de l'infestation">Contrôle mensuel jusqu'à résorption</option>
+            <option value="Former le personnel aux bonnes pratiques d'hygiène">Former le personnel aux bonnes pratiques</option>
+            <option value="Mettre en place un programme de maintenance préventive des ouvertures">Maintenance préventive des ouvertures</option>
+            <option value="Poursuivre la surveillance régulière selon la fréquence recommandée">Poursuivre la surveillance régulière</option>
+          </select>
+          <textarea id="ta-recommandations" name="recommandations" class="form-control" rows="4"
                     placeholder="Recommandations globales, points de vigilance, conseils au client…">{{ audit.recommandations or '' if audit else '' }}</textarea>
         </div>
       </div>
@@ -393,6 +469,15 @@
 
 {% block scripts %}
 <script>
+function insertSuggestion(selectEl, textareaId) {
+  const val = selectEl.value;
+  if (!val) return;
+  const ta = document.getElementById(textareaId);
+  ta.value = ta.value.trim() ? ta.value.trim() + '\n' + val : val;
+  selectEl.selectedIndex = 0;
+  ta.focus();
+}
+
 function toggleNuis(key) {
   const cb = document.getElementById('cb-' + key);
   const nd = document.getElementById('nd-' + key);
@@ -438,5 +523,26 @@ document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('tr-body').children.length === 0) addTr();
   if (document.getElementById('mp-body').children.length === 0) addMp();
 });
+
+// ── Grille AMDEC Fréquence x Gravité → niveau de risque global ──
+const GRILLE_MATRIX = {
+  'frequent|insignifiant': 'acceptable',    'frequent|marginal': 'inacceptable',    'frequent|critique': 'inacceptable',
+  'probable|insignifiant': 'acceptable',    'probable|marginal': 'indesirable',     'probable|critique': 'inacceptable',
+  'occasionnel|insignifiant': 'acceptable', 'occasionnel|marginal': 'indesirable',  'occasionnel|critique': 'inacceptable',
+  'rare|insignifiant': 'negligeable',       'rare|marginal': 'acceptable',          'rare|critique': 'indesirable',
+  'improbable|insignifiant': 'negligeable', 'improbable|marginal': 'negligeable',   'improbable|critique': 'acceptable',
+  'invraisemblable|insignifiant': 'negligeable', 'invraisemblable|marginal': 'negligeable', 'invraisemblable|critique': 'negligeable',
+};
+function calculerNiveauRisque() {
+  const f = document.getElementById('grille-frequence').value;
+  const g = document.getElementById('grille-gravite').value;
+  if (!f || !g) return;
+  const niveau = GRILLE_MATRIX[f + '|' + g];
+  if (!niveau) return;
+  const radio = document.getElementById('nr-' + niveau);
+  if (radio) radio.checked = true;
+}
+document.getElementById('grille-frequence').addEventListener('change', calculerNiveauRisque);
+document.getElementById('grille-gravite').addEventListener('change', calculerNiveauRisque);
 </script>
 {% endblock %}

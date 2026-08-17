@@ -72,6 +72,56 @@
     {% endfor %}{% endif %}
   {% endwith %}
 
+  {% if mode == 'reset_request' %}
+  <!-- Demande de réinitialisation -->
+  <p class="text-center text-muted small mb-3">
+    Indiquez votre identifiant, un email vous sera envoyé si un compte y correspond.
+  </p>
+  <form method="POST" action="{{ url_for('login_reset_request') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-3">
+      <label class="form-label fw-semibold small">Identifiant</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-person"></i></span>
+        <input type="text" name="username" class="form-control" placeholder="admin" required autofocus>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-hps w-100 py-2">
+      <i class="bi bi-envelope me-1"></i> Envoyer le lien de réinitialisation
+    </button>
+  </form>
+  <p class="text-center mt-3 mb-0">
+    <a href="{{ url_for('login') }}" class="small text-decoration-none">
+      <i class="bi bi-arrow-left me-1"></i>Retour à la connexion
+    </a>
+  </p>
+
+  {% elif mode == 'reset_confirm' %}
+  <!-- Nouveau mot de passe -->
+  <p class="text-center text-muted small mb-3">Choisissez votre nouveau mot de passe.</p>
+  <form method="POST" action="{{ url_for('login_reset_confirm', reset_token=reset_token) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-3">
+      <label class="form-label fw-semibold small">Nouveau mot de passe</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+        <input type="password" name="password" class="form-control" placeholder="••••••••" required minlength="8" autofocus>
+      </div>
+    </div>
+    <div class="mb-4">
+      <label class="form-label fw-semibold small">Confirmer le mot de passe</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+        <input type="password" name="confirm_password" class="form-control" placeholder="••••••••" required minlength="8">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-hps w-100 py-2">
+      <i class="bi bi-check-circle me-1"></i> Valider le nouveau mot de passe
+    </button>
+  </form>
+
+  {% else %}
+  <!-- Connexion -->
   <form method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="mb-3">
@@ -81,13 +131,16 @@
         <input type="text" name="username" class="form-control" placeholder="admin" required autofocus>
       </div>
     </div>
-    <div class="mb-3">
+    <div class="mb-2">
       <label class="form-label fw-semibold small">Mot de passe</label>
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-lock"></i></span>
         <input type="password" name="password" class="form-control" placeholder="••••••••" required>
       </div>
     </div>
+    <p class="text-end mb-3">
+      <a href="{{ url_for('login_reset_request') }}" class="small text-decoration-none">Mot de passe oublié ?</a>
+    </p>
     <div class="mb-4 form-check">
       <input type="checkbox" class="form-check-input" name="remember" id="remember" style="accent-color:#1AABE3;">
       <label class="form-check-label small text-muted" for="remember">Rester connecté</label>
@@ -96,6 +149,7 @@
       <i class="bi bi-box-arrow-in-right me-1"></i> Se connecter
     </button>
   </form>
+  {% endif %}
 
   <div class="divider"></div>
   <p class="text-center text-muted" style="font-size:.75rem;">
