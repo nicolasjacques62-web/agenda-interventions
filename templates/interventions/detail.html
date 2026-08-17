@@ -36,7 +36,15 @@
                 {% elif intervention.priorite=='normale' %}<span class="badge bg-primary">Normale</span>
                 {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}</td></tr>
           <tr><td class="text-muted small fw-semibold">Créée le</td><td>{{ intervention.created_at.strftime('%d/%m/%Y') }}</td></tr>
+          {% if intervention.numero_bon_commande %}
+          <tr><td class="text-muted small fw-semibold">N° bon de commande</td><td>{{ intervention.numero_bon_commande }}</td></tr>
+          {% endif %}
         </table>
+        {% if intervention.adresse %}
+        <hr class="my-2">
+        <div class="text-muted small fw-semibold mb-1"><i class="bi bi-geo-alt me-1"></i>Adresse d'intervention</div>
+        <div class="small">{{ intervention.adresse }}</div>
+        {% endif %}
         {% if intervention.description %}
         <hr class="my-2">
         <div class="text-muted small fw-semibold mb-1">Description</div>

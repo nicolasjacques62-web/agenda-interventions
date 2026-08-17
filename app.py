@@ -191,6 +191,8 @@ class Intervention(db.Model):
     duree_estimee = db.Column(db.Integer, default=60)
     technicien = db.Column(db.String(100))
     notes = db.Column(db.Text)
+    adresse = db.Column(db.Text)                       # adresse du site d'intervention (si différente de celle du client)
+    numero_bon_commande = db.Column(db.String(50))      # n° de bon de commande client
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Demande de report par le client depuis son portail
     demande_report_date    = db.Column(db.DateTime)       # date souhaitée par le client
@@ -2181,6 +2183,8 @@ def intervention_nouvelle():
             duree_estimee=int(request.form.get('duree_estimee', 60) or 60),
             technicien=request.form.get('technicien','').strip(),
             notes=request.form.get('notes','').strip(),
+            adresse=request.form.get('adresse','').strip(),
+            numero_bon_commande=request.form.get('numero_bon_commande','').strip(),
         )
         db.session.add(i)
         db.session.commit()
@@ -2237,6 +2241,8 @@ def intervention_modifier(id):
         i.duree_estimee = int(request.form.get('duree_estimee', 60) or 60)
         i.technicien = request.form.get('technicien','').strip()
         i.notes = request.form.get('notes','').strip()
+        i.adresse = request.form.get('adresse','').strip()
+        i.numero_bon_commande = request.form.get('numero_bon_commande','').strip()
         db.session.commit()
         flash('Intervention mise à jour.', 'success')
         return redirect(url_for('intervention_detail', id=id))
@@ -3998,6 +4004,8 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_statut VARCHAR(20)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_message TEXT",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS demande_report_at TIMESTAMP",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS adresse TEXT",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),

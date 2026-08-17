@@ -15,16 +15,29 @@
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label fw-semibold">Client <span class="text-danger">*</span></label>
-            <select name="client_id" class="form-select" required>
+            <select name="client_id" id="clientSelect" class="form-select" required>
               <option value="">— Sélectionner un client —</option>
               {% for c in clients %}
                 <option value="{{ c.id }}"
+                  data-adresse="{{ (c.adresse or '') ~ (', ' ~ c.code_postal if c.code_postal else '') ~ (' ' ~ c.ville if c.ville else '') }}"
                   {% if intervention and intervention.client_id==c.id %}selected
                   {% elif cid and cid==c.id %}selected{% endif %}>
                   {{ c.nom_affichage }} ({{ c.reference }})
                 </option>
               {% endfor %}
             </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Adresse d'intervention</label>
+            <textarea name="adresse" id="adresseInter" class="form-control" rows="2"
+                      placeholder="Adresse du site où se déroule l'intervention">{{ intervention.adresse if intervention else '' }}</textarea>
+            <div class="form-text">Pré-remplie avec l'adresse du client si disponible — modifiable si le site diffère.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">N° de bon de commande</label>
+            <input type="text" name="numero_bon_commande" class="form-control"
+                   value="{{ intervention.numero_bon_commande if intervention else '' }}"
+                   placeholder="Ex : BC-2026-0456">
           </div>
           <div class="col-12">
             <label class="form-label fw-semibold">Titre <span class="text-danger">*</span></label>
@@ -118,4 +131,28 @@
   </div>
 </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Pré-remplit l'adresse d'intervention avec l'adresse du client sélectionné,
+// uniquement si le champ adresse est encore vide (on ne remplace jamais une saisie existante).
+document.addEventListener('DOMContentLoaded', () => {
+  const clientSelect = document.getElementById('clientSelect');
+  const adresseField  = document.getElementById('adresseInter');
+  if (!clientSelect || !adresseField) return;
+
+  function autoFillAdresse() {
+    if (adresseField.value.trim() !== '') return;
+    const opt = clientSelect.options[clientSelect.selectedIndex];
+    const adr = opt ? (opt.dataset.adresse || '').trim() : '';
+    if (adr) adresseField.value = adr;
+  }
+
+  clientSelect.addEventListener('change', autoFillAdresse);
+  {% if not intervention %}
+  autoFillAdresse(); // pré-remplissage initial si un client est déjà présélectionné
+  {% endif %}
+});
+</script>
 {% endblock %}
