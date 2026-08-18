@@ -47,6 +47,57 @@
       </div>
     </div>
   </div>
+
+  <div class="col-12">
+    <div class="card border-primary">
+      <div class="card-header bg-primary bg-opacity-10">
+        <i class="bi bi-microsoft me-2"></i>Intégration Outlook
+      </div>
+      <div class="card-body">
+        {% if not outlook_configure %}
+          <p class="small text-muted mb-0">
+            L'application n'est pas encore déclarée côté Microsoft — les variables d'environnement
+            <code>APP_OUTLOOK_CLIENT_ID</code> et <code>APP_OUTLOOK_CLIENT_SECRET</code> doivent être
+            ajoutées sur Render avant de pouvoir connecter un compte Outlook.
+          </p>
+        {% elif outlook_connecte %}
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div>
+              <span class="badge bg-success mb-1"><i class="bi bi-check-circle me-1"></i>Connecté</span>
+              {% if outlook_email %}<div class="small text-muted">{{ outlook_email }}</div>{% endif %}
+            </div>
+            <div class="d-flex gap-2">
+              <form method="POST" action="{{ url_for('outlook_synchroniser') }}">
+                <button class="btn btn-outline-primary btn-sm">
+                  <i class="bi bi-arrow-repeat me-1"></i>Synchroniser maintenant
+                </button>
+              </form>
+              <form method="POST" action="{{ url_for('outlook_deconnecter') }}"
+                    onsubmit="return confirm('Déconnecter le compte Outlook ? Les interventions déjà envoyées resteront dans votre calendrier mais ne seront plus mises à jour.')">
+                <button class="btn btn-outline-danger btn-sm">
+                  <i class="bi bi-x-circle me-1"></i>Déconnecter
+                </button>
+              </form>
+            </div>
+          </div>
+          <p class="small text-muted mb-0">
+            Les interventions assignées au technicien désigné ci-dessous (dans « Listes personnalisées »)
+            sont automatiquement créées, mises à jour ou retirées de votre calendrier Outlook. Vos événements
+            Outlook (personnels ou autres) apparaissent dans l'agenda de l'application pour une vision
+            complète de vos disponibilités — synchronisation automatique toutes les 10-15 minutes.
+          </p>
+        {% else %}
+          <p class="small text-muted mb-3">
+            Connectez votre compte Outlook pour que vos interventions y apparaissent automatiquement,
+            et pour voir vos disponibilités Outlook directement dans l'agenda de l'application.
+          </p>
+          <a href="{{ url_for('outlook_connecter') }}" class="btn btn-primary">
+            <i class="bi bi-microsoft me-1"></i>Se connecter à Outlook
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 
 <form method="POST">
@@ -106,6 +157,18 @@
                  placeholder="Jean Dupont, Marie Martin, Paul Bernard">
           <div class="form-text">Ces noms apparaîtront en suggestions lors de la planification.</div>
         </div>
+        {% if outlook_configure %}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Mon nom (technicien) — pour la synchro Outlook</label>
+          <select name="outlook_mon_technicien" class="form-select">
+            <option value="">— Aucun (rien n'est envoyé vers Outlook) —</option>
+            {% for t in techniciens_liste %}
+              <option value="{{ t }}" {% if params.get('outlook_mon_technicien')==t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Seules les interventions où le champ « Technicien » correspond exactement à ce nom sont envoyées vers votre calendrier Outlook.</div>
+        </div>
+        {% endif %}
         <div class="mb-0">
           <label class="form-label fw-semibold">Types d'intervention (séparés par des virgules)</label>
           <input type="text" name="types_intervention" class="form-control"

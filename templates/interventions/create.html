@@ -22,7 +22,7 @@
                   data-adresse="{{ (c.adresse or '') ~ (', ' ~ c.code_postal if c.code_postal else '') ~ (' ' ~ c.ville if c.ville else '') }}"
                   {% if intervention and intervention.client_id==c.id %}selected
                   {% elif cid and cid==c.id %}selected{% endif %}>
-                  {{ c.nom_affichage }} ({{ c.reference }})
+                  {{ c.nom_affichage }}{% if c.reference %} ({{ c.reference }}){% endif %}
                 </option>
               {% endfor %}
             </select>
@@ -30,13 +30,13 @@
           <div class="col-12">
             <label class="form-label fw-semibold">Adresse d'intervention</label>
             <textarea name="adresse" id="adresseInter" class="form-control" rows="2"
-                      placeholder="Adresse du site où se déroule l'intervention">{{ intervention.adresse if intervention else '' }}</textarea>
+                      placeholder="Adresse du site où se déroule l'intervention">{{ (intervention.adresse or '') if intervention else '' }}</textarea>
             <div class="form-text">Pré-remplie avec l'adresse du client si disponible — modifiable si le site diffère.</div>
           </div>
           <div class="col-md-6">
             <label class="form-label fw-semibold">N° de bon de commande</label>
             <input type="text" name="numero_bon_commande" class="form-control"
-                   value="{{ intervention.numero_bon_commande if intervention else '' }}"
+                   value="{{ (intervention.numero_bon_commande or '') if intervention else '' }}"
                    placeholder="Ex : BC-2026-0456">
           </div>
           <div class="col-md-6" id="portalContactWrap" style="display:none">
@@ -56,7 +56,7 @@
             <label class="form-label fw-semibold">Type d'intervention</label>
             <input type="text" name="type_intervention" class="form-control"
                    list="types-list"
-                   value="{{ intervention.type_intervention if intervention else '' }}">
+                   value="{{ (intervention.type_intervention or '') if intervention else '' }}">
             <datalist id="types-list">
               {% for t in types_inter.split(',') if t.strip() %}
                 <option value="{{ t.strip() }}">
@@ -95,7 +95,7 @@
           <div class="col-md-3">
             <label class="form-label fw-semibold">Technicien</label>
             <input type="text" name="technicien" class="form-control" list="tech-list"
-                   value="{{ intervention.technicien if intervention else '' }}">
+                   value="{{ (intervention.technicien or '') if intervention else '' }}">
             <datalist id="tech-list">
               {% for t in techniciens.split(',') if t.strip() %}
                 <option value="{{ t.strip() }}">
@@ -104,11 +104,11 @@
           </div>
           <div class="col-12">
             <label class="form-label fw-semibold">Description</label>
-            <textarea name="description" class="form-control" rows="3">{{ intervention.description if intervention else '' }}</textarea>
+            <textarea name="description" class="form-control" rows="3">{{ (intervention.description or '') if intervention else '' }}</textarea>
           </div>
           <div class="col-12">
             <label class="form-label fw-semibold">Notes internes</label>
-            <textarea name="notes" class="form-control" rows="2">{{ intervention.notes if intervention else '' }}</textarea>
+            <textarea name="notes" class="form-control" rows="2">{{ (intervention.notes or '') if intervention else '' }}</textarea>
           </div>
         </div>
       </div>

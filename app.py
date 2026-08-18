@@ -38,6 +38,13 @@ try:
 except ImportError:
     PILLOW_OK = False
 
+try:
+    import msal
+    import requests as http_requests
+    OUTLOOK_OK = True
+except ImportError:
+    OUTLOOK_OK = False
+
 app = Flask(__name__)
 # Render / Gunicorn tournent derrière un reverse-proxy HTTPS.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -258,6 +265,7 @@ class Intervention(db.Model):
     adresse = db.Column(db.Text)                       # adresse du site d'intervention (si différente de celle du client)
     numero_bon_commande = db.Column(db.String(50))      # n° de bon de commande client
     portal_contact_id = db.Column(db.Integer, db.ForeignKey('portal_contacts.id'))  # sous-portail destinataire (optionnel)
+    outlook_event_id = db.Column(db.String(300))        # id de l'événement Outlook correspondant (si synchronisé)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Demande de report par le client depuis son portail
     demande_report_date    = db.Column(db.DateTime)       # date souhaitée par le client
@@ -287,6 +295,21 @@ class Intervention(db.Model):
     def statut_label(self):
         return {'planifiee': 'Planifiée', 'en_cours': 'En cours',
                 'terminee': 'Terminée', 'annulee': 'Annulée'}.get(self.statut, self.statut)
+
+
+class OutlookEvent(db.Model):
+    """Cache local des événements du calendrier Outlook personnel (autres que
+    ceux créés par l'appli elle-même) — alimenté par une synchronisation
+    périodique, affiché en lecture seule dans l'agenda pour voir les
+    disponibilités réelles."""
+    __tablename__ = 'outlook_events'
+    id = db.Column(db.Integer, primary_key=True)
+    outlook_id = db.Column(db.String(300), unique=True, nullable=False)
+    sujet = db.Column(db.String(300))
+    lieu = db.Column(db.String(300))
+    debut = db.Column(db.DateTime, nullable=False)
+    fin = db.Column(db.DateTime, nullable=False)
+    synced_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class BonIntervention(db.Model):
@@ -1528,6 +1551,191 @@ def _notif_async(client_id, sujet, titre, corps, lien=None, sms_court=None):
     threading.Thread(target=_run, daemon=True).start()
 
 
+# ─── OUTLOOK (Microsoft Graph) ─────────────────────────────────────────────
+# Synchronisation à double sens avec un calendrier Outlook/Microsoft 365
+# personnel : les interventions assignées au technicien configuré partent
+# vers Outlook, et les événements Outlook (perso ou autres) sont rapatriés
+# pour affichage dans l'agenda de l'appli — vision complète des disponibilités.
+
+OUTLOOK_AUTHORITY = 'https://login.microsoftonline.com/consumers'
+OUTLOOK_SCOPES = ['https://graph.microsoft.com/Calendars.ReadWrite',
+                   'https://graph.microsoft.com/User.Read']
+OUTLOOK_GRAPH = 'https://graph.microsoft.com/v1.0'
+
+def _outlook_client_id():
+    return os.environ.get('APP_OUTLOOK_CLIENT_ID', '').strip()
+
+def _outlook_client_secret():
+    return os.environ.get('APP_OUTLOOK_CLIENT_SECRET', '').strip()
+
+def outlook_configure():
+    """L'appli (côté Azure) est-elle déclarée ? (indépendant du fait qu'un
+    compte Outlook ait été connecté ou non par l'utilisateur)."""
+    return OUTLOOK_OK and bool(_outlook_client_id() and _outlook_client_secret())
+
+def outlook_connecte():
+    """Un compte Outlook a-t-il été autorisé et son jeton stocké ?"""
+    return outlook_configure() and bool(get_param('outlook_refresh_token'))
+
+def _outlook_msal_app():
+    return msal.ConfidentialClientApplication(
+        _outlook_client_id(), authority=OUTLOOK_AUTHORITY,
+        client_credential=_outlook_client_secret())
+
+def _outlook_access_token():
+    """Retourne un access token valide en le régénérant depuis le refresh
+    token stocké. Retourne None si non connecté ou en cas d'échec."""
+    if not outlook_connecte():
+        return None
+    refresh_token = get_param('outlook_refresh_token')
+    try:
+        result = _outlook_msal_app().acquire_token_by_refresh_token(
+            refresh_token, scopes=OUTLOOK_SCOPES)
+        if 'access_token' not in result:
+            return None
+        # Microsoft renouvelle parfois le refresh token — on garde le dernier valide
+        if result.get('refresh_token'):
+            set_param('outlook_refresh_token', result['refresh_token'])
+        return result['access_token']
+    except Exception:
+        return None
+
+def _outlook_headers():
+    token = _outlook_access_token()
+    if not token:
+        return None
+    return {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+def _outlook_est_mon_intervention(intervention):
+    """L'intervention doit-elle être synchronisée vers Outlook ? — uniquement
+    celles assignées au technicien désigné comme 'moi' dans les Paramètres,
+    et qui ne sont pas annulées."""
+    moi = get_param('outlook_mon_technicien', '').strip().lower()
+    tech = (intervention.technicien or '').strip().lower()
+    return bool(moi) and moi == tech and intervention.statut != 'annulee'
+
+def _outlook_payload(intervention):
+    duree = int(intervention.duree_estimee) if intervention.duree_estimee else 60
+    fin = intervention.date_planifiee + timedelta(minutes=duree)
+    corps = intervention.description or ''
+    if intervention.numero_bon_commande:
+        corps += f"\n\nN° bon de commande : {intervention.numero_bon_commande}"
+    return {
+        'subject': f"[{intervention.client.nom_affichage}] {intervention.titre}",
+        'body': {'contentType': 'text', 'content': corps},
+        'start': {'dateTime': intervention.date_planifiee.strftime('%Y-%m-%dT%H:%M:%S'), 'timeZone': 'Europe/Paris'},
+        'end': {'dateTime': fin.strftime('%Y-%m-%dT%H:%M:%S'), 'timeZone': 'Europe/Paris'},
+        'location': {'displayName': intervention.adresse or ''},
+    }
+
+def _outlook_sync_intervention(intervention_id):
+    """Crée, met à jour ou supprime l'événement Outlook correspondant à une
+    intervention, selon qu'elle est assignée à 'mon' technicien ou non.
+    Lancé en tâche de fond pour ne jamais bloquer la réponse utilisateur."""
+    def _run():
+        try:
+            with app.app_context():
+                i = Intervention.query.get(intervention_id)
+                if not i or not outlook_connecte():
+                    return
+                headers = _outlook_headers()
+                if not headers:
+                    return
+                doit_sync = _outlook_est_mon_intervention(i)
+                if doit_sync and not i.outlook_event_id:
+                    resp = http_requests.post(f'{OUTLOOK_GRAPH}/me/events',
+                        headers=headers, json=_outlook_payload(i), timeout=15)
+                    if resp.status_code in (200, 201):
+                        i.outlook_event_id = resp.json().get('id')
+                        db.session.commit()
+                elif doit_sync and i.outlook_event_id:
+                    http_requests.patch(f'{OUTLOOK_GRAPH}/me/events/{i.outlook_event_id}',
+                        headers=headers, json=_outlook_payload(i), timeout=15)
+                elif not doit_sync and i.outlook_event_id:
+                    http_requests.delete(f'{OUTLOOK_GRAPH}/me/events/{i.outlook_event_id}',
+                        headers=headers, timeout=15)
+                    i.outlook_event_id = None
+                    db.session.commit()
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+def _outlook_supprimer_evenement_async(outlook_event_id):
+    if not outlook_event_id:
+        return
+    def _run():
+        try:
+            with app.app_context():
+                headers = _outlook_headers()
+                if headers:
+                    http_requests.delete(f'{OUTLOOK_GRAPH}/me/events/{outlook_event_id}',
+                        headers=headers, timeout=15)
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+def outlook_synchroniser_pull(horizon_jours=60):
+    """Rapatrie les événements du calendrier Outlook des N prochains jours
+    dans le cache local (OutlookEvent), pour affichage dans l'agenda. Ignore
+    les événements créés par l'appli elle-même (déjà représentés par une
+    Intervention) pour éviter les doublons visuels."""
+    if not outlook_connecte():
+        return False, "Outlook non connecté."
+    headers = _outlook_headers()
+    if not headers:
+        return False, "Impossible d'obtenir un jeton d'accès Outlook — reconnectez le compte."
+    now = datetime.utcnow()
+    fin = now + timedelta(days=horizon_jours)
+    params = {
+        'startDateTime': now.strftime('%Y-%m-%dT%H:%M:%S'),
+        'endDateTime': fin.strftime('%Y-%m-%dT%H:%M:%S'),
+        '$top': '250',
+        '$select': 'id,subject,location,start,end,isCancelled',
+    }
+    try:
+        resp = http_requests.get(f'{OUTLOOK_GRAPH}/me/calendarview',
+            headers={**headers, 'Prefer': 'outlook.timezone="Europe/Paris"'},
+            params=params, timeout=20)
+        if resp.status_code != 200:
+            return False, f"Erreur Graph API : statut {resp.status_code}"
+        data = resp.json().get('value', [])
+    except Exception as e:
+        return False, str(e)
+    nos_ids = {i.outlook_event_id for i in Intervention.query.filter(
+        Intervention.outlook_event_id.isnot(None)).all()}
+    vus = set()
+    for ev in data:
+        if ev.get('isCancelled') or ev['id'] in nos_ids:
+            continue
+        vus.add(ev['id'])
+        try:
+            debut = datetime.strptime(ev['start']['dateTime'][:19], '%Y-%m-%dT%H:%M:%S')
+            fin_ev = datetime.strptime(ev['end']['dateTime'][:19], '%Y-%m-%dT%H:%M:%S')
+        except Exception:
+            continue
+        existant = OutlookEvent.query.filter_by(outlook_id=ev['id']).first()
+        if existant:
+            existant.sujet = ev.get('subject', '') or '(sans titre)'
+            existant.lieu = (ev.get('location') or {}).get('displayName', '')
+            existant.debut = debut
+            existant.fin = fin_ev
+            existant.synced_at = datetime.utcnow()
+        else:
+            db.session.add(OutlookEvent(
+                outlook_id=ev['id'], sujet=ev.get('subject', '') or '(sans titre)',
+                lieu=(ev.get('location') or {}).get('displayName', ''),
+                debut=debut, fin=fin_ev))
+    # Nettoyage : retire du cache les événements qui ont disparu d'Outlook (annulés, supprimés)
+    # — seulement si la synchro a bien renvoyé des résultats, pour ne jamais vider
+    # le cache sur un éventuel incident temporaire de l'API.
+    if vus:
+        OutlookEvent.query.filter(
+            OutlookEvent.debut >= now, ~OutlookEvent.outlook_id.in_(vus)
+        ).delete(synchronize_session=False)
+    db.session.commit()
+    return True, f"{len(vus)} événement(s) synchronisé(s)."
+
+
 def envoyer_bon_email(bon):
     api_key = ''.join(os.environ.get('APP_BREVO_API_KEY', '').split())
     if not api_key:
@@ -2681,6 +2889,30 @@ def agenda_events():
             })
         except Exception:
             pass  # ignorer les interventions corrompues
+
+    # Événements Outlook personnels (lecture seule) — vision complète des disponibilités
+    if outlook_connecte():
+        oq = OutlookEvent.query
+        try:
+            if start:
+                oq = oq.filter(OutlookEvent.fin >= datetime.strptime(start[:10], '%Y-%m-%d'))
+            if end:
+                oq = oq.filter(OutlookEvent.debut <= datetime.strptime(end[:10], '%Y-%m-%d'))
+        except Exception:
+            pass
+        for ev in oq.all():
+            events.append({
+                'id': f'outlook-{ev.id}',
+                'title': f"📅 {ev.sujet}",
+                'start': ev.debut.isoformat(),
+                'end': ev.fin.isoformat(),
+                'color': '#8e44ad',
+                'url': '',
+                'extendedProps': {
+                    'source': 'outlook',
+                    'lieu': ev.lieu or '',
+                },
+            })
     return jsonify(events)
 
 @app.route('/interventions')
@@ -2760,6 +2992,7 @@ def intervention_nouvelle():
         db.session.add(i)
         db.session.commit()
         flash(f'Intervention {i.reference} planifiée.', 'success')
+        _outlook_sync_intervention(i.id)
         # Notification au client si portail actif
         date_str = i.date_planifiee.strftime('%d/%m/%Y à %H:%M')
         lien_p = url_for('portail_access', token=i.client.access_token, _external=True) if i.client.access_token else None
@@ -2825,6 +3058,7 @@ def intervention_modifier(id):
         i.portal_contact_id = portal_contact_id
         db.session.commit()
         flash('Intervention mise à jour.', 'success')
+        _outlook_sync_intervention(i.id)
         return redirect(url_for('intervention_detail', id=id))
     clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
     techniciens = get_param('techniciens', '')
@@ -2844,14 +3078,17 @@ def intervention_statut(id):
         i.statut = s
         db.session.commit()
         flash(f'Statut → {i.statut_label}', 'success')
+        _outlook_sync_intervention(i.id)
     return redirect(url_for('intervention_detail', id=id))
 
 @app.route('/interventions/<int:id>/supprimer', methods=['POST'])
 @login_required
 def intervention_supprimer(id):
     i = Intervention.query.get_or_404(id)
+    outlook_event_id = i.outlook_event_id
     db.session.delete(i)
     db.session.commit()
+    _outlook_supprimer_evenement_async(outlook_event_id)
     flash('Intervention supprimée.', 'info')
     return redirect(url_for('interventions_liste'))
 
@@ -4510,7 +4747,7 @@ def parametres():
         for k in ['societe','adresse','telephone','email','siret',
                   'mail_server','mail_port','mail_username','mail_password',
                   'mail_use_tls','base_url','techniciens','types_intervention',
-                  'adresse_depart']:
+                  'adresse_depart','outlook_mon_technicien']:
             if k in request.form:
                 if k == 'mail_password' and not request.form[k]:
                     continue  # champ laissé vide = ne pas écraser le mot de passe SMTP existant
@@ -4528,7 +4765,10 @@ def parametres():
         return redirect(url_for('parametres'))
     params = {p.cle: p.valeur for p in Parametre.query.all()}
     mail_password_configure = bool(params.pop('mail_password', ''))
-    return render_template('parametres.html', params=params, mail_password_configure=mail_password_configure)
+    return render_template('parametres.html', params=params, mail_password_configure=mail_password_configure,
+                           outlook_configure=outlook_configure(), outlook_connecte=outlook_connecte(),
+                           outlook_email=get_param('outlook_email', ''),
+                           techniciens_liste=[t.strip() for t in get_param('techniciens','').split(',') if t.strip()])
 
 @app.route('/parametres/maintenance/programmer', methods=['POST'])
 @login_required
@@ -4567,6 +4807,71 @@ def maintenance_annuler():
     set_param('maintenance_alerte_envoyee', '')
     flash('Maintenance programmée annulée.', 'info')
     return redirect(url_for('parametres'))
+
+# ─── OUTLOOK — connexion / déconnexion ────────────────────────────────────────
+
+@app.route('/outlook/connecter')
+@login_required
+def outlook_connecter():
+    if not outlook_configure():
+        flash("L'application Outlook n'est pas encore déclarée côté serveur "
+              "(variables APP_OUTLOOK_CLIENT_ID / APP_OUTLOOK_CLIENT_SECRET manquantes).", 'warning')
+        return redirect(url_for('parametres'))
+    state = secrets.token_urlsafe(24)
+    flask_session['outlook_oauth_state'] = state
+    redirect_uri = url_for('outlook_callback', _external=True)
+    auth_url = _outlook_msal_app().get_authorization_request_url(
+        OUTLOOK_SCOPES, redirect_uri=redirect_uri, state=state)
+    return redirect(auth_url)
+
+@app.route('/outlook/callback')
+@login_required
+def outlook_callback():
+    if not outlook_configure():
+        abort(404)
+    state = request.args.get('state', '')
+    if not state or state != flask_session.pop('outlook_oauth_state', None):
+        flash("Connexion Outlook annulée (état invalide) — réessayez.", 'danger')
+        return redirect(url_for('parametres'))
+    error = request.args.get('error')
+    if error:
+        flash(f"Connexion Outlook refusée : {request.args.get('error_description', error)}", 'danger')
+        return redirect(url_for('parametres'))
+    code = request.args.get('code')
+    if not code:
+        flash("Connexion Outlook incomplète — réessayez.", 'danger')
+        return redirect(url_for('parametres'))
+    redirect_uri = url_for('outlook_callback', _external=True)
+    result = _outlook_msal_app().acquire_token_by_authorization_code(
+        code, scopes=OUTLOOK_SCOPES, redirect_uri=redirect_uri)
+    if 'access_token' not in result:
+        flash(f"Échec de connexion Outlook : {result.get('error_description', 'erreur inconnue')}", 'danger')
+        return redirect(url_for('parametres'))
+    set_param('outlook_refresh_token', result.get('refresh_token', ''))
+    email = (result.get('id_token_claims') or {}).get('preferred_username', '')
+    set_param('outlook_email', email)
+    flash(f"Compte Outlook connecté{' (' + email + ')' if email else ''} !", 'success')
+    ok, msg = outlook_synchroniser_pull()
+    if not ok:
+        flash(f"Connexion réussie, mais la première synchronisation a échoué : {msg}", 'warning')
+    return redirect(url_for('parametres'))
+
+@app.route('/outlook/deconnecter', methods=['POST'])
+@login_required
+def outlook_deconnecter():
+    set_param('outlook_refresh_token', '')
+    set_param('outlook_email', '')
+    OutlookEvent.query.delete()
+    db.session.commit()
+    flash('Compte Outlook déconnecté.', 'info')
+    return redirect(url_for('parametres'))
+
+@app.route('/outlook/synchroniser', methods=['POST'])
+@login_required
+def outlook_synchroniser():
+    ok, msg = outlook_synchroniser_pull()
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(request.referrer or url_for('parametres'))
 
 # ─── DIAGNOSTIC ──────────────────────────────────────────────────────────────
 
@@ -4751,6 +5056,16 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS adresse TEXT",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS portal_contact_id INTEGER REFERENCES portal_contacts(id)",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS outlook_event_id VARCHAR(300)",
+            """CREATE TABLE IF NOT EXISTS outlook_events (
+                id SERIAL PRIMARY KEY,
+                outlook_id VARCHAR(300) UNIQUE NOT NULL,
+                sujet VARCHAR(300),
+                lieu VARCHAR(300),
+                debut TIMESTAMP NOT NULL,
+                fin TIMESTAMP NOT NULL,
+                synced_at TIMESTAMP DEFAULT NOW()
+            )""",
             """CREATE TABLE IF NOT EXISTS plans_appatage (
                 id SERIAL PRIMARY KEY,
                 client_id INTEGER NOT NULL REFERENCES clients(id),
@@ -4909,6 +5224,15 @@ def _keep_alive():
                         set_param('maintenance_alerte_envoyee', '1')
         except Exception:
             pass
+
+        # ── Synchronisation Outlook (environ toutes les 12 minutes) ──
+        if cycle % 3 == 0:
+            try:
+                with app.app_context():
+                    if outlook_connecte():
+                        outlook_synchroniser_pull()
+            except Exception:
+                pass
 
 _t = threading.Thread(target=_keep_alive, daemon=True)
 _t.start()
