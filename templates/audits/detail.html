@@ -47,6 +47,11 @@
 {% set overall_pct = (stage_state.n / 4 * 100)|round|int %}
 
 {% block content %}
+{% if show_amsom %}
+<div class="text-end mb-2">
+  <img src="{{ url_for('static', filename='logo_amsom.png') }}" alt="AMSOM Habitat" style="height:42px">
+</div>
+{% endif %}
 <div class="row g-3">
 
   <!-- Vue d'ensemble : avancement + graphiques -->

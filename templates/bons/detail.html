@@ -32,6 +32,11 @@
 {% endblock %}
 
 {% block content %}
+{% if show_amsom %}
+<div class="text-end mb-2">
+  <img src="{{ url_for('static', filename='logo_amsom.png') }}" alt="AMSOM Habitat" style="height:42px">
+</div>
+{% endif %}
 <div class="row g-3">
   <div class="col-lg-4">
     <!-- Statut & infos -->

@@ -977,9 +977,11 @@ def generer_pdf(bon):
     cli = inter.client
     elems = []
 
-    # ── En-tête : logo HPS à gauche, infos société à droite ──
+    # ── En-tête : logo HPS à gauche, infos société à droite (+ logo AMSOM en haut à droite si client AMSOM Habitat) ──
     static_dir = os.path.join(os.path.dirname(__file__), 'static')
     logo_hps_path = os.path.join(static_dir, 'logo.png')
+    logo_amsom_path = os.path.join(static_dir, 'logo_amsom.png')
+    show_amsom = _est_client_amsom(cli) and os.path.exists(logo_amsom_path)
 
     s_soc_name = ParagraphStyle('sn', parent=styles['Normal'], fontSize=13,
                                 fontName='Helvetica-Bold', alignment=TA_RIGHT)
@@ -996,9 +998,15 @@ def generer_pdf(bon):
     if os.path.exists(logo_hps_path):
         try:
             logo_hps = RLImage(logo_hps_path, width=4.5*cm, height=2*cm, kind='proportional')
-            header_data = [[logo_hps, Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc.replace(chr(10), '<br/>')}</font>",
-                                                ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))]]
-            header_table = Table(header_data, colWidths=[6*cm, 11.5*cm])
+            info_cell = Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc.replace(chr(10), '<br/>')}</font>",
+                                  ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))
+            if show_amsom:
+                logo_amsom = RLImage(logo_amsom_path, width=3*cm, height=1.4*cm, kind='proportional')
+                header_data = [[logo_hps, info_cell, logo_amsom]]
+                header_table = Table(header_data, colWidths=[6*cm, 8.5*cm, 3*cm])
+            else:
+                header_data = [[logo_hps, info_cell]]
+                header_table = Table(header_data, colWidths=[6*cm, 11.5*cm])
             header_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#1aabe3')),
@@ -1834,16 +1842,22 @@ def generer_pdf_audit(audit):
     cli = audit.client
     static_dir = os.path.join(os.path.dirname(__file__), 'static')
     logo_path  = os.path.join(static_dir, 'logo.png')
+    logo_amsom_path = os.path.join(static_dir, 'logo_amsom.png')
+    show_amsom = _est_client_amsom(cli) and os.path.exists(logo_amsom_path)
     elems = []
 
-    # ── En-tête ──
+    # ── En-tête (+ logo AMSOM en haut à droite si client AMSOM Habitat) ──
     info_soc = ' | '.join(filter(None, [get_param('adresse'), get_param('telephone'), get_param('email')]))
     if os.path.exists(logo_path):
         try:
             logo = RLImage(logo_path, width=4*cm, height=1.8*cm, kind='proportional')
-            ht = Table([[logo, Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc}</font>",
-                                         ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))]],
-                        colWidths=[5*cm, 12.5*cm])
+            info_cell = Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc}</font>",
+                                  ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))
+            if show_amsom:
+                logo_amsom = RLImage(logo_amsom_path, width=2.7*cm, height=1.3*cm, kind='proportional')
+                ht = Table([[logo, info_cell, logo_amsom]], colWidths=[5*cm, 9.5*cm, 3*cm])
+            else:
+                ht = Table([[logo, info_cell]], colWidths=[5*cm, 12.5*cm])
             ht.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
                                     ('LINEBELOW',(0,0),(-1,0),1.5,colors.HexColor('#1aabe3')),
                                     ('BOTTOMPADDING',(0,0),(-1,0),8)]))
@@ -3128,6 +3142,10 @@ def bon_nouveau():
         inter.statut = 'terminee'
         db.session.commit()
         _sauvegarder_amdec_lignes(request.form, client_id=inter.client_id, bon_id=b.id)
+        _creer_interventions_suivi(
+            request.form, client_id=inter.client_id,
+            adresse_defaut=inter.adresse or '', type_defaut=inter.type_intervention or '',
+            technicien_defaut=inter.technicien or '', titre_defaut=inter.titre)
         flash(f'Bon N° {b.numero} créé.', 'success')
         # Notification au client
         lien_p = url_for('portail_access', token=inter.client.access_token, _external=True) if inter.client.access_token else None
@@ -3147,22 +3165,26 @@ def bon_nouveau():
     interventions = Intervention.query.filter(
         Intervention.id.notin_(existing_ids)
     ).order_by(Intervention.date_planifiee.desc()).all()
+    selected_intervention = Intervention.query.get(int(iid)) if iid else None
     return render_template('bons/create.html', bon=None, interventions=interventions,
-                           iid=int(iid) if iid else None, materiaux=[],
+                           iid=int(iid) if iid else None, intervention=selected_intervention, materiaux=[],
                            travaux_modeles=TRAVAUX_MODELES,
                            preconisations_modeles=PRECONISATIONS_MODELES,
                            amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
                            grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX)
+                           grille_niveaux=GRILLE_NIVEAUX,
+                           techniciens=get_param('techniciens', ''),
+                           types_inter=get_param('types_intervention', ''))
 
 @app.route('/bons/<int:id>')
 @login_required
 def bon_detail(id):
     b = BonIntervention.query.get_or_404(id)
     mats = json.loads(b.materiaux_utilises) if b.materiaux_utilises else []
-    return render_template('bons/detail.html', bon=b, materiaux=mats)
+    return render_template('bons/detail.html', bon=b, materiaux=mats,
+                           show_amsom=_est_client_amsom(b.intervention.client))
 
 @app.route('/bons/<int:id>/signer', methods=['POST'])
 @login_required
@@ -3230,6 +3252,10 @@ def bon_modifier(id):
 
         db.session.commit()
         _sauvegarder_amdec_lignes(request.form, client_id=b.intervention.client_id, bon_id=b.id)
+        _creer_interventions_suivi(
+            request.form, client_id=b.intervention.client_id,
+            adresse_defaut=b.intervention.adresse or '', type_defaut=b.intervention.type_intervention or '',
+            technicien_defaut=b.intervention.technicien or '', titre_defaut=b.intervention.titre)
         if not request.form.get('ajouter_photo'):
             flash('Bon mis à jour.', 'success')
         return redirect(url_for('bon_modifier', id=id))
@@ -3243,7 +3269,9 @@ def bon_modifier(id):
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=b.amdec_fiches,
                            amdec_fiches_json=_amdec_fiches_json(b.amdec_fiches),
                            grille_frequences=GRILLE_FREQUENCES, grille_gravites=GRILLE_GRAVITES,
-                           grille_niveaux=GRILLE_NIVEAUX)
+                           grille_niveaux=GRILLE_NIVEAUX,
+                           techniciens=get_param('techniciens', ''),
+                           types_inter=get_param('types_intervention', ''))
 
 def _extract_mats(req):
     desig = req.form.getlist('mat_designation[]')
@@ -3251,6 +3279,69 @@ def _extract_mats(req):
     unit = req.form.getlist('mat_unite[]')
     return [{'designation': d, 'quantite': q, 'unite': u}
             for d, q, u in zip(desig, qty, unit) if d.strip()]
+
+def _est_client_amsom(client):
+    """Détecte si un client est AMSOM Habitat, pour afficher son logo sur ses
+    bons d'intervention et audits (en-tête PDF + pages à l'écran)."""
+    return bool(client) and 'amsom' in (client.nom_affichage or '').lower()
+
+def _adresse_client(client):
+    """Adresse du client sur une seule ligne (rue + code postal + ville), pour préremplir
+    l'adresse des interventions de suivi programmées depuis un audit."""
+    ligne2 = f"{client.code_postal or ''} {client.ville or ''}".strip()
+    return ', '.join(p for p in [(client.adresse or '').strip(), ligne2] if p)
+
+def _creer_interventions_suivi(form, client_id, adresse_defaut='', type_defaut='',
+                                technicien_defaut='', titre_defaut='Passage de suivi'):
+    """Crée une ou plusieurs interventions de suivi (2ème/3ème passage) directement
+    programmées depuis un formulaire de bon d'intervention ou d'audit, via les lignes
+    répétables 'suivi_date[]' / 'suivi_type[]' / 'suivi_technicien[]'. Reprend
+    automatiquement le client, l'adresse, le type et le technicien de l'origine
+    (modifiables ligne par ligne), synchronise chaque nouvelle intervention vers
+    Outlook et notifie le client si son portail est actif. N'agit pas si aucune
+    date n'a été renseignée."""
+    dates = form.getlist('suivi_date[]')
+    types = form.getlist('suivi_type[]')
+    technos = form.getlist('suivi_technicien[]')
+    crees = []
+    for idx, d in enumerate(dates):
+        d = (d or '').strip()
+        if not d:
+            continue
+        try:
+            dp = datetime.strptime(d, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            continue
+        type_i = (types[idx].strip() if idx < len(types) and types[idx].strip() else type_defaut)
+        tech_i = (technos[idx].strip() if idx < len(technos) and technos[idx].strip() else technicien_defaut)
+        i = Intervention(
+            reference=next_ref(Intervention, 'INT'),
+            client_id=client_id,
+            titre=type_i or titre_defaut,
+            type_intervention=type_i,
+            date_planifiee=dp,
+            technicien=tech_i,
+            adresse=adresse_defaut,
+            statut='planifiee',
+        )
+        db.session.add(i)
+        crees.append(i)
+    if crees:
+        db.session.commit()
+        for i in crees:
+            _outlook_sync_intervention(i.id)
+            lien_p = url_for('portail_access', token=i.client.access_token, _external=True) if i.client.access_token else None
+            _notif_async(i.client_id,
+                f"Nouveau rendez-vous planifié le {i.date_planifiee.strftime('%d/%m/%Y')}",
+                "Nouveau rendez-vous",
+                f"Un nouveau rendez-vous de suivi a été planifié pour vous :\n\n"
+                f"📅 Date : {i.date_planifiee.strftime('%d/%m/%Y à %H:%M')}\n"
+                f"🔧 Type : {i.type_intervention or i.titre}\n"
+                + (f"👷 Technicien : {i.technicien}\n" if i.technicien else "") +
+                f"\nRetrouvez tous les détails dans votre espace client.",
+                lien_p,
+                sms_court=f"RDV de suivi le {i.date_planifiee.strftime('%d/%m/%Y')}. Consultez votre espace : {lien_p or ''}")
+    return crees
 
 def _amdec_fiches_json(fiches):
     """Sérialise des fiches AMDEC pour hydrater le bloc répétable côté client."""
@@ -3518,12 +3609,18 @@ def audit_nouveau(id):
         db.session.add(audit)
         db.session.commit()
         _sauvegarder_amdec_lignes(request.form, client_id=id, audit_id=audit.id)
+        _creer_interventions_suivi(
+            request.form, client_id=id, adresse_defaut=_adresse_client(client),
+            technicien_defaut=audit.technicien or '',
+            titre_defaut=f"Suivi audit — {client.nom_affichage}")
         flash(f'Audit {audit.reference} créé.', 'success')
         return redirect(url_for('audit_detail', id=audit.id))
     techniciens = get_param('techniciens', '')
     today = datetime.now().date().strftime('%Y-%m-%d')
     return render_template('audits/form.html', client=client, audit=None,
                            nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
+                           types_inter=get_param('types_intervention', ''),
+                           adresse_client=_adresse_client(client),
                            today=today, amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=[], amdec_fiches_json=[],
@@ -3536,7 +3633,8 @@ def audit_nouveau(id):
 @login_required
 def audit_detail(id):
     audit = AuditClient.query.get_or_404(id)
-    return render_template('audits/detail.html', audit=audit)
+    return render_template('audits/detail.html', audit=audit,
+                           show_amsom=_est_client_amsom(audit.client))
 
 @app.route('/audits/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
@@ -3548,12 +3646,18 @@ def audit_modifier(id):
             setattr(audit, k, v)
         db.session.commit()
         _sauvegarder_amdec_lignes(request.form, client_id=audit.client_id, audit_id=audit.id)
+        _creer_interventions_suivi(
+            request.form, client_id=audit.client_id, adresse_defaut=_adresse_client(audit.client),
+            technicien_defaut=audit.technicien or '',
+            titre_defaut=f"Suivi audit — {audit.client.nom_affichage}")
         flash('Audit mis à jour.', 'success')
         return redirect(url_for('audit_detail', id=id))
     techniciens = get_param('techniciens', '')
     today = datetime.now().date().strftime('%Y-%m-%d')
     return render_template('audits/form.html', client=audit.client, audit=audit,
                            nuisibles_types=NUISIBLES_TYPES, techniciens=techniciens,
+                           types_inter=get_param('types_intervention', ''),
+                           adresse_client=_adresse_client(audit.client),
                            today=today, amdec_modeles=AMDEC_MODELES,
                            amdec_echelle_g=AMDEC_ECHELLE_G, amdec_echelle_f=AMDEC_ECHELLE_F,
                            amdec_echelle_d=AMDEC_ECHELLE_D, amdec_fiches=audit.amdec_fiches,

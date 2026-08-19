@@ -200,6 +200,35 @@
       </div>
     </div>
 
+    <!-- Passage(s) de suivi à programmer -->
+    <div class="card mb-3" id="suivi-card"
+         data-adresse="{{ (intervention.adresse or '') if intervention else '' }}"
+         data-type="{{ (intervention.type_intervention or '') if intervention else '' }}"
+         data-technicien="{{ (intervention.technicien or '') if intervention else '' }}">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-plus me-2"></i>Passage(s) de suivi à programmer</span>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="ajouterSuivi()">
+          <i class="bi bi-plus-lg me-1"></i>Ajouter un passage
+        </button>
+      </div>
+      <div class="card-body">
+        <div class="form-text mb-2">
+          <i class="bi bi-info-circle me-1"></i>
+          Choisissez une date pour programmer directement le prochain passage (2ème, 3ème…) — même client et même adresse, type et technicien prérempli mais modifiable. Rien n'est programmé si aucune date n'est renseignée.
+        </div>
+        <datalist id="types-list">
+          {% for t in (types_inter or '').split(',') if t.strip() %}<option value="{{ t.strip() }}">{% endfor %}
+        </datalist>
+        <datalist id="tech-list-suivi">
+          {% for t in (techniciens or '').split(',') if t.strip() %}<option value="{{ t.strip() }}">{% endfor %}
+        </datalist>
+        <div id="suiviBody"></div>
+        <div id="suiviEmpty" class="text-center text-muted small py-2">
+          Cliquez sur « Ajouter un passage » pour programmer une prochaine visite (jusqu'à 3).
+        </div>
+      </div>
+    </div>
+
     <!-- Niveau de risque global (grille AMDEC Fréquence x Gravité) -->
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-shield-exclamation me-2"></i>Niveau de risque global évalué</div>
@@ -447,6 +476,45 @@ function ajouterLigne() {
   `;
   document.getElementById('matBody').appendChild(tr);
   tr.querySelector('input').focus();
+}
+
+// ── Passages de suivi (2ème/3ème passage à programmer) ──
+let suiviCount = 0;
+function ajouterSuivi() {
+  if (suiviCount >= 3) { alert('Maximum 3 passages de suivi à la fois.'); return; }
+  suiviCount++;
+  document.getElementById('suiviEmpty').classList.add('d-none');
+  const card = document.getElementById('suivi-card');
+  const defType = card.dataset.type || '';
+  const defTech = card.dataset.technicien || '';
+  const div = document.createElement('div');
+  div.className = 'row g-2 align-items-end mb-2 pb-2 border-bottom';
+  div.innerHTML = `
+    <div class="col-sm-4">
+      <label class="form-label small fw-semibold">Date et heure du passage</label>
+      <input type="datetime-local" name="suivi_date[]" class="form-control form-control-sm">
+    </div>
+    <div class="col-sm-4">
+      <label class="form-label small fw-semibold">Type</label>
+      <input type="text" name="suivi_type[]" class="form-control form-control-sm" list="types-list" value="${defType}">
+    </div>
+    <div class="col-sm-3">
+      <label class="form-label small fw-semibold">Technicien</label>
+      <input type="text" name="suivi_technicien[]" class="form-control form-control-sm" list="tech-list-suivi" value="${defTech}">
+    </div>
+    <div class="col-sm-1">
+      <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="retirerSuivi(this)"><i class="bi bi-x"></i></button>
+    </div>
+  `;
+  document.getElementById('suiviBody').appendChild(div);
+  div.querySelector('input[type=datetime-local]').focus();
+}
+function retirerSuivi(btn) {
+  btn.closest('.row').remove();
+  suiviCount--;
+  if (document.getElementById('suiviBody').children.length === 0) {
+    document.getElementById('suiviEmpty').classList.remove('d-none');
+  }
 }
 
 // ── Caméra / Galerie ──
