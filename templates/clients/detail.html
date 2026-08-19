@@ -315,6 +315,27 @@
                 <div class="text-muted" style="font-size:.7rem">
                   {{ url_for('portail_access', token=contact.access_token, _external=True) }}
                 </div>
+                {% if contact.visible_comme %}
+                  <div class="mt-1"><span class="badge bg-info text-dark" style="font-size:.65rem">
+                    <i class="bi bi-eye me-1"></i>voit aussi comme « {{ contact.visible_comme.nom }} »
+                  </span></div>
+                {% endif %}
+                {% if client.portal_contacts|length > 1 %}
+                <form method="POST" action="{{ url_for('portail_contact_visibilite', contact_id=contact.id) }}"
+                      class="mt-1 d-flex align-items-center gap-1">
+                  <select name="visible_comme_id" class="form-select form-select-sm" style="font-size:.7rem;padding:1px 4px"
+                          onchange="this.form.submit()">
+                    <option value="">Voit uniquement ses propres demandes</option>
+                    {% for autre in client.portal_contacts %}
+                      {% if autre.id != contact.id %}
+                      <option value="{{ autre.id }}" {% if contact.visible_comme_id==autre.id %}selected{% endif %}>
+                        Voit aussi comme « {{ autre.nom }} »
+                      </option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                </form>
+                {% endif %}
               </div>
               <div class="d-flex gap-1 flex-shrink-0 ms-2">
                 <button class="btn btn-outline-secondary btn-sm py-0 px-1"
@@ -337,12 +358,22 @@
             {% endfor %}
           </div>
           {% endif %}
-          <form method="POST" action="{{ url_for('portail_contact_ajouter', id=client.id) }}" class="d-flex gap-1 mb-2">
-            <input type="text" name="nom" class="form-control form-control-sm" placeholder="Nom de l'interlocuteur" required>
-            <input type="email" name="email" class="form-control form-control-sm" placeholder="Email (optionnel)">
-            <button class="btn btn-outline-primary btn-sm flex-shrink-0" title="Ajouter">
-              <i class="bi bi-plus-lg"></i>
-            </button>
+          <form method="POST" action="{{ url_for('portail_contact_ajouter', id=client.id) }}" class="d-flex flex-column gap-1 mb-2">
+            <div class="d-flex gap-1">
+              <input type="text" name="nom" class="form-control form-control-sm" placeholder="Nom de l'interlocuteur" required>
+              <input type="email" name="email" class="form-control form-control-sm" placeholder="Email (optionnel)">
+              <button class="btn btn-outline-primary btn-sm flex-shrink-0" title="Ajouter">
+                <i class="bi bi-plus-lg"></i>
+              </button>
+            </div>
+            {% if client.portal_contacts %}
+            <select name="visible_comme_id" class="form-select form-select-sm" style="font-size:.72rem">
+              <option value="">Voit uniquement ses propres demandes</option>
+              {% for autre in client.portal_contacts %}
+                <option value="{{ autre.id }}">Voit aussi comme « {{ autre.nom }} »</option>
+              {% endfor %}
+            </select>
+            {% endif %}
           </form>
 
           <div class="d-grid gap-1">
