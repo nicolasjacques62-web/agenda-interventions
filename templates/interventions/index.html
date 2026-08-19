@@ -1,306 +1,328 @@
-<!DOCTYPE html>
-<html lang="fr-fr">
-<head>
-  <script nonce="nf+hTTd4V+0VKgMFVj/q2Q==">
-    window.rootUrl = "https://teams.microsoft.com/";
-    window.environment = "prod";
-    window.platformId = "27";
-  </script>
-  <meta name="viewport" content="width=device-width" />
-  <title>Microsoft Teams - Erreur</title>
-  <style>
-    html {
-      font-size: calc(1em*.625) !important;
-      -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
-      background: #f3f2f1;
-    }
+{% extends "base.html" %}
+{% block title %}Interventions{% endblock %}
+{% block page_title %}<i class="bi bi-wrench me-2"></i>Interventions{% endblock %}
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Web", sans-serif;
-      font-size: 1.4rem;
-      line-height: 1.4285;
-      color: #252424;
-      overflow-y: auto;
-      text-align: center;
-    }
+{% block head %}
+<style>
+  .vue-btn.active { background: var(--hps-blue); color: #fff; border-color: var(--hps-blue); }
 
-    .oops-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      height: calc(100vh - 100px);
-      width: 100%;
-    }
+  /* Dossiers client */
+  .dossier-header {
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+  }
+  .dossier-header:hover { background: #f0f6fa; }
+  .dossier-header.open   { background: var(--hps-blue); color: #fff; border-radius: 8px 8px 0 0 !important; }
+  .dossier-header.open .text-muted { color: rgba(255,255,255,.75) !important; }
+  .dossier-header.open .badge-statut { opacity: .9; }
+  .dossier-arrow { transition: transform .2s; }
+  .dossier-header.open .dossier-arrow { transform: rotate(90deg); }
 
-    .oops-svg {
-      height: 20rem;
-      width: 20rem;
-    }
+  /* Couleurs barre latérale par type */
+  .row-derat    { border-left: 3px solid #e67e22; }
+  .row-desinsect{ border-left: 3px solid #1aabe3; }
+  .row-desinfect{ border-left: 3px solid #27ae60; }
+  .row-multi    { border-left: 3px solid #8e44ad; }
+  .row-urgente  { border-left: 3px solid #e74c3c; }
+  .row-normale  { border-left: 3px solid var(--hps-blue); }
+  .row-faible   { border-left: 3px solid #95a5a6; }
+</style>
+{% endblock %}
 
-    .oops-ref {
-      color: #16233a; /* darkblue */
-      font-family: monospace;
-      font-size: 1rem;
-      margin: 3.2rem 0 0 6rem;
-      position: fixed;
-      top: 92%;
-      cursor: pointer;
-    }
+{% block topbar_actions %}
+<a href="{{ url_for('agenda') }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-calendar3 me-1"></i>Agenda
+</a>
+<a href="{{ url_for('intervention_nouvelle') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg me-1"></i>Nouvelle
+</a>
+{% endblock %}
 
-    .ts-btn-fluent-primary {
-      box-sizing: border-box;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Web", sans-serif;
-      font-size: 14px;
-      font-weight: 600;
-      display: inline-flex;
-      align-content: center;
-      justify-content: center;
-      flex-direction: column;
-      position: relative;
-      height: 32px;
-      padding: 0 20px;
-      min-width: 96px;
-      outline: 0;
-      white-space: nowrap;
-      cursor: pointer;
-      box-shadow: 0 2px 4px -.75px rgba(0,0,0,.25);
-      background: #5b5fc7;
-      border: 0;
-      border-radius: 4px;
-      color: #fff;
-    }
+{% block content %}
 
-    .ts-btn-fluent-primary::after,
-    .ts-btn-fluent-primary::before {
-      position: absolute;
-      content: '';
-      border: 1px solid transparent;
-      border-radius: 4px;
-    }
-
-    .ts-btn-fluent-primary::before {
-      top: 1px;
-      left: 1px;
-      right: 1px;
-      bottom: 1px;
-    }
-
-    .ts-btn-fluent-primary::after {
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-    }
-
-    .ts-btn-fluent-primary:hover {
-      background: #3d3e78;
-    }
-
-    .ts-btn-fluent-primary:active,
-    .ts-btn-fluent-primary:focus {
-      background: #2f2f4a;
-      box-shadow: none;
-    }
-
-    .ts-btn-fluent-primary:focus::after {
-      border-color: #252423;
-    }
-
-    .ts-btn-fluent-primary:focus::before {
-      border-color: #fff;
-    }
-
-    .oops-line-one {
-      display: block;
-      color: #252424;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Web", sans-serif;
-      font-size: 18px;
-      font-weight: 700;
-      max-width: 536px;
-      margin: 32px auto 20px auto;
-    }
-
-    .oops-itp-block-learn-more {
-      text-decoration: none;
-      color: #5b5fc7;
-    }
-
-    #try-again-link,
-    #open-teams-on-web {
-      text-decoration: none;
-      margin-bottom: 16px;
-    }
-
-    .oops-hidden {
-      display: none;
-    }
-  </style>
-</head>
-<body>
-  <div class="oops" role="main">
-    <div class="oops-content">
-      <!-- eoa.svg -->
-      <svg id="eoa-svg" class="oops-svg oops-hidden" width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <g clip-path="url(#clip0_2916_170481)">
-          <path d="M153.363 3H47.0605V197H153.363V3Z" fill="#E2E2F6"/>
-          <path d="M150.363 6V194H50.0605V6H150.363ZM156.363 0H44.0605V200H156.363V0Z" fill="#BDBDE6"/>
-          <g opacity="0.3">
-            <path opacity="0.3" d="M156.363 0H44.0605V200H156.363V0Z" fill="#BDBDE6"/>
-          </g>
-          <path d="M93.4585 109.793H64.7744V177.389H93.4585V109.793Z" fill="white"/>
-          <path d="M90.4585 112.793V174.388H67.7744V112.793H90.4585V112.793ZM96.4585 106.793H90.4585H67.7744H61.7744V112.793V174.388V180.388H67.7744H90.4585H96.4585V174.388V112.793V106.793Z" fill="#BDBDE6"/>
-          <path d="M90.4585 129.585V174.388L67.7744 174.403V140.093L90.4585 129.585Z" fill="#F3F2F1"/>
-          <path d="M137.86 109.793H109.177V177.389H137.86V109.793Z" fill="white"/>
-          <path d="M134.861 112.793V174.388H112.177V112.793H134.861V112.793ZM140.861 106.793H134.861H112.177H106.177V112.793V174.388V180.388H112.177H134.861H140.861V174.388V112.793V106.793Z" fill="#BDBDE6"/>
-          <path d="M134.861 113.617V174.388L112.177 174.408V124.132L134.861 113.617Z" fill="#F3F2F1"/>
-          <path d="M56.5075 113.364H56.5075C54.0574 113.364 52.0713 111.378 52.0713 108.928V95.8883C52.0713 93.4383 54.0574 91.4521 56.5075 91.4521H56.5075C58.9575 91.4521 60.9437 93.4383 60.9437 95.8883V108.927C60.9437 111.378 58.9575 113.364 56.5075 113.364Z" fill="url(#paint0_radial_2916_170481)"/>
-          <path d="M66.8286 104.322H56.2003C54.8664 104.322 53.7852 103.241 53.7852 101.907V101.907C53.7852 100.573 54.8664 99.4917 56.2003 99.4917H66.8286C68.1624 99.4917 69.2437 100.573 69.2437 101.907C69.2437 103.241 68.1624 104.322 66.8286 104.322Z" fill="#EDEBE9"/>
-          <path d="M93.4585 19.9531H64.7744V87.5483H93.4585V19.9531Z" fill="white"/>
-          <path d="M90.4585 22.9534V84.5484H67.7744V22.9534H90.4585ZM96.4585 16.9534H90.4585H67.7744H61.7744V22.9534V84.5484V90.5484H67.7744H90.4585H96.4585V84.5484V22.9534V16.9534Z" fill="#BDBDE6"/>
-          <path d="M90.4761 58.1758V84.5485H67.792V68.6861L90.4761 58.1758Z" fill="#F3F2F1"/>
-          <path d="M137.86 19.9536H109.177V87.5483H137.86V19.9536Z" fill="white"/>
-          <path d="M134.861 22.9534V84.5483H112.177V22.9534H134.861ZM140.861 16.9534H134.861H112.177H106.177V22.9534V84.5483V90.5483H112.177H134.861H140.861V84.5483V22.9534V16.9534Z" fill="#BDBDE6"/>
-          <path d="M134.842 39.7485V84.6222H112.158V50.2588L134.842 39.7485Z" fill="#F3F2F1"/>
-          <path d="M14.4893 104.826H6.29785V195.843H14.4893V104.826Z" fill="url(#paint1_linear_2916_170481)"/>
-          <path d="M20.7868 200H0L10.2824 188.095L20.7868 200Z" fill="#FDC9B5"/>
-          <path d="M10.393 115.031C14.763 115.031 18.3056 111.488 18.3056 107.118C18.3056 102.748 14.763 99.2058 10.393 99.2058C6.02304 99.2058 2.48047 102.748 2.48047 107.118C2.48047 111.488 6.02304 115.031 10.393 115.031Z" fill="#FDC9B5"/>
-          <path d="M193.702 104.826H185.511V195.843H193.702V104.826Z" fill="url(#paint2_linear_2916_170481)"/>
-          <path d="M200 200H179.213L189.495 188.095L200 200Z" fill="#FDC9B5"/>
-          <path d="M189.607 115.031C193.977 115.031 197.519 111.488 197.519 107.118C197.519 102.748 193.977 99.2058 189.607 99.2058C185.237 99.2058 181.694 102.748 181.694 107.118C181.694 111.488 185.237 115.031 189.607 115.031Z" fill="#FDC9B5"/>
-          <path d="M99.6942 138.026C99.4109 138.026 99.13 138.024 98.8461 138.023C68.4464 137.884 41.129 130.132 23.2558 116.669C19.612 113.94 23.0269 109.128 26.7598 111.933C43.6193 124.664 69.6887 131.997 98.8734 132.132C128.987 132.237 154.767 124.815 171.907 111.084C177.459 106.637 181.041 111.386 175.16 116.026C157.131 130.252 130.553 138.026 99.6942 138.026Z" fill="#E86E58"/>
-          <path d="M24.6958 118.99C27.4289 118.99 29.6445 116.774 29.6445 114.041C29.6445 111.308 27.4289 109.092 24.6958 109.092C21.9627 109.092 19.7471 111.308 19.7471 114.041C19.7471 116.774 21.9627 118.99 24.6958 118.99Z" fill="#605D5A"/>
-          <path d="M174.315 117.742C177.048 117.742 179.264 115.527 179.264 112.793C179.264 110.06 177.048 107.845 174.315 107.845C171.582 107.845 169.366 110.06 169.366 112.793C169.366 115.527 171.582 117.742 174.315 117.742Z" fill="#605D5A"/>
-        </g>
-        <defs>
-          <radialGradient id="paint0_radial_2916_170481" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(59.6961 101.899) scale(7.55951 5.02978)">
-            <stop stop-color="#C8C6C4"/>
-            <stop offset="1" stop-color="#E1DFDD"/>
-          </radialGradient>
-          <linearGradient id="paint1_linear_2916_170481" x1="10.3936" y1="108.626" x2="10.3936" y2="136.656" gradientUnits="userSpaceOnUse">
-            <stop offset="0.002198" stop-color="#ED9583"/>
-            <stop offset="1" stop-color="#FDC9B5"/>
-          </linearGradient>
-          <linearGradient id="paint2_linear_2916_170481" x1="189.606" y1="108.626" x2="189.606" y2="136.656" gradientUnits="userSpaceOnUse">
-            <stop offset="0.002198" stop-color="#ED9583"/>
-            <stop offset="1" stop-color="#FDC9B5"/>
-          </linearGradient>
-          <clipPath id="clip0_2916_170481">
-            <rect width="200" height="200" fill="white"/>
-          </clipPath>
-        </defs>
-        </svg>
-      <!-- oops.svg -->
-      <svg id="oops-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 201.3 201.3" class="oops-svg">
-        <circle cx="100.65" cy="100.65" r="100.8" fill="#e1dfdd"/>
-        <path fill="#8b8cc4" d="M164.616 130.272c-.347.022-.686.18-1.016.45a46.79 46.79 0 0 0-7.366-.583h-26.278a46.31 46.31 0 0 0-6.576.479l-1.686-.286s-31.896-1.455-43.822-10.645c-2.408-2.894-.23-3.797.882-5.77 1.638-2.908-2.066-4.306-2.116-5.832-.06-1.86 2.584-3.845 2.895-4.073 14.68-8.93 50.816-11.593 50.816-11.593l-.845-11.644S46.52 65.143 36.902 108.663c-8.432 38.15 45.387 52.636 50.15 81.782l.874 10.208c4.167.525 8.414.797 12.724.797 41.805 0 77.665-25.45 92.935-61.701-7.963-4.976-17.523-8.463-28.97-9.477z"/>
-        <radialGradient id="a" cx="133.181" cy="87.203" r="26.001" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#915a37"/>
-          <stop offset=".299" stop-color="#b1805b"/>
-          <stop offset=".576" stop-color="#c99c75"/>
-          <stop offset=".818" stop-color="#d7ad85"/>
-          <stop offset="1" stop-color="#dcb38b"/>
-        </radialGradient>
-        <path fill="url(#a)" d="M88.335 78.304l3.574 20.63c16.619-4.907 38.44-6.515 38.44-6.515l-.845-11.644s-19.795-3.726-41.17-2.47z"/>
-        <path fill="#bf8f68" d="M119.587 90.935l48.03.69.236-16.457a8.484 8.484 0 0 0-8.362-8.604l-31.066-.446a8.48 8.48 0 0 0-8.601 8.358l-.237 16.459z"/>
-        <radialGradient id="b" cx="139.096" cy="105.403" r="29.595" fx="139.932" fy="105.326" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#915a37"/>
-          <stop offset=".093" stop-color="#9d6844"/>
-          <stop offset=".343" stop-color="#b88963"/>
-          <stop offset=".583" stop-color="#cca079"/>
-          <stop offset=".808" stop-color="#d8ae86"/>
-          <stop offset="1" stop-color="#dcb38b"/>
-        </radialGradient>
-        <path fill="url(#b)" d="M159.456 124.23c-.688-5.305.49-34.218.49-34.218h-29.772s-.312 30.16-1.506 35.484c-1.195 5.324-5.607 4.639-6.974 4.836 2.896 4.942 11.877 8.755 22.14 8.755 10.537 0 20.194-3.504 22.846-8.65-1.902-.274-6.588-1.305-7.224-6.208z"/>
-        <circle cx="163.578" cy="93.482" r="7.149" fill="#dcb38b"/>
-        <radialGradient id="c" cx="131.398" cy="94.684" r="13.738" gradientTransform="matrix(1 .0088 -.0088 1 -.723 -3.06)" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#915a37"/>
-          <stop offset=".054" stop-color="#98623e"/>
-          <stop offset=".326" stop-color="#b58560"/>
-          <stop offset=".582" stop-color="#cb9e77"/>
-          <stop offset=".814" stop-color="#d7ae86"/>
-          <stop offset="1" stop-color="#dcb38b"/>
-        </radialGradient>
-        <circle cx="122.021" cy="93.116" r="7.149" fill="url(#c)"/>
-        <path fill="#dcb38b" d="M139.07 120.47l6.11.088c10.049.145 18.313-7.885 18.457-17.935l.34-23.695c.076-5.347-4.196-9.743-9.542-9.82l-22.654-.325c-5.482-.079-9.99 4.301-10.068 9.783l-.34 23.692c-.143 9.917 7.78 18.07 17.697 18.213z"/>
-        <path fill="#bf8f68" d="M119.83 71.376s6.897-2.563 6.823 5.983-5.187 8.627-5.187 8.627l-1.636-14.61z"/>
-        <path fill="#bf8f68" d="M132.314 73.466c3.064-.21 11.692-4.14 17.818-4.42 8.867-.405 11.456 3.81 11.456 3.81s2.538-17.34-10.019-15.088c-12.02 2.156-9.186-3.028-14.347-3.38-4.899-.335-5.039 4.376-8.054 4.54-4.975.273-3.245-5.775-10.831-4.709-7.253 1.02-11.83 21.014 13.977 19.247z"/>
-        <ellipse cx="151.266" cy="88.69" fill="#605d5a" rx="1.684" ry="3.109" transform="rotate(-.642 150.728 88.38)"/>
-        <radialGradient id="d" cx="242.292" cy="155.621" r="12.536" gradientTransform="matrix(.9696 .0718 -.0647 .8738 -81.71 -56.88)" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#9b643d"/>
-          <stop offset=".18" stop-color="#a46e47" stop-opacity=".82"/>
-          <stop offset=".687" stop-color="#b8865f" stop-opacity=".313"/>
-          <stop offset="1" stop-color="#bf8f68" stop-opacity="0"/>
-        </radialGradient>
-        <path fill="url(#d)" d="M127.035 113.103l13.988.883.695-11.215a2.343 2.343 0 0 0-.932-2.018l-3.225-2.422a1.601 1.601 0 0 1-.33-2.229l3.205-4.363a6.767 6.767 0 0 0 1.298-3.565l.629-9.226-12.984-.817-2.343 34.972z"/>
-        <path fill="#bf8f68" d="M166.335 79.382c.197-4.017-1.432-7.68-4.434-7.81-1.647-.07-3.8 1.846-3.835 5.728-.077 8.546 5.805 9.01 5.805 9.01s2.268-2.91 2.464-6.928z"/>
-        <ellipse cx="133.588" cy="88.901" fill="#605d5a" rx="1.684" ry="3.109" transform="rotate(-.642 133.12 88.594)"/>
-        <path fill="#bf8f68" d="M147.564 107.996c-.674-.059-1.204.03-1.882.15-.665.129-1.415.319-2.24.46-.82.147-1.728.234-2.676.156-.94-.075-1.944-.352-2.732-.957a.762.762 0 0 1 .38-1.361l.081-.009a22.067 22.067 0 0 0 2.165-.347c.705-.145 1.434-.337 2.238-.485.802-.15 1.68-.285 2.669-.232.963.042 2.146.364 2.892 1.186a.872.872 0 0 1-.718 1.455l-.177-.016z"/>
-        <circle cx="100.65" cy="100.65" r="100.8" fill="none"/>
-        <circle cx="61.871" cy="48.022" r="28.91" fill="#fff"/>
-        <circle cx="90.781" cy="42.047" r="6.609" fill="#fff"/>
-        <circle cx="103.196" cy="47.227" r="3.505" fill="#fff"/>
-        <path fill="#f7b548" d="M61.828 63.526c-.416-.01-.828-.1-1.21-.269a3.336 3.336 0 0 1-1.752-1.698 2.993 2.993 0 0 1-.269-1.263A3.082 3.082 0 0 1 58.866 59a3.37 3.37 0 0 1 .727-1.028 3.276 3.276 0 0 1 1.027-.67 3.27 3.27 0 0 1 3.498.687c.622.604.963 1.44.94 2.306a3.057 3.057 0 0 1-.94 2.307 3.159 3.159 0 0 1-2.29.924zm.055-9.881a2.706 2.706 0 0 1-2.704-2.62l-.494-15.71-.001-.084a2.706 2.706 0 0 1 2.706-2.706h.987l.084.001a2.706 2.706 0 0 1 2.62 2.79l-.493 15.708a2.706 2.706 0 0 1-2.705 2.621z"/>
-      </svg>
-
-      <div class="oops-h1">
-        <h1 id="oops-line-one" class="oops-line-one">Teams classique n’est plus disponible</h1>
-        <p id="oops-line-two" class="oops-hidden">
-          Utilisez Teams sur le web ou téléchargez la dernière version de l’application.
-          <a class="oops-itp-block-learn-more oops-hidden" href="" target="_blank">En savoir plus</a>
-        </p>
-        <p id="oops-line-three" class="oops-hidden">
-          For more information or assistance, please contact your IT administrator.
-          <a class="oops-eoa-mtr-learn-more oops-hidden">En savoir plus</a>
-        </p>
+<!-- Filtres -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form class="row g-2 align-items-end" method="GET">
+      <input type="hidden" name="vue" value="{{ vue }}">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Statut</label>
+        <select name="statut" class="form-select form-select-sm">
+          <option value="">Tous les statuts</option>
+          <option value="planifiee" {% if statut=='planifiee' %}selected{% endif %}>Planifiée</option>
+          <option value="en_cours"  {% if statut=='en_cours'  %}selected{% endif %}>En cours</option>
+          <option value="terminee"  {% if statut=='terminee'  %}selected{% endif %}>Terminée</option>
+          <option value="annulee"   {% if statut=='annulee'   %}selected{% endif %}>Annulée</option>
+        </select>
       </div>
-      <a href="/downloads" id="try-again-link">
-        <button class="ts-btn ts-btn-fluent ts-btn-fluent-primary oops-button"
-                type="button">
-          Réessayer
-        </button>
-      </a>
-     <a
-        id="open-teams-on-web"
-        class="ts-btn ts-btn-fluent ts-btn-fluent-primary oops-button oops-hidden"
-        href=""
-        target="_blank"
-      >
-        Accédez à Teams sur le web
-      </a>
-      <a id="open-teams-in-edge-link" class="oops-hidden">
-        <button class="ts-btn ts-btn-fluent ts-btn-fluent-primary oops-button"
-                type="button">
-          
-        </button>
-      </a>
-      <a id="manage-settings-link" class="oops-hidden">
-        <button class="ts-btn ts-btn-fluent ts-btn-fluent-primary oops-button"
-                type="button">
-          
-        </button>
-      </a>
-      <div id="eoa-signout-text" class="oops-text oops-hidden">
-        <a href="https://login.microsoftonline.com/[[tenantId]]/oauth2/logout?post_logout_redirect_uri=https://teams.microsoft.com/" id="eoa-signout-link">Se déconnecter</a>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Priorité</label>
+        <select name="priorite" class="form-select form-select-sm">
+          <option value="">Toutes</option>
+          <option value="urgente" {% if priorite=='urgente' %}selected{% endif %}>Urgente</option>
+          <option value="normale" {% if priorite=='normale' %}selected{% endif %}>Normale</option>
+          <option value="faible"  {% if priorite=='faible'  %}selected{% endif %}>Faible</option>
+        </select>
       </div>
-      <div id="oops-signout-text" class="oops-text oops-hidden">
-        Si cela ne fonctionne pas, essayez de
-        <a href="https://login.microsoftonline.com/[[tenantId]]/oauth2/logout?post_logout_redirect_uri=https://teams.microsoft.com/" id="oops-signout-link">vous déconnecter</a>
-        et de vous reconnecter.
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Client</label>
+        <select name="client_id" class="form-select form-select-sm">
+          <option value="">Tous les clients</option>
+          {% for c in clients %}
+            <option value="{{ c.id }}" {% if cid==c.id|string %}selected{% endif %}>{{ c.nom_affichage }}</option>
+          {% endfor %}
+        </select>
       </div>
-      <div id="alternative-oops-signout-text" class="oops-text oops-hidden">
-        <span id="alternative-oops-signout-before-text"></span>
-        <a href="https://login.microsoftonline.com/[[tenantId]]/oauth2/logout?post_logout_redirect_uri=https://teams.microsoft.com/" id="alternative-oops-signout-link">Déconnectez-vous</a>
-        <span id="alternative-oops-signout-after-text">et reconnectez-vous</span>
+      <div class="col-auto">
+        <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-funnel me-1"></i>Filtrer</button>
+        <a href="{{ url_for('interventions_liste', vue=vue) }}" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-x me-1"></i>Reset
+        </a>
       </div>
-      <div id="error-ie-not-supported-launch-app" class="oops-text oops-hidden">
-        <span id="launch-app-before-text"></span>
-        <a href="" id="launch-app-link"></a>
+
+      <!-- Toggle vue -->
+      <div class="col-auto ms-auto">
+        <div class="btn-group btn-group-sm" role="group">
+          <a href="{{ url_for('interventions_liste', vue='liste', statut=statut, priorite=priorite, client_id=cid) }}"
+             class="btn btn-outline-secondary vue-btn {% if vue=='liste' %}active{% endif %}">
+            <i class="bi bi-list-ul me-1"></i>Liste
+          </a>
+          <a href="{{ url_for('interventions_liste', vue='dossiers', statut=statut, priorite=priorite, client_id=cid) }}"
+             class="btn btn-outline-secondary vue-btn {% if vue=='dossiers' %}active{% endif %}">
+            <i class="bi bi-folder2-open me-1"></i>Par client
+          </a>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if not interventions %}
+<div class="card">
+  <div class="card-body text-center py-5 text-muted">
+    <i class="bi bi-calendar-x fs-1 d-block mb-2"></i>Aucune intervention trouvée
+  </div>
+</div>
+
+{% elif vue == 'dossiers' %}
+<!-- ════════════════════════════════════════
+     VUE PAR CLIENT (dossiers accordéon)
+     ════════════════════════════════════════ -->
+
+{# Grouper par client (tri déjà fait dans la route : par nom client) #}
+{% set ns = namespace(current_client=None, idx=0) %}
+
+<div class="mb-2 text-muted small">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ interventions|length }} intervention(s) — {{ groupes|length }} client(s)
+  <span class="ms-3"><i class="bi bi-hand-point-up me-1"></i>Cliquez sur un dossier pour l'ouvrir</span>
+</div>
+
+<div id="accordion-dossiers">
+{% for client_nom, items in groupes.items() %}
+{% set dossier_id = "dossier-" ~ loop.index %}
+{% set items_list = items %}
+
+{# Compter les statuts #}
+{% set nb_planifiees = items_list | selectattr('statut','equalto','planifiee') | list | length %}
+{% set nb_en_cours   = items_list | selectattr('statut','equalto','en_cours')  | list | length %}
+{% set nb_terminees  = items_list | selectattr('statut','equalto','terminee')  | list | length %}
+
+<div class="card mb-2" style="border-radius:10px;overflow:hidden;">
+
+  <!-- En-tête dossier -->
+  <div class="dossier-header p-3 d-flex align-items-center gap-3"
+       onclick="toggleDossier('{{ dossier_id }}')"
+       id="head-{{ dossier_id }}">
+    <i class="bi bi-folder2 fs-5 dossier-arrow" id="arrow-{{ dossier_id }}"></i>
+    <div class="flex-fill">
+      <div class="fw-semibold">{{ client_nom }}</div>
+      <div class="text-muted small mt-1 d-flex gap-2 flex-wrap" id="badges-{{ dossier_id }}">
+        {% if nb_planifiees > 0 %}
+          <span class="badge" style="background:#3788d8">{{ nb_planifiees }} planifiée{{ 's' if nb_planifiees > 1 }}</span>
+        {% endif %}
+        {% if nb_en_cours > 0 %}
+          <span class="badge" style="background:#f39c12">{{ nb_en_cours }} en cours</span>
+        {% endif %}
+        {% if nb_terminees > 0 %}
+          <span class="badge" style="background:#27ae60">{{ nb_terminees }} terminée{{ 's' if nb_terminees > 1 }}</span>
+        {% endif %}
       </div>
     </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-secondary rounded-pill">{{ items_list|length }}</span>
+      <a href="{{ url_for('client_detail', id=items_list[0].client_id) }}"
+         class="btn btn-sm btn-outline-light" onclick="event.stopPropagation()" title="Fiche client">
+        <i class="bi bi-person"></i>
+      </a>
+      <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ items_list[0].client_id }}"
+         class="btn btn-sm btn-outline-light" onclick="event.stopPropagation()" title="Planifier">
+        <i class="bi bi-plus-lg"></i>
+      </a>
+    </div>
   </div>
-  <a id="log-download"><div id="session-id" class="oops-ref"></div></a>
-  <script src="https://statics.teams.cdn.office.net/hashed/ErrorTemplatePage-029e165.js" nonce="nf+hTTd4V+0VKgMFVj/q2Q=="></script>
-</body>
-</html>
+
+  <!-- Corps dossier (masqué par défaut) -->
+  <div class="dossier-body" id="{{ dossier_id }}" style="display:none;">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:90px">Date</th>
+            <th>Titre / Type</th>
+            <th style="width:90px">Priorité</th>
+            <th style="width:100px">Statut</th>
+            <th style="width:110px">Portail</th>
+            <th style="width:70px">Bon</th>
+            <th style="width:50px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in items_list %}
+          {% set row_class = 'row-urgente' if i.priorite=='urgente'
+                        else 'row-derat' if 'dératisation' in (i.type_intervention or '').lower() and 'désinsectisation' not in (i.type_intervention or '').lower()
+                        else 'row-desinsect' if 'désinsectisation' in (i.type_intervention or '').lower() and 'dératisation' not in (i.type_intervention or '').lower()
+                        else 'row-desinfect' if 'désinfection' in (i.type_intervention or '').lower() and 'dératisation' not in (i.type_intervention or '').lower()
+                        else 'row-multi' if (i.type_intervention or '') != ''
+                        else 'row-normale' %}
+          <tr class="{{ row_class }}">
+            <td class="small text-nowrap">
+              <div>{{ i.date_planifiee.strftime('%d/%m/%Y') }}</div>
+              <div class="text-muted">{{ i.date_planifiee.strftime('%H:%M') }}</div>
+            </td>
+            <td>
+              <div class="small fw-semibold">{{ i.titre }}</div>
+              {% if i.type_intervention %}
+                <div class="text-muted" style="font-size:.72rem">{{ i.type_intervention }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if i.priorite=='urgente' %}<span class="badge bg-danger">Urgente</span>
+              {% elif i.priorite=='normale' %}<span class="badge bg-primary">Normale</span>
+              {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}
+            </td>
+            <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+            <td>
+              {% if i.portal_contact %}
+                <span class="badge bg-info text-dark" title="{{ i.portal_contact.email or '' }}">
+                  <i class="bi bi-person-badge me-1"></i>{{ i.portal_contact.nom }}
+                </span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if i.bon %}
+                <a href="{{ url_for('bon_detail', id=i.bon.id) }}" class="badge bg-{{ i.bon.statut_couleur }} text-decoration-none small">
+                  {{ i.bon.statut_label }}
+                </a>
+              {% else %}
+                <a href="{{ url_for('bon_nouveau') }}?intervention_id={{ i.id }}"
+                   class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:1px 5px">
+                  <i class="bi bi-file-plus"></i>
+                </a>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endfor %}
+</div>
+
+{% else %}
+<!-- ════════════════════════════════════════
+     VUE LISTE (tableau classique)
+     ════════════════════════════════════════ -->
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Réf.</th><th>Date</th><th>Client</th><th>Titre</th><th>Type</th><th>Priorité</th><th>Statut</th><th>Portail</th><th>Technicien</th><th>Bon</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for i in interventions %}
+          <tr class="priority-{{ i.priorite }}">
+            <td><small class="text-muted">{{ i.reference }}</small></td>
+            <td class="text-nowrap small">
+              <div>{{ i.date_planifiee.strftime('%d/%m/%Y') }}</div>
+              <div class="text-muted">{{ i.date_planifiee.strftime('%H:%M') }}</div>
+            </td>
+            <td><a href="{{ url_for('client_detail', id=i.client_id) }}" class="text-decoration-none">{{ i.client.nom_affichage }}</a></td>
+            <td>{{ i.titre }}</td>
+            <td><small class="text-muted">{{ i.type_intervention or '—' }}</small></td>
+            <td>
+              {% if i.priorite=='urgente' %}<span class="badge bg-danger">Urgente</span>
+              {% elif i.priorite=='normale' %}<span class="badge bg-primary">Normale</span>
+              {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}
+            </td>
+            <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+            <td>
+              {% if i.portal_contact %}
+                <span class="badge bg-info text-dark" title="{{ i.portal_contact.email or '' }}">
+                  <i class="bi bi-person-badge me-1"></i>{{ i.portal_contact.nom }}
+                </span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td><small>{{ i.technicien or '—' }}</small></td>
+            <td>
+              {% if i.bon %}
+                <a href="{{ url_for('bon_detail', id=i.bon.id) }}" class="badge bg-{{ i.bon.statut_couleur }} text-decoration-none">{{ i.bon.statut_label }}</a>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-footer text-muted small">{{ interventions|length }} intervention(s)</div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleDossier(id) {
+  const body  = document.getElementById(id);
+  const head  = document.getElementById('head-' + id);
+  const arrow = document.getElementById('arrow-' + id);
+  const isOpen = body.style.display !== 'none';
+
+  if (isOpen) {
+    body.style.display = 'none';
+    head.classList.remove('open');
+    arrow.className = arrow.className.replace('bi-folder2-open','bi-folder2');
+  } else {
+    body.style.display = 'block';
+    head.classList.add('open');
+    arrow.className = arrow.className.replace('bi-folder2','bi-folder2-open');
+  }
+}
+
+// Si un seul client filtre → ouvrir automatiquement
+{% if groupes and groupes|length == 1 %}
+document.addEventListener('DOMContentLoaded', () => toggleDossier('dossier-1'));
+{% endif %}
+</script>
+{% endblock %}
