@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<form method="POST" enctype="multipart/form-data">
+<form method="POST" enctype="multipart/form-data" id="bon-form">
 <div class="row g-3">
   <div class="col-lg-8">
 
@@ -305,24 +305,19 @@
           </div>
         </div>
 
-        <!-- Aperçu + bouton enregistrer -->
+        <!-- Aperçu — la photo est enregistrée automatiquement dès la prise -->
         <div id="preview-zone" style="display:none" class="mb-3">
-          <div class="text-center mb-2">
+          <div class="text-center mb-2 position-relative d-inline-block">
             <img id="preview-img" src="" alt="Aperçu"
-                 class="img-fluid rounded shadow-sm" style="max-height:260px;max-width:100%">
+                 class="img-fluid rounded shadow-sm" style="max-height:260px;max-width:100%;opacity:.6">
+            <div class="position-absolute top-50 start-50 translate-middle">
+              <span class="spinner-border text-primary"></span>
+            </div>
           </div>
-          <div class="alert alert-info py-2 small">
-            <i class="bi bi-info-circle me-1"></i>
-            Cliquez sur <strong>Enregistrer la photo</strong> ci-dessous, puis sauvegardez le bon.
+          <div class="text-center text-muted small">
+            <i class="bi bi-cloud-upload me-1"></i>Enregistrement en cours…
           </div>
-          <div class="d-flex gap-2">
-            <button type="submit" name="ajouter_photo" value="1" class="btn btn-success flex-fill">
-              <i class="bi bi-cloud-upload me-1"></i>Enregistrer la photo
-            </button>
-            <button type="button" class="btn btn-outline-secondary" onclick="annulerPhoto()">
-              <i class="bi bi-x"></i>
-            </button>
-          </div>
+          <button type="submit" name="ajouter_photo" value="1" id="btn-photo-submit" class="d-none"></button>
         </div>
 
         <!-- Galerie des photos existantes -->
@@ -541,6 +536,11 @@ function previewPhoto(input) {
     document.getElementById('preview-zone').style.display = 'block';
   };
   reader.readAsDataURL(file);
+  // Enregistrement automatique dès la prise de la photo — plus besoin de confirmer.
+  // La suppression reste possible ensuite via l'icône corbeille sur chaque vignette.
+  const form = document.getElementById('bon-form');
+  const btn  = document.getElementById('btn-photo-submit');
+  if (form && btn) form.requestSubmit(btn);
 }
 function annulerPhoto() {
   document.getElementById('preview-zone').style.display = 'none';
