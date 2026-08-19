@@ -391,7 +391,7 @@
         <div class="table-responsive">
           <table class="table table-hover mb-0">
             <thead class="table-light">
-              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>Adresse</th><th>Portail</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
+              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>N° BT</th><th>Adresse</th><th>Portail</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
             </thead>
             <tbody>
               {% for i in interventions %}
@@ -400,6 +400,9 @@
                 <td><small class="text-muted">{{ i.reference }}</small></td>
                 <td class="text-nowrap small">{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}</td>
                 <td>{{ i.titre }}</td>
+                <td class="small text-nowrap">
+                  {% if i.numero_bon_commande %}{{ i.numero_bon_commande }}{% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
                 <td class="small text-muted" style="max-width:200px" title="{{ adr }}">
                   {% if adr %}<i class="bi bi-geo-alt me-1"></i>{{ adr | truncate(35) }}{% else %}—{% endif %}
                 </td>
