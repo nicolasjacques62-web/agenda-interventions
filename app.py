@@ -241,7 +241,11 @@ class PortalContact(db.Model):
     reset_token_expiry = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     derniere_connexion = db.Column(db.DateTime)
+    # Permet à cet interlocuteur de voir, en plus des siennes, les demandes
+    # d'un autre interlocuteur du même client (ex: Mugnier voit comme Lavallard)
+    visible_comme_id = db.Column(db.Integer, db.ForeignKey('portal_contacts.id'))
     client = db.relationship('Client', backref=db.backref('portal_contacts', cascade='all, delete-orphan'))
+    visible_comme = db.relationship('PortalContact', remote_side=[id])
 
     def set_portal_password(self, p): self.portal_password_hash = generate_password_hash(p)
     def check_portal_password(self, p):
@@ -2830,11 +2834,39 @@ def portail_contact_ajouter(id):
     if not nom:
         flash('Indiquez un nom pour cet interlocuteur.', 'warning')
         return redirect(url_for('client_detail', id=id))
-    contact = PortalContact(client_id=c.id, nom=nom, email=email or None)
+    vc_id = request.form.get('visible_comme_id', '').strip()
+    visible_comme_id = int(vc_id) if vc_id else None
+    if visible_comme_id:
+        cible = PortalContact.query.get(visible_comme_id)
+        if not cible or cible.client_id != c.id:
+            visible_comme_id = None
+    contact = PortalContact(client_id=c.id, nom=nom, email=email or None,
+                             visible_comme_id=visible_comme_id)
     db.session.add(contact)
     db.session.commit()
-    flash(f'Interlocuteur « {nom} » ajouté — un lien de connexion dédié a été créé.', 'success')
+    suffixe = f' (voit aussi les demandes de « {cible.nom} »)' if visible_comme_id else ''
+    flash(f'Interlocuteur « {nom} » ajouté — un lien de connexion dédié a été créé{suffixe}.', 'success')
     return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/portail/interlocuteurs/<int:contact_id>/visibilite', methods=['POST'])
+@login_required
+def portail_contact_visibilite(contact_id):
+    contact = PortalContact.query.get_or_404(contact_id)
+    cid = contact.client_id
+    vc_id = request.form.get('visible_comme_id', '').strip()
+    if not vc_id:
+        contact.visible_comme_id = None
+        flash(f'« {contact.nom} » ne voit plus que ses propres demandes.', 'success')
+    else:
+        vc_id = int(vc_id)
+        cible = PortalContact.query.get(vc_id)
+        if not cible or cible.client_id != cid or vc_id == contact.id:
+            flash('Interlocuteur cible invalide.', 'warning')
+            return redirect(url_for('client_detail', id=cid))
+        contact.visible_comme_id = vc_id
+        flash(f'« {contact.nom} » voit désormais aussi les demandes de « {cible.nom} ».', 'success')
+    db.session.commit()
+    return redirect(url_for('client_detail', id=cid))
 
 @app.route('/clients/portail/interlocuteurs/<int:contact_id>/desactiver', methods=['POST'])
 @login_required
@@ -4633,11 +4665,16 @@ def portail_dashboard(token):
     inter_q = Intervention.query.filter_by(client_id=c.id)
     bons_q = BonIntervention.query.join(Intervention).filter(Intervention.client_id == c.id)
     # Interlocuteur secondaire (sous-portail) : ne voit que les interventions
-    # qui lui ont été explicitement assignées à la planification. Le contact
+    # qui lui ont été explicitement assignées à la planification, plus celles
+    # de l'interlocuteur qu'il "mire" le cas échéant (visible_comme_id — ex:
+    # Mugnier configuré pour voir aussi les demandes de Lavallard). Le contact
     # principal du client (lien historique) continue de tout voir.
     if contact:
-        inter_q = inter_q.filter(Intervention.portal_contact_id == contact.id)
-        bons_q = bons_q.filter(Intervention.portal_contact_id == contact.id)
+        contact_ids = {contact.id}
+        if contact.visible_comme_id:
+            contact_ids.add(contact.visible_comme_id)
+        inter_q = inter_q.filter(Intervention.portal_contact_id.in_(contact_ids))
+        bons_q = bons_q.filter(Intervention.portal_contact_id.in_(contact_ids))
     a_venir = inter_q.filter(Intervention.date_planifiee >= now,
                               Intervention.statut.in_(['planifiee', 'en_cours']))\
         .order_by(Intervention.date_planifiee.asc()).all()
@@ -5160,6 +5197,7 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS adresse TEXT",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS portal_contact_id INTEGER REFERENCES portal_contacts(id)",
+            "ALTER TABLE portal_contacts ADD COLUMN IF NOT EXISTS visible_comme_id INTEGER REFERENCES portal_contacts(id)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS outlook_event_id VARCHAR(300)",
             """CREATE TABLE IF NOT EXISTS outlook_events (
                 id SERIAL PRIMARY KEY,
