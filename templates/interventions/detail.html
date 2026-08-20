@@ -18,13 +18,22 @@
   <div class="col-lg-4">
     <!-- Détails -->
     <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between">
+      <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-info-circle me-2"></i>Détails</span>
-        <span class="badge badge-{{ intervention.statut }}">{{ intervention.statut_label }}</span>
+        <span class="d-flex gap-1">
+          {% if intervention.passage_label %}
+            <span class="badge" style="background:{{ intervention.passage_couleur }}">{{ intervention.passage_label }}</span>
+          {% endif %}
+          <span class="badge badge-{{ intervention.statut }}">{{ intervention.statut_label }}</span>
+        </span>
       </div>
       <div class="card-body">
         <table class="table table-sm table-borderless mb-0">
           <tr><td class="text-muted small fw-semibold" style="width:110px">Référence</td><td>{{ intervention.reference }}</td></tr>
+          {% if intervention.intervention_origine %}
+          <tr><td class="text-muted small fw-semibold">Fait suite à</td>
+            <td><a href="{{ url_for('intervention_detail', id=intervention.intervention_origine.id) }}">{{ intervention.intervention_origine.reference }} — {{ intervention.intervention_origine.titre }}</a></td></tr>
+          {% endif %}
           <tr><td class="text-muted small fw-semibold">Client</td>
             <td><a href="{{ url_for('client_detail', id=intervention.client_id) }}">{{ intervention.client.nom_affichage }}</a></td></tr>
           <tr><td class="text-muted small fw-semibold">Type</td><td>{{ intervention.type_intervention or '—' }}</td></tr>
