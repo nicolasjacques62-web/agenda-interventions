@@ -276,9 +276,28 @@ class Intervention(db.Model):
     demande_report_statut  = db.Column(db.String(20))     # en_attente / approuvee / refusee
     demande_report_message = db.Column(db.Text)           # message libre du client
     demande_report_at      = db.Column(db.DateTime)       # horodatage de la demande
+    # Numéro de passage (1 = intervention initiale, 2/3/... = suivi programmé
+    # depuis le bon ou l'audit d'origine) + lien vers l'intervention d'origine,
+    # pour affichage d'un badge "2e passage" / "3e passage" dans les listes.
+    numero_passage = db.Column(db.Integer, default=1)
+    intervention_origine_id = db.Column(db.Integer, db.ForeignKey('interventions.id'))
     bon = db.relationship('BonIntervention', backref='intervention', uselist=False,
                           cascade='all, delete-orphan')
     portal_contact = db.relationship('PortalContact', backref='interventions')
+    intervention_origine = db.relationship('Intervention', remote_side=[id])
+
+    @property
+    def passage_label(self):
+        n = self.numero_passage or 1
+        if n <= 1:
+            return None
+        ordinaux = {2: '2e', 3: '3e', 4: '4e', 5: '5e', 6: '6e'}
+        return f"{ordinaux.get(n, str(n) + 'e')} passage"
+
+    @property
+    def passage_couleur(self):
+        palette = {2: '#e67e22', 3: '#8e44ad', 4: '#16a085', 5: '#2c3e50'}
+        return palette.get(self.numero_passage or 1, '#34495e')
 
     @property
     def couleur(self):
@@ -3177,7 +3196,8 @@ def bon_nouveau():
         _creer_interventions_suivi(
             request.form, client_id=inter.client_id,
             adresse_defaut=inter.adresse or '', type_defaut=inter.type_intervention or '',
-            technicien_defaut=inter.technicien or '', titre_defaut=inter.titre)
+            technicien_defaut=inter.technicien or '', titre_defaut=inter.titre,
+            intervention_origine=inter)
         flash(f'Bon N° {b.numero} créé.', 'success')
         # Notification au client
         lien_p = url_for('portail_access', token=inter.client.access_token, _external=True) if inter.client.access_token else None
@@ -3287,7 +3307,8 @@ def bon_modifier(id):
         _creer_interventions_suivi(
             request.form, client_id=b.intervention.client_id,
             adresse_defaut=b.intervention.adresse or '', type_defaut=b.intervention.type_intervention or '',
-            technicien_defaut=b.intervention.technicien or '', titre_defaut=b.intervention.titre)
+            technicien_defaut=b.intervention.technicien or '', titre_defaut=b.intervention.titre,
+            intervention_origine=b.intervention)
         if not request.form.get('ajouter_photo'):
             flash('Bon mis à jour.', 'success')
         return redirect(url_for('bon_modifier', id=id))
@@ -3324,17 +3345,24 @@ def _adresse_client(client):
     return ', '.join(p for p in [(client.adresse or '').strip(), ligne2] if p)
 
 def _creer_interventions_suivi(form, client_id, adresse_defaut='', type_defaut='',
-                                technicien_defaut='', titre_defaut='Passage de suivi'):
+                                technicien_defaut='', titre_defaut='Passage de suivi',
+                                intervention_origine=None):
     """Crée une ou plusieurs interventions de suivi (2ème/3ème passage) directement
     programmées depuis un formulaire de bon d'intervention ou d'audit, via les lignes
     répétables 'suivi_date[]' / 'suivi_type[]' / 'suivi_technicien[]'. Reprend
     automatiquement le client, l'adresse, le type et le technicien de l'origine
     (modifiables ligne par ligne), synchronise chaque nouvelle intervention vers
     Outlook et notifie le client si son portail est actif. N'agit pas si aucune
-    date n'a été renseignée."""
+    date n'a été renseignée.
+    Si intervention_origine est fournie (cas des bons — pas des audits, qui ne
+    sont pas rattachés à une intervention précise), chaque passage créé reprend
+    aussi la description, la priorité, la durée estimée et le n° de bon de
+    commande de cette intervention d'origine, et se voit attribuer un numéro de
+    passage (2, 3, ...) affiché sous forme de badge dans les listes."""
     dates = form.getlist('suivi_date[]')
     types = form.getlist('suivi_type[]')
     technos = form.getlist('suivi_technicien[]')
+    numero_base = (intervention_origine.numero_passage or 1) if intervention_origine else 1
     crees = []
     for idx, d in enumerate(dates):
         d = (d or '').strip()
@@ -3355,7 +3383,15 @@ def _creer_interventions_suivi(form, client_id, adresse_defaut='', type_defaut='
             technicien=tech_i,
             adresse=adresse_defaut,
             statut='planifiee',
+            numero_passage=numero_base + idx + 1,
+            intervention_origine_id=intervention_origine.id if intervention_origine else None,
         )
+        if intervention_origine:
+            i.description = intervention_origine.description
+            i.priorite = intervention_origine.priorite or 'normale'
+            i.duree_estimee = intervention_origine.duree_estimee
+            i.numero_bon_commande = intervention_origine.numero_bon_commande
+            i.notes = intervention_origine.notes
         db.session.add(i)
         crees.append(i)
     if crees:
@@ -5198,6 +5234,8 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS portal_contact_id INTEGER REFERENCES portal_contacts(id)",
             "ALTER TABLE portal_contacts ADD COLUMN IF NOT EXISTS visible_comme_id INTEGER REFERENCES portal_contacts(id)",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_passage INTEGER DEFAULT 1",
+            "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS intervention_origine_id INTEGER REFERENCES interventions(id)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS outlook_event_id VARCHAR(300)",
             """CREATE TABLE IF NOT EXISTS outlook_events (
                 id SERIAL PRIMARY KEY,
