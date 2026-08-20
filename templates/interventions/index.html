@@ -193,7 +193,12 @@
               <div class="text-muted">{{ i.date_planifiee.strftime('%H:%M') }}</div>
             </td>
             <td>
-              <div class="small fw-semibold">{{ i.titre }}</div>
+              <div class="small fw-semibold">
+                {{ i.titre }}
+                {% if i.passage_label %}
+                  <span class="badge ms-1" style="background:{{ i.passage_couleur }}" title="Rendez-vous de suivi programmé depuis l'intervention précédente">{{ i.passage_label }}</span>
+                {% endif %}
+              </div>
               {% if i.type_intervention %}
                 <div class="text-muted" style="font-size:.72rem">{{ i.type_intervention }}</div>
               {% endif %}
@@ -261,7 +266,12 @@
               <div class="text-muted">{{ i.date_planifiee.strftime('%H:%M') }}</div>
             </td>
             <td><a href="{{ url_for('client_detail', id=i.client_id) }}" class="text-decoration-none">{{ i.client.nom_affichage }}</a></td>
-            <td>{{ i.titre }}</td>
+            <td>
+              {{ i.titre }}
+              {% if i.passage_label %}
+                <span class="badge ms-1" style="background:{{ i.passage_couleur }}" title="Rendez-vous de suivi programmé depuis l'intervention précédente">{{ i.passage_label }}</span>
+              {% endif %}
+            </td>
             <td><small class="text-muted">{{ i.type_intervention or '—' }}</small></td>
             <td>
               {% if i.priorite=='urgente' %}<span class="badge bg-danger">Urgente</span>
