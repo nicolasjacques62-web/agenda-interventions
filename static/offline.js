@@ -2,19 +2,21 @@
  * HPS3D — Gestionnaire hors-ligne
  *
  * Fonctionnement :
- *  1. Quand offline : les photos sont stockées localement (IndexedDB)
- *     avec un badge "En attente" visible dans le bon.
+ *  1. Quand offline : les photos ET les formulaires (bon d'intervention,
+ *     signatures) sont stockés localement (IndexedDB) avec un badge
+ *     "En attente" visible dans la barre du haut.
  *  2. Quand online  : synchronisation automatique → envoi au serveur,
  *     les badges "En attente" disparaissent.
  *
- * Exposed globals : pendingPhotosAdd, appendPendingPhotoCard, showToast, updateBadge
+ * Exposed globals : pendingPhotosAdd, appendPendingPhotoCard, showToast,
+ * updateBadge, envoyerPhotoBon, rendreFormulaireHorsLigneCompatible
  */
 
 (function () {
   'use strict';
 
   const DB_NAME    = 'hps3d-offline';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
 
   // ── IndexedDB ────────────────────────────────────────────────
 
@@ -27,8 +29,48 @@
           const s = db.createObjectStore('pendingPhotos', { keyPath: 'id' });
           s.createIndex('bonId', 'bonId', { unique: false });
         }
+        if (!db.objectStoreNames.contains('pendingForms')) {
+          db.createObjectStore('pendingForms', { keyPath: 'key' });
+        }
       };
       req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = () => reject(req.error);
+    });
+  }
+
+  // ── Formulaires en attente (bon d'intervention, signatures, ...) ──
+  // Une seule entrée par "key" (ex: bon-modifier-42) : si le technicien
+  // enregistre plusieurs fois hors-ligne, seule la dernière version est
+  // conservée et envoyée à la reconnexion.
+
+  async function pendingFormPut(key, url, pairs, label) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('pendingForms', 'readwrite');
+      tx.objectStore('pendingForms').put({
+        key, url, pairs, label, timestamp: new Date().toISOString(),
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => reject(tx.error);
+    });
+  }
+
+  async function pendingFormsGetAll() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction('pendingForms', 'readonly');
+      const req = tx.objectStore('pendingForms').getAll();
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror   = () => reject(req.error);
+    });
+  }
+
+  async function pendingFormDelete(key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction('pendingForms', 'readwrite');
+      const req = tx.objectStore('pendingForms').delete(key);
+      req.onsuccess = resolve;
       req.onerror   = () => reject(req.error);
     });
   }
@@ -75,15 +117,62 @@
   async function getCsrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     if (meta) return meta.getAttribute('content');
-    // Fallback : récupérer un token frais depuis le serveur
+    return getCsrfTokenFrais();
+  }
+
+  // Toujours interroger le serveur pour un jeton CSRF à jour — utilisé lors
+  // d'une synchronisation hors-ligne, où le jeton de la page (chargée avant
+  // la coupure réseau, parfois plus d'1h auparavant) peut avoir expiré.
+  async function getCsrfTokenFrais() {
     try {
-      const resp = await fetch('/api/csrf-token');
+      const resp = await fetch('/api/csrf-token', { credentials: 'include' });
       const data = await resp.json();
       return data.csrf_token;
     } catch (_) {
       return '';
     }
   }
+
+  // ── Envoi d'une photo de bon (en ligne ou hors-ligne) ─────────
+  // Utilisée à la fois par la fiche du bon et par son formulaire de
+  // modification : lit le fichier, l'envoie tout de suite si le réseau
+  // est là, sinon le met en file d'attente (IndexedDB) pour un envoi
+  // automatique à la reconnexion. Dans les deux cas, la vignette
+  // apparaît immédiatement dans la grille #photos-grid de la page.
+  window.envoyerPhotoBon = async function (bonId, file) {
+    if (!file) return;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    if (navigator.onLine) {
+      try {
+        const csrf = await getCsrfToken();
+        const resp = await fetch('/api/bons/' + bonId + '/photos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          credentials: 'include',
+          body: JSON.stringify({ nom: file.name, data: dataUrl, mimetype: file.type }),
+        });
+        if (resp.ok) {
+          const result = await resp.json();
+          _appendRealPhotoCard(result.photo_id, dataUrl, result.created_at);
+          showToast('📸 Photo enregistrée.', 'success');
+          return;
+        }
+      } catch (_) {
+        // Erreur réseau malgré navigator.onLine → on bascule sur le stockage local ci-dessous
+      }
+    }
+
+    const pendingId = await pendingPhotosAdd(bonId, file.name, dataUrl, file.type);
+    appendPendingPhotoCard(pendingId, dataUrl, file.name);
+    updateBadge();
+    showToast('📶 Hors ligne — photo sauvegardée. Elle sera envoyée automatiquement à la reconnexion.', 'info');
+  };
 
   // ── Préchargement du planning (consultation hors-ligne) ───────
   // Tant qu'on est en ligne, on rafraîchit silencieusement en arrière-plan
@@ -124,6 +213,86 @@
   }
   window.precacherPlanning = precacherPlanning;
 
+  // ── Formulaires hors-ligne génériques (bon d'intervention, signatures) ──
+  // Rend un <form> existant utilisable sans réseau : à l'enregistrement,
+  // on tente l'envoi normal ; en cas d'échec (ou si on est déjà hors-ligne),
+  // le contenu du formulaire est mis en file d'attente localement et envoyé
+  // automatiquement à la reconnexion, sans perdre ce qui a été saisi.
+  // `opts.key` doit être stable et unique pour ce formulaire (ex: 'bon-42')
+  // — un nouvel enregistrement hors-ligne du même formulaire remplace le
+  // précédent au lieu de s'empiler. `opts.label` sert juste à l'affichage.
+  window.rendreFormulaireHorsLigneCompatible = function (form, opts) {
+    if (!form) return;
+    const key   = opts && opts.key   || form.id || form.action;
+    const label = opts && opts.label || 'Formulaire';
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const url   = form.getAttribute('action') || window.location.pathname;
+      const pairs = [...new FormData(form).entries()]
+        .filter(([, v]) => !(v instanceof File)); // les photos suivent leur propre file d'attente
+
+      if (navigator.onLine) {
+        try {
+          const fd = new FormData();
+          pairs.forEach(([k, v]) => fd.append(k, v));
+          const resp = await fetch(url, { method: 'POST', body: fd, credentials: 'include' });
+          if (resp.ok) {
+            window.location.href = resp.url || url;
+            return;
+          }
+        } catch (_) {
+          // Pas de réseau malgré navigator.onLine → on bascule ci-dessous
+        }
+      }
+
+      await pendingFormPut(key, url, pairs, label);
+      updateBadge();
+      showToast('📶 Hors ligne — "' + label + '" enregistré localement. Il sera envoyé automatiquement à la reconnexion.', 'info');
+    });
+  };
+
+  function _envoyerPaires(url, pairs) {
+    const fd = new FormData();
+    pairs.forEach(([k, v]) => fd.append(k, v));
+    return fetch(url, { method: 'POST', body: fd, credentials: 'include' });
+  }
+
+  async function syncPendingForms() {
+    const pending = await pendingFormsGetAll();
+    if (!pending.length) return;
+    let ok = 0;
+    let doitRecharger = false;
+    for (const item of pending) {
+      try {
+        let resp = await _envoyerPaires(item.url, item.pairs);
+        // Un bon resté hors-ligne plus d'1h a un jeton CSRF expiré (le jeton
+        // est valable 1h) : on en récupère un frais et on retente une fois,
+        // sans quoi la synchronisation échouerait silencieusement pour de bon.
+        if (!resp.ok && (resp.status === 400 || resp.status === 403)) {
+          const frais = await getCsrfTokenFrais();
+          if (frais) {
+            const pairsFrais = item.pairs.map(([k, v]) => (k === 'csrf_token' ? [k, frais] : [k, v]));
+            resp = await _envoyerPaires(item.url, pairsFrais);
+          }
+        }
+        if (resp.ok) {
+          await pendingFormDelete(item.key);
+          ok++;
+          if (resp.url && new URL(resp.url).pathname === window.location.pathname) doitRecharger = true;
+        }
+      } catch (err) {
+        console.warn('[Offline] Form sync failed:', item.key, err);
+      }
+    }
+    if (ok > 0) {
+      showToast('✅ ' + ok + ' formulaire(s) synchronisé(s) avec le serveur.', 'success');
+      if (doitRecharger) window.location.reload();
+    }
+    updateBadge();
+  }
+  window.syncPendingForms = syncPendingForms;
+
   // ── Synchronisation ──────────────────────────────────────────
 
   let _syncing = false;
@@ -134,27 +303,37 @@
     updateBadge();
 
     try {
+      await syncPendingForms();
+
       const pending = await pendingPhotosGetAll(null);
       if (!pending.length) { _syncing = false; updateBadge(); return; }
 
-      const csrf = await getCsrfToken();
+      let csrf = await getCsrfToken();
       let syncedCount = 0;
+
+      const envoyerPhoto = (photo, jeton) => fetch('/api/bons/' + photo.bonId + '/photos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken':  jeton,
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          nom:      photo.filename,
+          data:     photo.dataUrl,
+          mimetype: photo.mimetype,
+        }),
+      });
 
       for (const photo of pending) {
         try {
-          const resp = await fetch('/api/bons/' + photo.bonId + '/photos', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken':  csrf,
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              nom:      photo.filename,
-              data:     photo.dataUrl,
-              mimetype: photo.mimetype,
-            }),
-          });
+          let resp = await envoyerPhoto(photo, csrf);
+          // Photo restée hors-ligne plus d'1h → jeton CSRF expiré : on en
+          // récupère un frais (celui de la page peut être ancien) et on retente.
+          if (!resp.ok && (resp.status === 400 || resp.status === 403)) {
+            csrf = await getCsrfTokenFrais();
+            resp = await envoyerPhoto(photo, csrf);
+          }
 
           if (resp.ok) {
             const result = await resp.json();
@@ -207,11 +386,17 @@
       return;
     }
 
-    let pending = [];
-    try { pending = await pendingPhotosGetAll(null); } catch (_) {}
+    let pendingPhotos = [];
+    let pendingForms  = [];
+    try { pendingPhotos = await pendingPhotosGetAll(null); } catch (_) {}
+    try { pendingForms  = await pendingFormsGetAll(); } catch (_) {}
+    const total = pendingPhotos.length + pendingForms.length;
 
-    if (pending.length > 0) {
-      badge.innerHTML = '<i class="bi bi-cloud-upload me-1"></i>' + pending.length + ' photo(s) en attente';
+    if (total > 0) {
+      const morceaux = [];
+      if (pendingPhotos.length) morceaux.push(pendingPhotos.length + ' photo(s)');
+      if (pendingForms.length)  morceaux.push(pendingForms.length + ' formulaire(s)');
+      badge.innerHTML = '<i class="bi bi-cloud-upload me-1"></i>' + morceaux.join(', ') + ' en attente';
       badge.className = 'badge rounded-pill bg-warning text-dark d-inline-flex align-items-center gap-1 py-2 px-3';
       badge.style.display = 'inline-flex';
       badge.title      = 'Cliquez pour synchroniser maintenant';
