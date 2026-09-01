@@ -85,6 +85,45 @@
     }
   }
 
+  // ── Préchargement du planning (consultation hors-ligne) ───────
+  // Tant qu'on est en ligne, on rafraîchit silencieusement en arrière-plan
+  // le tableau de bord, la liste des interventions et l'agenda (semaine en
+  // cours) — le Service Worker les met alors en cache automatiquement.
+  // Ainsi le planning reste consultable même si on n'a pas ouvert ces pages
+  // soi-même juste avant de perdre le réseau.
+
+  function _rangeSemaine() {
+    const debut = new Date();
+    debut.setHours(0, 0, 0, 0);
+    debut.setDate(debut.getDate() - 1); // marge d'un jour avant
+    const fin = new Date(debut);
+    fin.setDate(fin.getDate() + 9); // ~9 jours de visibilité
+    return { start: debut.toISOString(), end: fin.toISOString() };
+  }
+
+  async function precacherPlanning() {
+    if (!navigator.onLine) return;
+    // Évite de relancer les 5 requêtes à chaque navigation — une fois par
+    // minute suffit largement pour garder le planning à jour.
+    try {
+      const dernier = parseInt(sessionStorage.getItem('planningPrecacheAt') || '0', 10);
+      if (Date.now() - dernier < 60000) return;
+      sessionStorage.setItem('planningPrecacheAt', String(Date.now()));
+    } catch (_) { /* sessionStorage indisponible → on précharge quand même */ }
+    const { start, end } = _rangeSemaine();
+    const urls = [
+      '/dashboard',
+      '/interventions',
+      '/interventions?vue=dossiers',
+      '/agenda',
+      '/agenda/api/events?start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end),
+    ];
+    await Promise.all(urls.map(u =>
+      fetch(u, { credentials: 'include' }).catch(() => {})
+    ));
+  }
+  window.precacherPlanning = precacherPlanning;
+
   // ── Synchronisation ──────────────────────────────────────────
 
   let _syncing = false;
@@ -259,7 +298,7 @@
 
   // ── Initialisation ───────────────────────────────────────────
 
-  window.addEventListener('online',  () => { updateBadge(); syncAll(); });
+  window.addEventListener('online',  () => { updateBadge(); syncAll(); precacherPlanning(); });
   window.addEventListener('offline', () => updateBadge());
 
   document.addEventListener('DOMContentLoaded', async () => {
@@ -278,8 +317,12 @@
       } catch (_) {}
     }
 
-    // Tenter une sync si on est en ligne
-    if (navigator.onLine) syncAll();
+    // Tenter une sync si on est en ligne, et garder le planning à jour
+    // en cache pour la consultation hors-ligne.
+    if (navigator.onLine) {
+      syncAll();
+      precacherPlanning();
+    }
   });
 
 })();
