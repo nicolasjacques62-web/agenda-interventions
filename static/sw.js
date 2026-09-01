@@ -1,10 +1,11 @@
 /**
  * HPS3D — Service Worker
- * Stratégie : cache-first pour les assets, network-first pour les pages.
- * Permet la consultation hors-ligne des pages visitées.
+ * Stratégie : cache-first pour les assets, network-first pour les pages
+ * (HTML) ET pour les données JSON de l'appli (ex: événements de l'agenda).
+ * Permet la consultation hors-ligne des pages et du planning déjà chargés.
  */
 
-const CACHE_NAME = 'hps3d-v1';
+const CACHE_NAME = 'hps3d-v2';
 
 // Pages et ressources à mettre en cache dès l'installation
 const PRECACHE_URLS = ['/offline'];
@@ -71,12 +72,15 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Pages de l'application → network-first avec fallback cache
+  // Pages ET données JSON de l'application (ex: /agenda/api/events) →
+  // network-first avec fallback cache. Le planning consulté en ligne reste
+  // ainsi disponible hors-ligne (dernière version connue), y compris les
+  // événements de l'agenda qui sont chargés en JSON par le calendrier.
   event.respondWith(
     fetch(req)
       .then(resp => {
-        // Mise en cache des pages HTML visitées
-        if (resp.ok && (resp.headers.get('content-type') || '').includes('text/html')) {
+        const ct = resp.headers.get('content-type') || '';
+        if (resp.ok && (ct.includes('text/html') || ct.includes('application/json'))) {
           const clone = resp.clone();
           caches.open(CACHE_NAME).then(c => c.put(req, clone));
         }
