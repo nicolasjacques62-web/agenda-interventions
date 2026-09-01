@@ -281,7 +281,9 @@
       </div>
       <div class="card-body">
 
-        <!-- Input unique caméra/galerie -->
+        <!-- Input unique caméra/galerie — hors du grand formulaire : la photo
+             part directement (en ligne ou en attente hors-ligne) sans jamais
+             déclencher l'enregistrement du reste de la fiche. -->
         <input type="file" id="photo-input" name="photo_upload"
                accept="image/*" class="d-none"
                onchange="previewPhoto(this)">
@@ -317,14 +319,13 @@
           <div class="text-center text-muted small">
             <i class="bi bi-cloud-upload me-1"></i>Enregistrement en cours…
           </div>
-          <button type="submit" name="ajouter_photo" value="1" id="btn-photo-submit" class="d-none"></button>
         </div>
 
-        <!-- Galerie des photos existantes -->
+        <!-- Galerie des photos existantes (+ celles en attente hors-ligne, injectées par offline.js) -->
+        <div class="row g-2" id="photos-grid">
         {% if bon.photos %}
-        <div class="row g-2">
           {% for photo in bon.photos %}
-          <div class="col-6 col-md-4">
+          <div class="col-6 col-md-4" id="photo-card-{{ photo.id }}">
             <div class="position-relative">
               <a href="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" target="_blank">
                 <img src="{{ url_for('bon_photo_voir', photo_id=photo.id) }}" alt="{{ photo.nom }}"
@@ -344,12 +345,14 @@
             </div>
           </div>
           {% endfor %}
-        </div>
         {% else %}
-        <div class="text-muted small fst-italic text-center py-1">
-          <i class="bi bi-images me-1"></i>Aucune photo pour l'instant
-        </div>
+          <div class="col-12 empty-photos">
+            <div class="text-muted small fst-italic text-center py-1">
+              <i class="bi bi-images me-1"></i>Aucune photo pour l'instant
+            </div>
+          </div>
         {% endif %}
+        </div>
 
       </div>
     </div>
@@ -536,18 +539,27 @@ function previewPhoto(input) {
     document.getElementById('preview-zone').style.display = 'block';
   };
   reader.readAsDataURL(file);
-  // Enregistrement automatique dès la prise de la photo — plus besoin de confirmer.
-  // La suppression reste possible ensuite via l'icône corbeille sur chaque vignette.
-  const form = document.getElementById('bon-form');
-  const btn  = document.getElementById('btn-photo-submit');
-  if (form && btn) form.requestSubmit(btn);
+  // Enregistrement automatique dès la prise de la photo (en ligne ou en
+  // attente hors-ligne) — ne touche pas au reste de la fiche en cours de
+  // saisie. La suppression reste possible via l'icône corbeille.
+  {% if bon %}
+  envoyerPhotoBon({{ bon.id }}, file).finally(() => {
+    document.getElementById('preview-zone').style.display = 'none';
+    document.getElementById('preview-img').src = '';
+    input.value = '';
+  });
+  {% endif %}
 }
-function annulerPhoto() {
-  document.getElementById('preview-zone').style.display = 'none';
-  document.getElementById('preview-img').src = '';
-  const inp = document.getElementById('photo-input');
-  if (inp) inp.value = '';
-}
+
+// ── Le formulaire principal (travaux/observations/matériaux/risque/suivi)
+// fonctionne aussi hors-ligne : enregistré localement, il repart tout seul
+// dès que le réseau revient, sans rien perdre de ce qui a été saisi.
+{% if bon %}
+rendreFormulaireHorsLigneCompatible(document.getElementById('bon-form'), {
+  key: 'bon-{{ bon.id }}',
+  label: 'Bon {{ bon.numero }}',
+});
+{% endif %}
 
 // ── Grille AMDEC Fréquence x Gravité → niveau de risque global ──
 const GRILLE_MATRIX = {
