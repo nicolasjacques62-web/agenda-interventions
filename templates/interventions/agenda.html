@@ -3,7 +3,6 @@
 {% block page_title %}<i class="bi bi-calendar3 me-2"></i>Agenda{% endblock %}
 
 {% block head %}
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
 <style>
   #calendar { background:#fff; border-radius:10px; padding:1rem; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   .fc-event { cursor:pointer; font-size:.8rem; }
@@ -57,8 +56,8 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales/fr.global.min.js"></script>
+<script src="{{ url_for('static', filename='documents/fullcalendar.min.js') }}"></script>
+<script src="{{ url_for('static', filename='documents/fullcalendar-locale-fr.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
