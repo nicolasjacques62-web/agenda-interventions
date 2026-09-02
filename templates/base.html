@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#1AABE3">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/static/logo.png">
-  <link href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}" rel="stylesheet">
-  <link href="{{ url_for('static', filename='vendor/bootstrap-icons.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='documents/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='documents/bootstrap-icons.min.css') }}" rel="stylesheet">
   <style>
     :root {
       --hps-blue:      #1AABE3;
@@ -224,7 +224,7 @@
   {% block content %}{% endblock %}
 </div>
 
-<script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='documents/bootstrap.bundle.min.js') }}"></script>
 <script src="/static/offline.js"></script>
 {% block scripts %}{% endblock %}
 <script>
