@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Notes rapides{% endblock %}
+{% block page_title %}<i class="bi bi-journal-text me-2"></i>Notes rapides{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('note_rapide_nouvelle') }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-journal-plus me-1"></i>Nouvelle note
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-secondary small">
+  <i class="bi bi-wifi-off me-1"></i>
+  Ces notes peuvent être prises même sans réseau sur le terrain (bouton « Nouvelle note »).
+  Une fois enregistrées, transformez-les en véritable intervention planifiée avec le bon client.
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    {% if notes %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Date</th><th>Client noté</th><th>Description</th><th>Priorité</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for n in notes %}
+          <tr class="{{ 'table-warning' if n.statut=='nouvelle' else '' }}">
+            <td class="small text-nowrap">{{ n.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+            <td class="fw-semibold">{{ n.client_texte }}</td>
+            <td class="small text-muted">{{ (n.description or '')[:80] }}{{ '…' if n.description and n.description|length > 80 else '' }}</td>
+            <td>{{ n.priorite_label }}</td>
+            <td>
+              {% if n.statut=='nouvelle' %}
+                <span class="badge bg-warning text-dark">À traiter</span>
+              {% else %}
+                <span class="badge bg-success">
+                  <i class="bi bi-check-circle me-1"></i>Transformée
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                {% if n.statut=='nouvelle' %}
+                <a href="{{ url_for('intervention_nouvelle', note_id=n.id) }}" class="btn btn-sm btn-primary">
+                  <i class="bi bi-arrow-right-circle me-1"></i>Transformer
+                </a>
+                <form method="POST" action="{{ url_for('note_rapide_supprimer', id=n.id) }}"
+                      onsubmit="return confirm('Supprimer cette note ?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </form>
+                {% else %}
+                <a href="{{ url_for('intervention_detail', id=n.intervention_id) }}" class="btn btn-sm btn-outline-secondary">
+                  Voir l'intervention
+                </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-journal-x fs-1 d-block mb-2"></i>Aucune note rapide
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-footer text-muted small">{{ notes|length }} note(s)</div>
+</div>
+{% endblock %}
