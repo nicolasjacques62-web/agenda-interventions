@@ -320,6 +320,30 @@ class Intervention(db.Model):
                 'terminee': 'Terminée', 'annulee': 'Annulée'}.get(self.statut, self.statut)
 
 
+class NoteRapide(db.Model):
+    """Note rapide prise sur le terrain — fonctionne même sans réseau.
+    Volontairement minimale (pas de lien vers un client ou une intervention
+    qui n'existerait pas encore) : le technicien note juste le client, une
+    description et une priorité en quelques secondes. Une fois de retour en
+    ligne, la note apparaît dans la liste d'attente et le gérant la
+    transforme en véritable intervention planifiée en choisissant le bon
+    client."""
+    __tablename__ = 'notes_rapides'
+    id = db.Column(db.Integer, primary_key=True)
+    client_texte = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    adresse = db.Column(db.Text)
+    priorite = db.Column(db.String(20), default='normale')
+    statut = db.Column(db.String(20), default='nouvelle')  # nouvelle / traitee
+    intervention_id = db.Column(db.Integer, db.ForeignKey('interventions.id'))
+    intervention = db.relationship('Intervention')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def priorite_label(self):
+        return {'urgente': '🔴 Urgente', 'faible': 'Faible'}.get(self.priorite, 'Normale')
+
+
 class OutlookEvent(db.Model):
     """Cache local des événements du calendrier Outlook personnel (autres que
     ceux créés par l'appli elle-même) — alimenté par une synchronisation
@@ -755,6 +779,16 @@ def date_fr_filter(dt, fmt='%d/%m/%Y'):
 
 @login_manager.user_loader
 def load_user(uid): return User.query.get(int(uid))
+
+@app.context_processor
+def inject_notes_rapides_count():
+    """Nombre de notes rapides pas encore transformées en intervention —
+    affiché en badge dans le menu pour ne pas en oublier une."""
+    try:
+        n = NoteRapide.query.filter_by(statut='nouvelle').count()
+    except Exception:
+        n = 0
+    return dict(notes_rapides_a_traiter=n)
 
 def get_param(cle, defaut=''):
     # Priorité : variable d'environnement > base de données > valeur par défaut
@@ -3056,6 +3090,13 @@ def intervention_nouvelle():
         )
         db.session.add(i)
         db.session.commit()
+        note_rapide_id = request.form.get('note_rapide_id', '').strip()
+        if note_rapide_id:
+            note = NoteRapide.query.get(int(note_rapide_id))
+            if note and note.statut != 'traitee':
+                note.statut = 'traitee'
+                note.intervention_id = i.id
+                db.session.commit()
         flash(f'Intervention {i.reference} planifiée.', 'success')
         _outlook_sync_intervention(i.id)
         # Notification au client si portail actif
@@ -3083,10 +3124,12 @@ def intervention_nouvelle():
     techniciens = get_param('techniciens', '')
     types_inter = get_param('types_intervention', '')
     contacts_map = _portal_contacts_map()
+    note_id = request.args.get('note_id')
+    note = NoteRapide.query.get(int(note_id)) if note_id else None
     return render_template('interventions/create.html', intervention=None,
                            clients=clients, cid=int(cid) if cid else None,
                            techniciens=techniciens, types_inter=types_inter,
-                           contacts_map=contacts_map)
+                           contacts_map=contacts_map, note=note)
 
 @app.route('/interventions/<int:id>')
 @login_required
@@ -3132,7 +3175,7 @@ def intervention_modifier(id):
     return render_template('interventions/create.html', intervention=i,
                            clients=clients, cid=i.client_id,
                            techniciens=techniciens, types_inter=types_inter,
-                           contacts_map=contacts_map)
+                           contacts_map=contacts_map, note=None)
 
 @app.route('/interventions/<int:id>/statut', methods=['POST'])
 @login_required
@@ -3156,6 +3199,47 @@ def intervention_supprimer(id):
     _outlook_supprimer_evenement_async(outlook_event_id)
     flash('Intervention supprimée.', 'info')
     return redirect(url_for('interventions_liste'))
+
+# ─── NOTES RAPIDES (disponibles hors-ligne) ──────────────────────────────────
+# Pense-bête minimal utilisable sans réseau (voir NoteRapide) : le technicien
+# note le client, une description et une priorité ; une fois de retour en
+# ligne, le gérant la transforme en véritable intervention planifiée.
+
+@app.route('/notes-rapides')
+@login_required
+def notes_rapides_liste():
+    notes = NoteRapide.query.order_by(NoteRapide.created_at.desc()).all()
+    return render_template('notes_rapides/index.html', notes=notes)
+
+@app.route('/notes-rapides/nouvelle', methods=['GET', 'POST'])
+@login_required
+def note_rapide_nouvelle():
+    if request.method == 'POST':
+        client_texte = request.form.get('client_texte', '').strip()
+        if not client_texte:
+            flash("Merci d'indiquer au moins le nom du client.", 'warning')
+            return redirect(url_for('note_rapide_nouvelle'))
+        n = NoteRapide(
+            client_texte=client_texte,
+            description=request.form.get('description', '').strip(),
+            adresse=request.form.get('adresse', '').strip(),
+            priorite=request.form.get('priorite', 'normale'),
+        )
+        db.session.add(n)
+        db.session.commit()
+        flash('Note enregistrée — à transformer en intervention dès que possible.', 'success')
+        return redirect(url_for('notes_rapides_liste'))
+    clients = Client.query.filter_by(actif=True).order_by(Client.nom).all()
+    return render_template('notes_rapides/nouvelle.html', clients=clients)
+
+@app.route('/notes-rapides/<int:id>/supprimer', methods=['POST'])
+@login_required
+def note_rapide_supprimer(id):
+    n = NoteRapide.query.get_or_404(id)
+    db.session.delete(n)
+    db.session.commit()
+    flash('Note supprimée.', 'info')
+    return redirect(url_for('notes_rapides_liste'))
 
 # ─── BONS D'INTERVENTION ──────────────────────────────────────────────────────
 
@@ -5176,6 +5260,16 @@ def init_db():
                 reset_token_expiry TIMESTAMP,
                 created_at TIMESTAMP,
                 derniere_connexion TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS notes_rapides (
+                id SERIAL PRIMARY KEY,
+                client_texte VARCHAR(200) NOT NULL,
+                description TEXT,
+                adresse TEXT,
+                priorite VARCHAR(20) DEFAULT 'normale',
+                statut VARCHAR(20) DEFAULT 'nouvelle',
+                intervention_id INTEGER REFERENCES interventions(id),
+                created_at TIMESTAMP
             )""",
             "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_frequence VARCHAR(30)",
             "ALTER TABLE audits_clients ADD COLUMN IF NOT EXISTS risque_gravite VARCHAR(20)",
