@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Note rapide{% endblock %}
+{% block page_title %}<i class="bi bi-journal-plus me-2"></i>Note rapide{% endblock %}
+
+{% block content %}
+<div class="alert alert-secondary small">
+  <i class="bi bi-wifi-off me-1"></i>
+  Disponible même sans réseau : la note est enregistrée immédiatement sur l'appareil et envoyée
+  automatiquement au serveur dès que la connexion revient. Elle apparaît ensuite dans
+  <a href="{{ url_for('notes_rapides_liste') }}">Notes rapides</a> pour être transformée en intervention.
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-body">
+        <form method="POST" id="note-rapide-form">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Client <span class="text-danger">*</span></label>
+            <input type="text" name="client_texte" class="form-control" required
+                   list="clients-datalist" placeholder="Nom du client / résidence…">
+            <datalist id="clients-datalist">
+              {% for c in clients %}
+                <option value="{{ c.nom_affichage }}{% if c.reference %} ({{ c.reference }}){% endif %}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            <textarea name="description" class="form-control" rows="4"
+                      placeholder="Ce qui a été constaté, ce qu'il faut faire…"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Adresse</label>
+            <textarea name="adresse" class="form-control" rows="2"
+                      placeholder="Si différente du client"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Priorité</label>
+            <select name="priorite" class="form-select">
+              <option value="normale" selected>Normale</option>
+              <option value="urgente">🔴 Urgente</option>
+              <option value="faible">Faible</option>
+            </select>
+          </div>
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check2-circle me-1"></i>Enregistrer la note
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Annuler</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Fonctionne aussi hors-ligne : chaque note est mise en file d'attente avec
+// une clé unique (nouvelleCleParEnvoi) pour pouvoir enregistrer plusieurs
+// notes différentes à la suite sans qu'elles ne s'écrasent entre elles.
+rendreFormulaireHorsLigneCompatible(document.getElementById('note-rapide-form'), {
+  key: 'note-rapide',
+  label: 'Note rapide',
+  nouvelleCleParEnvoi: true,
+});
+</script>
+{% endblock %}
