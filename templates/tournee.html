@@ -3,8 +3,8 @@
 {% block page_title %}<i class="bi bi-map me-2"></i>Optimisation de tournée{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='documents/leaflet.css') }}"/>
+<script src="{{ url_for('static', filename='documents/leaflet.js') }}"></script>
 <style>
   #map { height: 420px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
   .stop-card { border-left: 4px solid #1aabe3; transition: box-shadow .2s; }
