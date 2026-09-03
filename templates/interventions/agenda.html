@@ -140,6 +140,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         document.getElementById('modalBody').innerHTML =
           `<strong>Client :</strong> ${p.client}<br>
+           ${p.telephone ? '<strong>Tél. :</strong> <a href="tel:' + p.telephone + '">' + p.telephone + '</a><br>' : ''}
            <strong>Passage :</strong> n°${p.numero_passage}<br>
            ${curatifLigne}
            <strong>Statut :</strong> ${p.statut}<br>
