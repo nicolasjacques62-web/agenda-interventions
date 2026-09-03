@@ -319,6 +319,47 @@ class Intervention(db.Model):
         return {'planifiee': 'Planifiée', 'en_cours': 'En cours',
                 'terminee': 'Terminée', 'annulee': 'Annulée'}.get(self.statut, self.statut)
 
+    @property
+    def type_traitement_curatif(self):
+        """True si ce type d'intervention est concerné par le décompte de 35 jours
+        du traitement curatif (dératisation / lutte contre les rongeurs, ou désinfection)."""
+        t = (self.type_intervention or '').lower()
+        return 'dératisation' in t or 'désinfection' in t
+
+    @property
+    def intervention_premiere(self):
+        """Remonte la chaîne des passages (intervention_origine) jusqu'à la toute
+        première intervention du dossier (passage n°1), point de référence du
+        décompte de 35 jours du traitement curatif."""
+        i = self
+        seen = set()
+        while i.intervention_origine is not None and i.id not in seen:
+            seen.add(i.id)
+            i = i.intervention_origine
+        return i
+
+    @property
+    def jours_depuis_premiere(self):
+        """Nombre de jours entre la 1ère intervention du dossier et celle-ci
+        (0 pour la 1ère intervention elle-même)."""
+        premiere = self.intervention_premiere
+        if not premiere or not premiere.date_planifiee or not self.date_planifiee:
+            return None
+        return (self.date_planifiee.date() - premiere.date_planifiee.date()).days
+
+    @property
+    def decompte_curatif(self):
+        """Jours restants avant la fin du délai de 35 jours du traitement curatif,
+        calculé par rapport à la 1ère intervention du dossier (négatif si dépassé).
+        None si ce type d'intervention n'est pas concerné, ou si le calcul est
+        impossible (dossier incomplet)."""
+        if not self.type_traitement_curatif:
+            return None
+        j = self.jours_depuis_premiere
+        if j is None:
+            return None
+        return 35 - j
+
 
 class NoteRapide(db.Model):
     """Note rapide prise sur le terrain — fonctionne même sans réseau.
@@ -3001,6 +3042,8 @@ def agenda_events():
                     'priorite': i.priorite,
                     'client': i.client.nom_affichage,
                     'technicien': i.technicien or '',
+                    'numero_passage': i.numero_passage or 1,
+                    'decompte_curatif': i.decompte_curatif,
                 },
             })
         except Exception:
