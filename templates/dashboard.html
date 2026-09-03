@@ -98,7 +98,7 @@
           <table class="table table-hover mb-0">
             <thead class="table-light">
               <tr>
-                <th>Date</th><th>Client</th><th>Titre</th><th>Priorité</th><th>Statut</th><th></th>
+                <th>Date</th><th>Client</th><th>Adresse</th><th>Titre</th><th>Priorité</th><th>Statut</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -109,7 +109,16 @@
                   <div class="text-muted small">{{ i.date_planifiee.strftime('%H:%M') }}</div>
                 </td>
                 <td>{{ i.client.nom_affichage }}</td>
-                <td>{{ i.titre }}</td>
+                <td class="small text-muted">
+                  {% set adr = i.adresse or ((i.client.adresse or '') ~ (', ' ~ i.client.code_postal if i.client.code_postal else '') ~ (' ' ~ i.client.ville if i.client.ville else '')) %}
+                  {{ adr.strip() if adr and adr.strip() else '—' }}
+                </td>
+                <td>
+                  {{ i.titre }}
+                  {% if i.passage_label %}
+                    <span class="badge ms-1" style="background:{{ i.passage_couleur }}" title="Rendez-vous de suivi programmé depuis l'intervention précédente">{{ i.passage_label }}</span>
+                  {% endif %}
+                </td>
                 <td>
                   {% if i.priorite == 'urgente' %}
                     <span class="badge bg-danger">Urgente</span>
