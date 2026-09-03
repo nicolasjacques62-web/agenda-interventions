@@ -2870,6 +2870,93 @@ def client_supprimer(id):
     flash(f'Client {c.nom_affichage} désactivé.', 'info')
     return redirect(url_for('clients_liste'))
 
+def _purger_donnees_client(client):
+    """Supprime définitivement toutes les données rattachées à un client
+    (interventions, bons, photos, audits, fiches AMDEC, documents techniques
+    associés, plans d'appâtage, contrats, patrimoine, interlocuteurs du
+    portail) puis le client lui-même. Ne fait pas de commit : à appeler dans
+    un bloc try/except qui commit ou rollback en cas d'erreur."""
+    client_id = client.id
+
+    intervention_ids = [r[0] for r in db.session.query(Intervention.id)
+                         .filter(Intervention.client_id == client_id).all()]
+    bon_ids = [r[0] for r in db.session.query(BonIntervention.id)
+               .filter(BonIntervention.intervention_id.in_(intervention_ids)).all()] \
+        if intervention_ids else []
+    audit_ids = [r[0] for r in db.session.query(AuditClient.id)
+                 .filter(AuditClient.client_id == client_id).all()]
+    outlook_event_ids = [r[0] for r in db.session.query(Intervention.outlook_event_id)
+                          .filter(Intervention.client_id == client_id,
+                                  Intervention.outlook_event_id.isnot(None)).all()] \
+        if intervention_ids else []
+
+    # Photos des bons d'intervention
+    if bon_ids:
+        BonPhoto.query.filter(BonPhoto.bon_id.in_(bon_ids)).delete(synchronize_session=False)
+
+    # Fiches AMDEC liées au client, à l'un de ses audits ou à l'un de ses bons
+    amdec_filtre = (AmdecFiche.client_id == client_id)
+    if audit_ids:
+        amdec_filtre = db.or_(amdec_filtre, AmdecFiche.audit_id.in_(audit_ids))
+    if bon_ids:
+        amdec_filtre = db.or_(amdec_filtre, AmdecFiche.bon_id.in_(bon_ids))
+    AmdecFiche.query.filter(amdec_filtre).delete(synchronize_session=False)
+
+    # Documents techniques associés, plans d'appâtage, contrats, patrimoine
+    ClientDocument.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+    PlanAppatage.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+    ContratClient.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+    PatrimoineLogement.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+
+    if intervention_ids:
+        # Notes rapides : on détache plutôt que supprimer, pour garder une trace
+        NoteRapide.query.filter(NoteRapide.intervention_id.in_(intervention_ids)) \
+            .update({NoteRapide.intervention_id: None}, synchronize_session=False)
+        # Toute intervention (même d'un autre dossier) qui pointerait encore
+        # vers l'une de ces interventions comme origine de passage
+        Intervention.query.filter(Intervention.intervention_origine_id.in_(intervention_ids)) \
+            .update({Intervention.intervention_origine_id: None}, synchronize_session=False)
+
+    # Bons d'intervention puis interventions
+    if bon_ids:
+        BonIntervention.query.filter(BonIntervention.id.in_(bon_ids)).delete(synchronize_session=False)
+    if intervention_ids:
+        Intervention.query.filter(Intervention.id.in_(intervention_ids)).delete(synchronize_session=False)
+
+    # Audits du client
+    if audit_ids:
+        AuditClient.query.filter(AuditClient.id.in_(audit_ids)).delete(synchronize_session=False)
+
+    # Interlocuteurs du portail (et références croisées "visible comme")
+    portal_ids = [r[0] for r in db.session.query(PortalContact.id)
+                  .filter(PortalContact.client_id == client_id).all()]
+    if portal_ids:
+        PortalContact.query.filter(PortalContact.visible_comme_id.in_(portal_ids)) \
+            .update({PortalContact.visible_comme_id: None}, synchronize_session=False)
+        PortalContact.query.filter(PortalContact.id.in_(portal_ids)).delete(synchronize_session=False)
+
+    # Le client lui-même
+    db.session.delete(client)
+
+    return outlook_event_ids
+
+@app.route('/clients/<int:id>/supprimer-definitivement', methods=['POST'])
+@login_required
+def client_supprimer_definitivement(id):
+    c = Client.query.get_or_404(id)
+    nom = c.nom_affichage
+    try:
+        outlook_event_ids = _purger_donnees_client(c)
+        db.session.commit()
+        for oe_id in outlook_event_ids:
+            _outlook_supprimer_evenement_async(oe_id)
+        flash(f'Client « {nom} » et toutes ses données (interventions, bons, audits…) '
+              f'ont été supprimés définitivement.', 'info')
+    except Exception:
+        db.session.rollback()
+        flash(f"Impossible de supprimer « {nom} » : une erreur est survenue, aucune donnée n'a été modifiée.", 'danger')
+    return redirect(url_for('clients_liste'))
+
 @app.route('/clients/<int:id>/portail/activer', methods=['POST'])
 @login_required
 def portail_activer(id):
@@ -3041,6 +3128,7 @@ def agenda_events():
                     'statut': i.statut_label,
                     'priorite': i.priorite,
                     'client': i.client.nom_affichage,
+                    'telephone': i.client.telephone or i.client.telephone2 or '',
                     'technicien': i.technicien or '',
                     'numero_passage': i.numero_passage or 1,
                     'decompte_curatif': i.decompte_curatif,
