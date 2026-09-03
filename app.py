@@ -1013,6 +1013,16 @@ def _pdf_bloc_grille_risque(styles, frequence, gravite, niveau):
 
     return [Paragraph("NIVEAU DE RISQUE GLOBAL — GRILLE AMDEC", s_h2), t, resultat, Spacer(1, 0.4*cm)]
 
+def _txt_client(v):
+    """Nettoie une valeur de champ client pour l'affichage (PDF, etc.) :
+    ne renvoie jamais None ni la chaîne littérale 'None' — certaines fiches
+    (ex : import de patrimoine) ont pu enregistrer 'None' comme texte au lieu
+    de laisser le champ vide."""
+    if v is None:
+        return ''
+    s = str(v).strip()
+    return '' if s.lower() == 'none' else s
+
 def generer_pdf(bon):
     if not PDF_OK:
         raise RuntimeError("ReportLab non installé.")
@@ -1052,16 +1062,19 @@ def generer_pdf(bon):
         f"SIRET : {get_param('siret')}" if get_param('siret') else None,
     ]))
 
+    # Pour les clients AMSOM Habitat, seuls les logos apparaissent en en-tête —
+    # les coordonnées de la société (adresse, téléphone, SIRET...) ne doivent
+    # pas figurer sur les documents qui leur sont destinés.
     if os.path.exists(logo_hps_path):
         try:
             logo_hps = RLImage(logo_hps_path, width=4.5*cm, height=2*cm, kind='proportional')
-            info_cell = Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc.replace(chr(10), '<br/>')}</font>",
-                                  ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))
             if show_amsom:
                 logo_amsom = RLImage(logo_amsom_path, width=3*cm, height=1.4*cm, kind='proportional')
-                header_data = [[logo_hps, info_cell, logo_amsom]]
+                header_data = [[logo_hps, '', logo_amsom]]
                 header_table = Table(header_data, colWidths=[6*cm, 8.5*cm, 3*cm])
             else:
+                info_cell = Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc.replace(chr(10), '<br/>')}</font>",
+                                      ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))
                 header_data = [[logo_hps, info_cell]]
                 header_table = Table(header_data, colWidths=[6*cm, 11.5*cm])
             header_table.setStyle(TableStyle([
@@ -1072,12 +1085,12 @@ def generer_pdf(bon):
             elems.append(header_table)
         except Exception:
             elems.append(Paragraph(soc, s_titre))
-            if info_soc:
+            if info_soc and not show_amsom:
                 elems.append(Paragraph(info_soc.replace('\n', ' | '), ParagraphStyle(
                     'si_fb', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=4)))
     else:
         elems.append(Paragraph(soc, s_titre))
-        if info_soc:
+        if info_soc and not show_amsom:
             elems.append(Paragraph(info_soc.replace('\n', ' | '), ParagraphStyle(
                 'si_fb2', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, spaceAfter=4)))
 
@@ -1089,10 +1102,10 @@ def generer_pdf(bon):
         ['', 'INTERVENTION', '', 'CLIENT', ''],
         ['Réf.', inter.reference, '', 'Nom', cli.nom_affichage],
         ['Date', inter.date_planifiee.strftime('%d/%m/%Y %H:%M'), '',
-         'Email', cli.email or ''],
-        ['Type', inter.type_intervention or '', '', 'Tél', cli.telephone or ''],
+         'Email', _txt_client(cli.email)],
+        ['Type', inter.type_intervention or '', '', 'Tél', _txt_client(cli.telephone)],
         ['Tech.', inter.technicien or '', '',
-         'Adresse', f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip()],
+         'Adresse', _adresse_client(cli)],
         ['Statut', inter.statut_label, '', '', ''],
     ]
     t = Table(data_h, colWidths=[2*cm, 6*cm, 0.3*cm, 2.5*cm, 6.7*cm])
@@ -1904,25 +1917,29 @@ def generer_pdf_audit(audit):
     elems = []
 
     # ── En-tête (+ logo AMSOM en haut à droite si client AMSOM Habitat) ──
+    # Pour les clients AMSOM Habitat, seuls les logos apparaissent — pas les
+    # coordonnées de la société (adresse, téléphone...).
     info_soc = ' | '.join(filter(None, [get_param('adresse'), get_param('telephone'), get_param('email')]))
     if os.path.exists(logo_path):
         try:
             logo = RLImage(logo_path, width=4*cm, height=1.8*cm, kind='proportional')
-            info_cell = Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc}</font>",
-                                  ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))
             if show_amsom:
                 logo_amsom = RLImage(logo_amsom_path, width=2.7*cm, height=1.3*cm, kind='proportional')
-                ht = Table([[logo, info_cell, logo_amsom]], colWidths=[5*cm, 9.5*cm, 3*cm])
+                ht = Table([[logo, '', logo_amsom]], colWidths=[5*cm, 9.5*cm, 3*cm])
             else:
+                info_cell = Paragraph(f"<b>{soc}</b><br/><font size='8'>{info_soc}</font>",
+                                      ParagraphStyle('sh', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT))
                 ht = Table([[logo, info_cell]], colWidths=[5*cm, 12.5*cm])
             ht.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
                                     ('LINEBELOW',(0,0),(-1,0),1.5,colors.HexColor('#1aabe3')),
                                     ('BOTTOMPADDING',(0,0),(-1,0),8)]))
             elems.append(ht)
         except Exception:
-            elems.append(Paragraph(soc, s_titre))
+            if not show_amsom:
+                elems.append(Paragraph(soc, s_titre))
     else:
-        elems.append(Paragraph(soc, s_titre))
+        if not show_amsom:
+            elems.append(Paragraph(soc, s_titre))
     elems.append(Spacer(1, 0.4*cm))
 
     # ── Titre ──
@@ -1933,7 +1950,7 @@ def generer_pdf_audit(audit):
 
     # ── Identification du site ──
     niv_couleur_hex = audit.niveau_hex if audit.niveau_risque else '#1aabe3'
-    adresse_cli = f"{cli.adresse or ''} {cli.code_postal or ''} {cli.ville or ''}".strip()
+    adresse_cli = _adresse_client(cli)
     info_data = [
         ['SOCIÉTÉ / CLIENT', cli.nom_affichage,           'DATE DIAGNOSTIC', audit.date_audit.strftime('%d/%m/%Y')],
         ['ADRESSE DU SITE',  adresse_cli or '—',          'RÉDACTEUR',        audit.technicien or '—'],
@@ -3424,9 +3441,11 @@ def _est_client_amsom(client):
 
 def _adresse_client(client):
     """Adresse du client sur une seule ligne (rue + code postal + ville), pour préremplir
-    l'adresse des interventions de suivi programmées depuis un audit."""
-    ligne2 = f"{client.code_postal or ''} {client.ville or ''}".strip()
-    return ', '.join(p for p in [(client.adresse or '').strip(), ligne2] if p)
+    l'adresse des interventions de suivi programmées depuis un audit. Ignore les champs
+    vides ou contenant la chaîne littérale 'None' (certaines fiches importées ont ce
+    défaut au lieu d'être simplement vides)."""
+    ligne2 = ' '.join(filter(None, [_txt_client(client.code_postal), _txt_client(client.ville)]))
+    return ', '.join(p for p in [_txt_client(client.adresse), ligne2] if p)
 
 def _creer_interventions_suivi(form, client_id, adresse_defaut='', type_defaut='',
                                 technicien_defaut='', titre_defaut='Passage de suivi',
