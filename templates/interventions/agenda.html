@@ -8,6 +8,22 @@
   .fc-event { cursor:pointer; font-size:.8rem; }
   .fc-toolbar-title { font-size:1.1rem !important; font-weight:600; }
   .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
+  .fc-event-main-custom { line-height:1.2; }
+  .fc-event-time { font-weight:600; }
+  .fc-event-title-wrap { display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+  .badge-passage {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; min-width:15px; border-radius:50%;
+    background:rgba(255,255,255,.9); color:#000; font-size:.65rem; font-weight:700;
+    line-height:1;
+  }
+  .badge-curatif {
+    display:inline-flex; align-items:center; padding:0 4px; border-radius:6px;
+    font-size:.65rem; font-weight:700; line-height:1.3;
+    background:rgba(255,255,255,.85); color:#27ae60;
+  }
+  .badge-curatif.badge-curatif-urgent { color:#e67e22; }
+  .badge-curatif.badge-curatif-depasse { color:#e74c3c; }
 </style>
 {% endblock %}
 
@@ -34,6 +50,11 @@
     <span><span class="legend-dot me-1" style="background:#f39c12"></span><small>En cours</small></span>
     <span><span class="legend-dot me-1" style="background:#95a5a6"></span><small>Annulée</small></span>
     <span class="ms-2 border-start ps-2"><span class="legend-dot me-1" style="background:#8e44ad"></span><small>Outlook (perso)</small></span>
+  </div>
+  <div class="d-flex gap-3 align-items-center flex-wrap mt-2">
+    <span class="small text-muted fw-semibold">Repères :</span>
+    <span><span class="badge-passage border me-1">2</span><small>N° de passage</small></span>
+    <span><span class="badge-curatif border me-1">J-21</span><small>Jours restants avant la fin du traitement curatif (35j depuis la 1ère intervention — dératisation/désinfection)</small></span>
   </div>
 </div>
 
@@ -75,6 +96,28 @@ document.addEventListener('DOMContentLoaded', function() {
     nowIndicator: true,
     businessHours: { daysOfWeek:[1,2,3,4,5], startTime:'08:00', endTime:'18:00' },
     events: '{{ url_for("agenda_events") }}',
+    eventContent: function(arg) {
+      const p = arg.event.extendedProps;
+      let html = '<div class="fc-event-main-custom">';
+      if (arg.timeText) {
+        html += `<div class="fc-event-time">${arg.timeText}</div>`;
+      }
+      html += '<div class="fc-event-title-wrap">';
+      if (p.source !== 'outlook' && p.numero_passage) {
+        html += `<span class="badge-passage" title="${p.numero_passage}e passage">${p.numero_passage}</span>`;
+      }
+      html += `<span class="fc-event-title">${arg.event.title}</span>`;
+      if (p.decompte_curatif !== null && p.decompte_curatif !== undefined) {
+        const jr = p.decompte_curatif;
+        let cls = 'badge-curatif';
+        if (jr < 0) cls += ' badge-curatif-depasse';
+        else if (jr <= 5) cls += ' badge-curatif-urgent';
+        const texte = jr < 0 ? ('J+' + Math.abs(jr)) : ('J-' + jr);
+        html += `<span class="${cls}" title="Traitement curatif : ${texte} (délai de 35 jours depuis la 1ère intervention)">${texte}</span>`;
+      }
+      html += '</div></div>';
+      return { html: html };
+    },
     eventClick: function(info) {
       info.jsEvent.preventDefault();
       const p = info.event.extendedProps;
@@ -87,8 +130,18 @@ document.addEventListener('DOMContentLoaded', function() {
            <strong>Début :</strong> ${info.event.start.toLocaleString('fr-FR')}`;
         modalLink.style.display = 'none';
       } else {
+        let curatifLigne = '';
+        if (p.decompte_curatif !== null && p.decompte_curatif !== undefined) {
+          const jr = p.decompte_curatif;
+          const texte = jr < 0
+            ? `délai dépassé de ${Math.abs(jr)} j`
+            : `${jr} j restant(s)`;
+          curatifLigne = `<strong>Traitement curatif :</strong> ${texte} (délai de 35 j depuis la 1ère intervention)<br>`;
+        }
         document.getElementById('modalBody').innerHTML =
           `<strong>Client :</strong> ${p.client}<br>
+           <strong>Passage :</strong> n°${p.numero_passage}<br>
+           ${curatifLigne}
            <strong>Statut :</strong> ${p.statut}<br>
            <strong>Priorité :</strong> ${p.priorite}<br>
            ${p.technicien ? '<strong>Technicien :</strong> ' + p.technicien + '<br>' : ''}
