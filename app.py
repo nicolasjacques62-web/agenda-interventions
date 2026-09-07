@@ -2779,7 +2779,8 @@ def client_detail(id):
 @login_required
 def client_export_bons(id):
     """Export CSV des bons d'intervention de ce client : numéro de BT, type
-    d'intervention, date d'intervention — trié par numéro de BT."""
+    d'intervention, date d'intervention, n° de commande client — trié par
+    numéro de BT."""
     c = Client.query.get_or_404(id)
     bons = (BonIntervention.query
             .join(Intervention, BonIntervention.intervention_id == Intervention.id)
@@ -2790,12 +2791,13 @@ def client_export_bons(id):
     buffer = io.StringIO()
     buffer.write('﻿')  # BOM : Excel détecte l'UTF-8 et affiche correctement les accents
     writer = csv.writer(buffer, delimiter=';')
-    writer.writerow(['Numéro de BT', "Type d'intervention", "Date d'intervention"])
+    writer.writerow(['Numéro de BT', "Type d'intervention", "Date d'intervention", 'N° de commande'])
     for b in bons:
         writer.writerow([
             b.numero,
             b.intervention.type_intervention or '',
             b.intervention.date_planifiee.strftime('%d/%m/%Y') if b.intervention.date_planifiee else '',
+            b.intervention.numero_bon_commande or '',
         ])
 
     nom_fichier = ''.join(ch if ch.isalnum() else '_' for ch in c.nom_affichage).strip('_') or 'client'
@@ -5736,3 +5738,4 @@ if __name__ == '__main__':
     print("  http://localhost:5000")
     print()
     app.run(debug=False, host='0.0.0.0', port=5000)
+    
