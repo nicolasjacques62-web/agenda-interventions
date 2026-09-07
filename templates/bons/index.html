@@ -72,12 +72,18 @@
         </tbody>
       </table>
     </div>
+    {% if not voir_tout_bons and total_bons > bons|length %}
+    <div class="text-center py-2 border-top small text-muted">
+      Affichage des {{ limite_bons }} bons les plus récents sur {{ total_bons }} —
+      <a href="{{ url_for('bons_liste', statut=statut, client=client_q, q=texte_q, tout=1) }}">voir tout</a>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-center py-5 text-muted">
       <i class="bi bi-file-earmark-x fs-1 d-block mb-2"></i>Aucun bon d'intervention
     </div>
     {% endif %}
   </div>
-  <div class="card-footer text-muted small">{{ bons|length }} bon(s)</div>
+  <div class="card-footer text-muted small">{{ total_bons }} bon(s)</div>
 </div>
 {% endblock %}
