@@ -1,7 +1,17 @@
-# Dépendances pour développement LOCAL uniquement (Python 3.14 Windows)
+# Dépendances communes (local + production)
 flask==3.0.3
 flask-sqlalchemy==3.1.1
 flask-login==0.6.3
-werkzeug==3.0.3
+werkzeug>=3.0.6
+flask-wtf>=1.2.0
+flask-limiter>=3.5.0
 reportlab==4.2.2
+pypdf>=3.17.0
+Pillow>=10.0.0
 python-dotenv==1.0.1
+msal>=1.28.0
+requests>=2.31.0
+
+# Production uniquement
+gunicorn==23.0.0
+psycopg[binary]>=3.1
