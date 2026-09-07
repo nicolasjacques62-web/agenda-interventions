@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()  # charge le fichier .env en local, ignoré en production
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   flash, jsonify, send_file, abort, session as flask_session, Response)
+                   flash, jsonify, send_file, abort, session as flask_session, Response, g)
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import joinedload
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -838,13 +839,23 @@ def inject_notes_rapides_count():
     return dict(notes_rapides_a_traiter=n)
 
 def get_param(cle, defaut=''):
-    # Priorité : variable d'environnement > base de données > valeur par défaut
+    # Priorité : variable d'environnement > base de données (mise en cache le
+    # temps de la requête, pour éviter de répéter la même requête SQL des
+    # dizaines de fois lors d'une génération PDF groupée sur plusieurs bons)
+    # > valeur par défaut.
     env_key = 'APP_' + cle.upper()
     env_val = os.environ.get(env_key)
     if env_val:
         return env_val
-    p = Parametre.query.filter_by(cle=cle).first()
-    return p.valeur if p else defaut
+    cache = getattr(g, '_param_cache', None)
+    if cache is None:
+        cache = {}
+        g._param_cache = cache
+    if cle not in cache:
+        p = Parametre.query.filter_by(cle=cle).first()
+        cache[cle] = p.valeur if p else None
+    val = cache[cle]
+    return val if val is not None else defaut
 
 def set_param(cle, valeur):
     p = Parametre.query.filter_by(cle=cle).first()
@@ -1070,7 +1081,7 @@ def _txt_client(v):
     s = str(v).strip()
     return '' if s.lower() == 'none' else s
 
-def generer_pdf(bon, inclure_photos=True):
+def generer_pdf(bon, inclure_photos=True, inclure_logos=True):
     if not PDF_OK:
         raise RuntimeError("ReportLab non installé.")
     buf = io.BytesIO()
@@ -1112,7 +1123,7 @@ def generer_pdf(bon, inclure_photos=True):
     # Pour les clients AMSOM Habitat, seuls les logos apparaissent en en-tête —
     # les coordonnées de la société (adresse, téléphone, SIRET...) ne doivent
     # pas figurer sur les documents qui leur sont destinés.
-    if os.path.exists(logo_hps_path):
+    if inclure_logos and os.path.exists(logo_hps_path):
         try:
             logo_hps = RLImage(logo_hps_path, width=4.5*cm, height=2*cm, kind='proportional')
             if show_amsom:
@@ -1361,8 +1372,8 @@ def generer_pdf(bon, inclure_photos=True):
     if not os.path.exists(logo_cepa_path):
         logo_cepa_path = os.path.join(static_dir, 'logo_cepa.jpg')
 
-    has_prosane = os.path.exists(logo_prosane_path)
-    has_cepa    = os.path.exists(logo_cepa_path)
+    has_prosane = inclure_logos and os.path.exists(logo_prosane_path)
+    has_cepa    = inclure_logos and os.path.exists(logo_cepa_path)
 
     if has_prosane or has_cepa:
         elems.append(Spacer(1, 0.5*cm))
@@ -2821,7 +2832,7 @@ def client_export_bons(id):
     resp.headers['Content-Disposition'] = f'attachment; filename="bons_{nom_fichier}.csv"'
     return resp
 
-MAX_RAPPORTS_PDF_EXPORT = 150  # limite de sécurité pour éviter un export trop long (timeout serveur)
+MAX_RAPPORTS_PDF_EXPORT = 60  # limite de sécurité pour éviter un export trop long (timeout serveur)
 
 @app.route('/clients/<int:id>/export-rapports-pdf')
 @login_required
@@ -2838,7 +2849,8 @@ def client_export_rapports_pdf(id):
     debut_str = request.args.get('debut', '').strip()
     fin_str = request.args.get('fin', '').strip()
 
-    q = Intervention.query.filter(Intervention.client_id == id, Intervention.statut == 'terminee')
+    q = Intervention.query.options(joinedload(Intervention.bon)).filter(
+        Intervention.client_id == id, Intervention.statut == 'terminee')
     try:
         if debut_str:
             q = q.filter(Intervention.date_planifiee >= datetime.strptime(debut_str, '%Y-%m-%d'))
@@ -2863,7 +2875,7 @@ def client_export_rapports_pdf(id):
             if nb_ajoutes >= MAX_RAPPORTS_PDF_EXPORT:
                 break
             try:
-                buf = generer_pdf(i.bon, inclure_photos=False)
+                buf = generer_pdf(i.bon, inclure_photos=False, inclure_logos=False)
                 reader = PdfReader(buf)
                 for page in reader.pages:
                     writer.add_page(page)
