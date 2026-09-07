@@ -149,12 +149,16 @@
     </div>
     {% endif %}
 
-    {% if bon.observations %}
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-eye me-2"></i>Observations</div>
-      <div class="card-body"><p class="mb-0" style="white-space:pre-line">{{ bon.observations }}</p></div>
+      <div class="card-body">
+        {% if bon.observations %}
+          <p class="mb-0" style="white-space:pre-line">{{ bon.observations }}</p>
+        {% else %}
+          <span class="text-muted fst-italic">Non renseigné</span>
+        {% endif %}
+      </div>
     </div>
-    {% endif %}
 
     {% if bon.recommandations %}
     <div class="card mb-3">
