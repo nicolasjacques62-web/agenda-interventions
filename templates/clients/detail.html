@@ -1,149 +1,856 @@
-{% extends "base.html" %} {% block title %}{{ client.nom_affichage }}{% endblock %} {% block page_title %}{{ client.nom_affichage }}{% endblock %} {% block head %} {% endblock %} {% block topbar_actions %} {% if patrimoine_count %} Patrimoine ({{ patrimoine_count }}) {% endif %} {% if 'AMSOM' not in (client.nom or '')|upper and 'AMSOM' not in (client.societe or '')|upper %} PROCESS {% else %} PROCESS RÃ©cap Lot 2/3 {% endif %} Modifier Planifier {% endblock %} {% block content %}
+{% extends "base.html" %}
+{% block title %}{{ client.nom_affichage }}{% endblock %}
+{% block page_title %}<i class="bi bi-person me-2"></i>{{ client.nom_affichage }}{% endblock %}
+
+{% block head %}
+<style>
+/* ── Fix champ nombre de passages : masquer les flèches navigateur qui écrasent le chiffre ── */
+#form-contrats input[type="number"] {
+  color: #1e293b !important;
+  background-color: #fff !important;
+  font-weight: 700;
+  font-size: .92rem;
+  min-width: 52px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+/* Chrome / Safari / Edge */
+#form-contrats input[type="number"]::-webkit-inner-spin-button,
+#form-contrats input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0;
+  width: 0;
+}
+/* Firefox */
+#form-contrats input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
 {% if patrimoine_count %}
-Patrimoine {{ patrimoine_count }} logements
-Parcourir le patrimoine
+<a href="{{ url_for('client_patrimoine', id=client.id) }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-buildings me-1"></i>Patrimoine ({{ patrimoine_count }})
+</a>
 {% endif %}
-Fiche client {{ client.reference }}
-{% if client.societe %}{% endif %} {% if client.siret_client %}{% endif %} {% if client.email %}{% endif %} {% if client.telephone %}{% endif %} {% if client.telephone2 %}{% endif %} {% if client.adresse %}{% endif %}
-Type	{% if client.type_client=='professionnel' %}Professionnel{% else %}Particulier{% endif %}
-SociÃ©tÃ©	{{ client.societe }}
-SIRET	{{ client.siret_client }}
-Nom	{{ client.nom_complet }}
-Email	{{ client.email }}
-TÃ©l.	{{ client.telephone }}
-TÃ©l. 2	{{ client.telephone2 }}
-Adresse	{{ client.adresse }}
-{{ client.code_postal }} {{ client.ville }}
-Client depuis	{{ client.created_at.strftime('%d/%m/%Y') }}
-{% if client.notes %}
-Notes
-{{ client.notes }}
-{% endif %}
-Modifier
-
-Contrats & Passages {{ annee }}  Modifier
-Renseignez le nombre de passages/an pour chaque prestation (0 = non contractÃ©) :
-{% for t in types_prestation %} {% set couleur = '#e67e22' if 'dÃ©ratisation' in t.lower() else '#1aabe3' if 'dÃ©sinsectisation' in t.lower() else '#27ae60' if 'dÃ©sinfection' in t.lower() else '#9b59b6' if 'dÃ©pigeonnage' in t.lower() else '#795548' if 'taupe' in t.lower() else '#e74c3c' if 'frelon' in t.lower() else '#f39c12' if 'guÃªpe' in t.lower() or 'guepe' in t.lower() else '#f1c40f' if 'abeille' in t.lower() else '#3788d8' %} {% set existing = client.contrats | selectattr('type_prestation', 'equalto', t) | list | first %}
- {{ t }}
- /an
-{% if existing %} {{ existing.passages_realises(annee) }} rÃ©alisÃ©(s) {% endif %}
-{% endfor %}
-DÃ©but contrat  
-Fin contrat  
- Planifier automatiquement les passages dans l'agenda (rÃ©partis sur la pÃ©riode, Ã©vite les doublons)
-Sauvegarder & Planifier  Annuler
-{% set has_contrats = client.contrats | selectattr('passages_annuels', 'gt', 0) | list %} {% if has_contrats %} {% for contrat in client.contrats %} {% if contrat.passages_annuels > 0 %} {% set realises = contrat.passages_realises(annee) %} {% set restants = contrat.passages_restants(annee) %} {% set pct = contrat.pct_realises(annee) %} {% set cp = contrat.type_prestation.lower() %} {% set couleur = '#e67e22' if 'dÃ©ratisation' in cp else '#1aabe3' if 'dÃ©sinsectisation' in cp else '#27ae60' if 'dÃ©sinfection' in cp else '#9b59b6' if 'dÃ©pigeonnage' in cp else '#795548' if 'taupe' in cp else '#e74c3c' if 'frelon' in cp else '#f39c12' if 'guÃªpe' in cp or 'guepe' in cp else '#f1c40f' if 'abeille' in cp else '#3788d8' %}
- {{ contrat.type_prestation }} {{ realises }}/{{ contrat.passages_annuels }} {% if restants > 0 %}â€” {{ restants }} restant{{ 's' if restants > 1 }}{% else %}âœ“{% endif %}
-{% endif %} {% endfor %} {% else %}
-Cliquez sur Modifier pour configurer les passages contractuels
-{% endif %}
-Portail client
-{% if client.portal_actif %}
-Portail actif
-Lien d'inscription / accÃ¨s
-  
-Alertes email
-{% if client.notifs_actives %} ActivÃ©es â€” le client est notifiÃ© automatiquement {% else %} DÃ©sactivÃ©es {% endif %}
-
-{% if client.notifs_actives %}
-Email automatique lors de : nouvelle intervention, bon finalisÃ©, activation portail
-{% endif %}
-Alertes SMS
-{% if client.sms_actif %} ActivÃ©es {% set tel_fmt = client.telephone or client.telephone2 %} {% if tel_fmt %} â€” {{ tel_fmt }}{% endif %} {% else %} DÃ©sactivÃ©es {% if not client.telephone and not client.telephone2 %} â€” numÃ©ro requis {% endif %} {% endif %}
-
-{% if client.sms_actif %}
-SMS envoyÃ© lors des mÃªmes Ã©vÃ©nements (via Brevo)
-{% endif %}
-Interlocuteurs supplÃ©mentaires {% if client.portal_contacts %}
-{% for contact in client.portal_contacts %}
-{{ contact.nom }}{% if not contact.actif %} DÃ©sactivÃ©{% endif %}
-{{ url_for('portail_access', token=contact.access_token, _external=True) }}
-{% if contact.voit_tout %}
-accÃ¨s Ã  tout (interventions + bons)
-{% elif contact.visible_comme %}
-voit aussi comme Â« {{ contact.visible_comme.nom }} Â»
-{% endif %} {% if client.portal_contacts|length > 1 and not contact.voit_tout %}
-
-{% endif %}
-
-
-
-
-{% endfor %}
-{% endif %}
-    
- AccÃ¨s Ã  toutes les interventions/bons du client (ex : comptabilitÃ©)
-{% if client.portal_contacts %}   {% endif %}
-RÃ©gÃ©nÃ©rer le lien
-DÃ©sactiver le portail
+{% if 'AMSOM' not in (client.nom or '')|upper and 'AMSOM' not in (client.societe or '')|upper %}
+<a href="{{ url_for('static', filename='documents/HPS3D_Fiches_Process.docx') }}" class="btn btn-outline-primary btn-sm" target="_blank">
+  <i class="bi bi-file-earmark-text me-1"></i>PROCESS
+</a>
 {% else %}
-Le portail permet au client de consulter ses interventions et signer ses bons via un lien sÃ©curisÃ©.
+<a href="{{ url_for('static', filename='documents/HPS3D_Fiches_Process_AMSOM.docx') }}" class="btn btn-outline-primary btn-sm" target="_blank">
+  <i class="bi bi-file-earmark-text me-1"></i>PROCESS
+</a>
+<a href="{{ url_for('static', filename='documents/recap_AMSOM_lot2_lot3_1.pdf') }}" class="btn btn-outline-primary btn-sm" target="_blank">
+  <i class="bi bi-filetype-pdf me-1"></i>Récap Lot 2/3
+</a>
+{% endif %}
+<a href="{{ url_for('client_modifier', id=client.id) }}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-pencil me-1"></i>Modifier
+</a>
+<a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
+  <i class="bi bi-calendar-plus me-1"></i>Planifier
+</a>
+{% endblock %}
 
-{% if not client.email %}
-Un email est requis pour activer le portail.
-{% else %}
-Activer et gÃ©nÃ©rer le lien
-Un email de bienvenue sera envoyÃ© automatiquement avec le lien d'accÃ¨s.
-{% endif %} {% endif %}
-Interventions ({{ interventions|length }})
-Exporter les BT  Rapports PDF  Planifier
-Du  
-Au  
-TÃ©lÃ©charger le PDF  Laisser les deux champs vides pour tout exporter. Les photos ne sont pas incluses (pour rester rapide) â€” voir chaque bon individuellement pour ses photos.
-{% if interventions %}
-{% for i in interventions %} {% set adr = i.adresse or (client.adresse if client.adresse and client.adresse != 'None' else '') %} {% endfor %}
-RÃ©f.	Date	Titre	NÂ° BT	Adresse	Portail	PrioritÃ©	Statut	Bon	
-{{ i.reference }}	{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}	{{ i.titre }}	{% if i.numero_bon_commande %}{{ i.numero_bon_commande }}{% else %}â€”{% endif %}	{% if adr %}{{ adr | truncate(35) }}{% else %}â€”{% endif %}	{% if i.portal_contact %}{{ i.portal_contact.nom }} {% else %}â€”{% endif %}	{% if i.priorite == 'urgente' %}Urgente {% elif i.priorite == 'normale' %}Normale {% else %}Faible{% endif %}	{{ i.statut_label }}	{% if i.bon %} {{ i.bon.numero }} {% else %} CrÃ©er {% endif %}	
-{% else %}
-Aucune intervention pour ce client
-{% endif %}
-Audits diagnostics ({{ client.audits|length }}) Nouvel audit
-{% if client.audits %} {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
-{% for a in client.audits | sort(attribute='date_audit', reverse=True) %} {% endfor %}
-RÃ©fÃ©rence	Date	Technicien	Risque	Statut	
-{{ a.reference }}	{{ a.date_audit.strftime('%d/%m/%Y') }}	{{ a.technicien or 'â€”' }}	{% if a.niveau_risque %} {{ a.niveau_label }} {% else %}â€”{% endif %}	{{ a.statut_label }}	
-{% else %}
-Aucun audit pour ce client.
-CrÃ©ez un diagnostic d'infestation et plan de gestion des nuisibles.
-{% endif %}
-Fiches Techniques & FDS {% set nb_assoc = client.doc_associations | length %} {{ nb_assoc }}  Associer
-{% if docs_dispo %}
-Choisir un document Ã  associer 
-Associer   Annuler
-{% else %}
-Tous les documents disponibles sont dÃ©jÃ  associÃ©s Ã  ce client. Ajouter un nouveau document
-{% endif %}
-GÃ©rer la bibliothÃ¨que de documents  Â·  Uploader un nouveau document
-{% if client.doc_associations %} {% set type_colors = {'ft': 'primary', 'fds': 'warning'} %} {% for cd in client.doc_associations | sort(attribute='document.type_prestation') %} {% set doc = cd.document %}
-{{ doc.type_doc | upper }} {{ doc.nom }}
-{{ doc.type_prestation or 'â€”' }} {% if doc.produit %} Â· {{ doc.produit }}{% endif %} {% if doc.taille_str %} Â· {{ doc.taille_str }}{% endif %}
- 
-{% endfor %} {% else %}
-Aucune fiche associÃ©e Ã  ce client.
-Cliquez sur Associer pour lier des FT/FDS depuis la bibliothÃ¨que.
-{% endif %}
-{% set plans = client.plans_appatage if client.plans_appatage is defined else [] %}
-Plans d'appÃ¢tage ({{ plans|length }})  Ajouter
-Ã‰tiquette du plan  
-Notes / remarques  
-  Choisir un fichier   Prendre en photo  JPG, PNG, WEBP ou PDF â€” max 15 Mo
+{% block content %}
+<div class="row g-3">
 
- Annuler
-Enregistrer le plan   Annuler
-{% if plans %}
-{% for plan in plans | sort(attribute='created_at', reverse=True) %}
-{% if plan.mimetype == 'application/pdf' %}
-{% else %}  {{ plan.nom }} {% endif %}
-{% if plan.mimetype == 'application/pdf' %} {% else %} {% endif %} {{ plan.nom }}
-{% if plan.notes %}
-{{ plan.notes }}
-{% endif %}
-{{ plan.created_at.strftime('%d/%m/%Y') }}
-Voir
+  <!-- Fiche client -->
+  <div class="col-lg-4">
+    {% if patrimoine_count %}
+    <!-- Patrimoine (logements) — mis en avant -->
+    <div class="card mb-3 border-0 shadow-sm" style="background: linear-gradient(135deg, #1aabe3, #1583ad);">
+      <div class="card-body p-3 text-white">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="fw-bold"><i class="bi bi-buildings me-2"></i>Patrimoine</span>
+          <span class="badge bg-white text-primary fw-bold">{{ patrimoine_count }} logements</span>
+        </div>
+        <a href="{{ url_for('client_patrimoine', id=client.id) }}" class="btn btn-light btn-sm w-100 fw-semibold">
+          <i class="bi bi-search me-1"></i>Parcourir le patrimoine
+        </a>
+      </div>
+    </div>
+    {% endif %}
 
-{% endfor %}
-{% else %}
-Aucun plan pour ce client.
-Ajoutez une photo ou un PDF du site pour aider les techniciens.
-{% endif %}
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-person-vcard me-2"></i>Fiche client</span>
+        <span class="badge bg-light text-dark border">{{ client.reference }}</span>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted small fw-semibold" style="width:110px">Type</td>
+            <td>{% if client.type_client=='professionnel' %}<span class="badge bg-info text-dark">Professionnel</span>{% else %}<span class="badge bg-light text-dark border">Particulier</span>{% endif %}</td></tr>
+          {% if client.societe %}<tr><td class="text-muted small fw-semibold">Société</td><td>{{ client.societe }}</td></tr>{% endif %}
+          {% if client.siret_client %}<tr><td class="text-muted small fw-semibold">SIRET</td><td>{{ client.siret_client }}</td></tr>{% endif %}
+          <tr><td class="text-muted small fw-semibold">Nom</td><td>{{ client.nom_complet }}</td></tr>
+          {% if client.email %}<tr><td class="text-muted small fw-semibold">Email</td><td><a href="mailto:{{ client.email }}">{{ client.email }}</a></td></tr>{% endif %}
+          {% if client.telephone %}<tr><td class="text-muted small fw-semibold">Tél.</td><td><a href="tel:{{ client.telephone }}">{{ client.telephone }}</a></td></tr>{% endif %}
+          {% if client.telephone2 %}<tr><td class="text-muted small fw-semibold">Tél. 2</td><td><a href="tel:{{ client.telephone2 }}">{{ client.telephone2 }}</a></td></tr>{% endif %}
+          {% if client.adresse %}<tr><td class="text-muted small fw-semibold">Adresse</td><td>{{ client.adresse }}<br>{{ client.code_postal }} {{ client.ville }}</td></tr>{% endif %}
+          <tr><td class="text-muted small fw-semibold">Client depuis</td><td>{{ client.created_at.strftime('%d/%m/%Y') }}</td></tr>
+        </table>
+        {% if client.notes %}
+        <hr class="my-2">
+        <div class="text-muted small fw-semibold mb-1">Notes</div>
+        <div class="small">{{ client.notes }}</div>
+        {% endif %}
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <a href="{{ url_for('client_modifier', id=client.id) }}" class="btn btn-outline-secondary btn-sm flex-fill">
+          <i class="bi bi-pencil me-1"></i>Modifier
+        </a>
+        <form method="POST" action="{{ url_for('client_supprimer', id=client.id) }}"
+              onsubmit="return confirm('Désactiver ce client ?')">
+          <button class="btn btn-outline-danger btn-sm"><i class="bi bi-archive"></i></button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Contrats & Suivi passages -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-file-earmark-check me-2"></i>Contrats &amp; Passages {{ annee }}</span>
+        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#form-contrats">
+          <i class="bi bi-pencil me-1"></i>Modifier
+        </button>
+      </div>
+      <div class="card-body p-2">
+
+        <!-- Formulaire tous les types d'un coup -->
+        <div class="collapse mb-2" id="form-contrats">
+          <form method="POST" action="{{ url_for('contrats_sauvegarder', id=client.id) }}" class="border rounded p-2 bg-light">
+            <div class="small fw-semibold text-muted mb-2">Renseignez le nombre de passages/an pour chaque prestation (0 = non contracté) :</div>
+            {% for t in types_prestation %}
+            {% set couleur = '#e67e22' if 'dératisation' in t.lower()
+                        else '#1aabe3' if 'désinsectisation' in t.lower()
+                        else '#27ae60' if 'désinfection' in t.lower()
+                        else '#9b59b6' if 'dépigeonnage' in t.lower()
+                        else '#795548' if 'taupe' in t.lower()
+                        else '#e74c3c' if 'frelon' in t.lower()
+                        else '#f39c12' if 'guêpe' in t.lower() or 'guepe' in t.lower()
+                        else '#f1c40f' if 'abeille' in t.lower()
+                        else '#3788d8' %}
+            {% set existing = client.contrats | selectattr('type_prestation', 'equalto', t) | list | first %}
+            <div class="row g-2 align-items-center mb-2">
+              <div class="col-4">
+                <span class="badge me-1 rounded-circle" style="background:{{ couleur }};width:10px;height:10px;padding:0;display:inline-block;vertical-align:middle"></span>
+                <small class="fw-semibold">{{ t }}</small>
+              </div>
+              <div class="col-4">
+                <div class="input-group input-group-sm">
+                  <input type="number" name="passages_{{ loop.index }}"
+                         class="form-control form-control-sm text-center"
+                         value="{{ existing.passages_annuels if existing else 0 }}" min="0" max="52">
+                  <span class="input-group-text" style="font-size:.7rem;background:#e8f6fc;color:#1aabe3;font-weight:700">/an</span>
+                </div>
+              </div>
+              <div class="col-4">
+                <input type="hidden" name="type_{{ loop.index }}" value="{{ t }}">
+                {% if existing %}
+                <small class="text-muted">{{ existing.passages_realises(annee) }} réalisé(s)</small>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+            <input type="hidden" name="nb_types" value="{{ types_prestation|length }}">
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <label class="form-label small mb-0">Début contrat</label>
+                <input type="date" name="date_debut" class="form-control form-control-sm"
+                       value="{{ client.contrats[0].date_debut.strftime('%Y-%m-%d') if client.contrats and client.contrats[0].date_debut else '' }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-0">Fin contrat</label>
+                <input type="date" name="date_fin" class="form-control form-control-sm"
+                       value="{{ client.contrats[0].date_fin.strftime('%Y-%m-%d') if client.contrats and client.contrats[0].date_fin else '' }}">
+              </div>
+            </div>
+            <div class="form-check mt-2 mb-2">
+              <input class="form-check-input" type="checkbox" name="planifier_auto" value="1" id="chk-planif" checked>
+              <label class="form-check-label small" for="chk-planif">
+                <strong>Planifier automatiquement</strong> les passages dans l'agenda
+                <span class="text-muted">(répartis sur la période, évite les doublons)</span>
+              </label>
+            </div>
+            <div class="d-flex gap-2 mt-1">
+              <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-calendar-check me-1"></i>Sauvegarder &amp; Planifier</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#form-contrats">Annuler</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Affichage suivi tous les types -->
+        {% set has_contrats = client.contrats | selectattr('passages_annuels', 'gt', 0) | list %}
+        {% if has_contrats %}
+          {% for contrat in client.contrats %}
+          {% if contrat.passages_annuels > 0 %}
+          {% set realises = contrat.passages_realises(annee) %}
+          {% set restants = contrat.passages_restants(annee) %}
+          {% set pct = contrat.pct_realises(annee) %}
+          {% set cp = contrat.type_prestation.lower() %}
+          {% set couleur = '#e67e22' if 'dératisation' in cp
+                      else '#1aabe3' if 'désinsectisation' in cp
+                      else '#27ae60' if 'désinfection' in cp
+                      else '#9b59b6' if 'dépigeonnage' in cp
+                      else '#795548' if 'taupe' in cp
+                      else '#e74c3c' if 'frelon' in cp
+                      else '#f39c12' if 'guêpe' in cp or 'guepe' in cp
+                      else '#f1c40f' if 'abeille' in cp
+                      else '#3788d8' %}
+          <div class="mb-2 p-2 border rounded">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="small fw-semibold">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ couleur }};margin-right:4px;vertical-align:middle"></span>
+                {{ contrat.type_prestation }}
+              </span>
+              <span class="small {% if restants > 0 %}text-warning fw-bold{% else %}text-success fw-bold{% endif %}">
+                {{ realises }}/{{ contrat.passages_annuels }}
+                {% if restants > 0 %}— {{ restants }} restant{{ 's' if restants > 1 }}{% else %}✓{% endif %}
+              </span>
+            </div>
+            <div class="progress" style="height:8px">
+              <div class="progress-bar {% if pct >= 100 %}bg-success{% elif pct >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                   style="width:{{ pct }}%"></div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        {% else %}
+          <div class="text-muted small fst-italic text-center py-2">
+            <i class="bi bi-file-earmark-plus me-1"></i>Cliquez sur <strong>Modifier</strong> pour configurer les passages contractuels
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Portail client -->
+    <div class="card">
+      <div class="card-header"><i class="bi bi-share me-2"></i>Portail client</div>
+      <div class="card-body">
+        {% if client.portal_actif %}
+          <div class="alert alert-success py-2 small mb-2">
+            <i class="bi bi-check-circle me-1"></i>Portail actif
+          </div>
+          <label class="form-label small fw-semibold">Lien d'inscription / accès</label>
+          <div class="input-group mb-2">
+            <input type="text" class="form-control form-control-sm" id="portalLink" value="{{ lien_portail }}" readonly>
+            <button class="btn btn-outline-secondary btn-sm" onclick="copyLink()" title="Copier">
+              <i class="bi bi-clipboard"></i>
+            </button>
+          </div>
+
+          <!-- Notifications email -->
+          <div class="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-2
+                      {% if client.notifs_actives %}bg-light{% else %}bg-white{% endif %}">
+            <div>
+              <i class="bi bi-bell{% if not client.notifs_actives %}-slash text-muted{% else %} text-success{% endif %} me-1"></i>
+              <span class="small fw-semibold">Alertes email</span>
+              <div class="text-muted" style="font-size:.72rem">
+                {% if client.notifs_actives %}
+                  <span class="text-success">Activées</span> — le client est notifié automatiquement
+                {% else %}
+                  <span class="text-muted">Désactivées</span>
+                {% endif %}
+              </div>
+            </div>
+            <form method="POST" action="{{ url_for('client_notifs_toggle', id=client.id) }}">
+              <button type="submit" class="btn btn-sm {% if client.notifs_actives %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                      title="{% if client.notifs_actives %}Désactiver les alertes{% else %}Activer les alertes{% endif %}">
+                <i class="bi bi-toggle-{% if client.notifs_actives %}on{% else %}off{% endif %}"></i>
+              </button>
+            </form>
+          </div>
+          {% if client.notifs_actives %}
+          <div class="text-muted mb-2" style="font-size:.72rem">
+            <i class="bi bi-info-circle me-1"></i>Email automatique lors de :
+            <strong>nouvelle intervention</strong>, <strong>bon finalisé</strong>, <strong>activation portail</strong>
+          </div>
+          {% endif %}
+
+          <!-- Alertes SMS -->
+          <div class="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-2
+                      {% if client.sms_actif %}bg-light{% else %}bg-white{% endif %}">
+            <div>
+              <i class="bi bi-phone{% if not client.sms_actif %} text-muted{% else %} text-success{% endif %} me-1"></i>
+              <span class="small fw-semibold">Alertes SMS</span>
+              <div style="font-size:.72rem">
+                {% if client.sms_actif %}
+                  <span class="text-success">Activées</span>
+                  {% set tel_fmt = client.telephone or client.telephone2 %}
+                  {% if tel_fmt %}<span class="text-muted"> — {{ tel_fmt }}</span>{% endif %}
+                {% else %}
+                  <span class="text-muted">Désactivées</span>
+                  {% if not client.telephone and not client.telephone2 %}
+                    <span class="text-danger"> — numéro requis</span>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+            <form method="POST" action="{{ url_for('client_sms_toggle', id=client.id) }}">
+              <button type="submit"
+                      class="btn btn-sm {% if client.sms_actif %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                      {% if not client.telephone and not client.telephone2 %}disabled title="Ajoutez un numéro de téléphone d'abord"{% endif %}>
+                <i class="bi bi-toggle-{% if client.sms_actif %}on{% else %}off{% endif %}"></i>
+              </button>
+            </form>
+          </div>
+          {% if client.sms_actif %}
+          <div class="text-muted mb-2" style="font-size:.72rem">
+            <i class="bi bi-info-circle me-1"></i>SMS envoyé lors des mêmes événements (via Brevo)
+          </div>
+          {% endif %}
+
+          <!-- Interlocuteurs supplémentaires -->
+          <hr class="my-2">
+          <label class="form-label small fw-semibold mb-1">
+            <i class="bi bi-people me-1"></i>Interlocuteurs supplémentaires
+          </label>
+          {% if client.portal_contacts %}
+          <div class="mb-2">
+            {% for contact in client.portal_contacts %}
+            <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1 mb-1 {% if not contact.actif %}bg-light{% endif %}">
+              <div class="small {% if not contact.actif %}text-muted{% endif %}" style="min-width:0">
+                <div class="fw-semibold text-truncate">{{ contact.nom }}{% if not contact.actif %} <span class="badge bg-secondary">Désactivé</span>{% endif %}</div>
+                <div class="text-muted" style="font-size:.7rem">
+                  {{ url_for('portail_access', token=contact.access_token, _external=True) }}
+                </div>
+                {% if contact.voit_tout %}
+                  <div class="mt-1"><span class="badge bg-success" style="font-size:.65rem">
+                    <i class="bi bi-unlock me-1"></i>accès à tout (interventions + bons)
+                  </span></div>
+                {% elif contact.visible_comme %}
+                  <div class="mt-1"><span class="badge bg-info text-dark" style="font-size:.65rem">
+                    <i class="bi bi-eye me-1"></i>voit aussi comme « {{ contact.visible_comme.nom }} »
+                  </span></div>
+                {% endif %}
+                {% if client.portal_contacts|length > 1 and not contact.voit_tout %}
+                <form method="POST" action="{{ url_for('portail_contact_visibilite', contact_id=contact.id) }}"
+                      class="mt-1 d-flex align-items-center gap-1">
+                  <select name="visible_comme_id" class="form-select form-select-sm" style="font-size:.7rem;padding:1px 4px"
+                          onchange="this.form.submit()">
+                    <option value="">Voit uniquement ses propres demandes</option>
+                    {% for autre in client.portal_contacts %}
+                      {% if autre.id != contact.id %}
+                      <option value="{{ autre.id }}" {% if contact.visible_comme_id==autre.id %}selected{% endif %}>
+                        Voit aussi comme « {{ autre.nom }} »
+                      </option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                </form>
+                {% endif %}
+              </div>
+              <div class="d-flex gap-1 flex-shrink-0 ms-2">
+                <button class="btn btn-outline-secondary btn-sm py-0 px-1"
+                        onclick="navigator.clipboard.writeText('{{ url_for('portail_access', token=contact.access_token, _external=True) }}')"
+                        title="Copier le lien"><i class="bi bi-clipboard"></i></button>
+                <form method="POST" action="{{ url_for('portail_contact_voit_tout', contact_id=contact.id) }}">
+                  <button class="btn btn-outline-{% if contact.voit_tout %}success{% else %}secondary{% endif %} btn-sm py-0 px-1"
+                          title="{% if contact.voit_tout %}Retirer l'accès à tout{% else %}Donner accès à toutes les interventions/bons{% endif %}">
+                    <i class="bi bi-{% if contact.voit_tout %}unlock{% else %}lock{% endif %}"></i>
+                  </button>
+                </form>
+                <form method="POST" action="{{ url_for('portail_contact_desactiver', contact_id=contact.id) }}">
+                  <button class="btn btn-outline-{% if contact.actif %}warning{% else %}success{% endif %} btn-sm py-0 px-1"
+                          title="{% if contact.actif %}Désactiver{% else %}Réactiver{% endif %}">
+                    <i class="bi bi-toggle-{% if contact.actif %}on{% else %}off{% endif %}"></i>
+                  </button>
+                </form>
+                <form method="POST" action="{{ url_for('portail_contact_supprimer', contact_id=contact.id) }}"
+                      onsubmit="return confirm('Supprimer cet interlocuteur ?')">
+                  <button class="btn btn-outline-danger btn-sm py-0 px-1" title="Supprimer">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <form method="POST" action="{{ url_for('portail_contact_ajouter', id=client.id) }}" class="d-flex flex-column gap-1 mb-2">
+            <div class="d-flex gap-1">
+              <input type="text" name="nom" class="form-control form-control-sm" placeholder="Nom de l'interlocuteur" required>
+              <input type="email" name="email" class="form-control form-control-sm" placeholder="Email (optionnel)">
+              <button class="btn btn-outline-primary btn-sm flex-shrink-0" title="Ajouter">
+                <i class="bi bi-plus-lg"></i>
+              </button>
+            </div>
+            <div class="form-check" style="font-size:.72rem">
+              <input type="checkbox" class="form-check-input" id="voit_tout_new" name="voit_tout" value="1">
+              <label class="form-check-label" for="voit_tout_new">
+                Accès à toutes les interventions/bons du client (ex : comptabilité)
+              </label>
+            </div>
+            {% if client.portal_contacts %}
+            <select name="visible_comme_id" class="form-select form-select-sm" style="font-size:.72rem">
+              <option value="">Voit uniquement ses propres demandes</option>
+              {% for autre in client.portal_contacts %}
+                <option value="{{ autre.id }}">Voit aussi comme « {{ autre.nom }} »</option>
+              {% endfor %}
+            </select>
+            {% endif %}
+          </form>
+
+          <div class="d-grid gap-1">
+            <form method="POST" action="{{ url_for('portail_regenerer', id=client.id) }}"
+                  onsubmit="return confirm('Régénérer invalidera l\'ancien lien. Continuer ?')">
+              <button class="btn btn-outline-warning btn-sm w-100">
+                <i class="bi bi-arrow-repeat me-1"></i>Régénérer le lien
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('portail_desactiver', id=client.id) }}">
+              <button class="btn btn-outline-danger btn-sm w-100">
+                <i class="bi bi-x-circle me-1"></i>Désactiver le portail
+              </button>
+            </form>
+          </div>
+        {% else %}
+          <p class="small text-muted">Le portail permet au client de consulter ses interventions et signer ses bons via un lien sécurisé.</p>
+          {% if not client.email %}
+            <div class="alert alert-warning py-2 small">Un email est requis pour activer le portail.</div>
+          {% else %}
+            <form method="POST" action="{{ url_for('portail_activer', id=client.id) }}">
+              <button class="btn btn-success w-100 btn-sm">
+                <i class="bi bi-link-45deg me-1"></i>Activer et générer le lien
+              </button>
+            </form>
+            <div class="text-muted mt-2" style="font-size:.72rem">
+              <i class="bi bi-bell me-1"></i>Un email de bienvenue sera envoyé automatiquement avec le lien d'accès.
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Interventions + Plans appâtage -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-wrench me-2"></i>Interventions ({{ interventions|length }})</span>
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('client_export_bons', id=client.id) }}" class="btn btn-outline-secondary btn-sm" title="Exporter les bons (N° BT, type, date) en CSV">
+            <i class="bi bi-download me-1"></i>Exporter les BT
+          </a>
+          <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="collapse" data-bs-target="#export-pdf-form"
+                  title="Regrouper en un seul PDF les rapports des interventions terminées, sur une période au choix">
+            <i class="bi bi-filetype-pdf me-1"></i>Rapports PDF
+          </button>
+          <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Planifier
+          </a>
+        </div>
+      </div>
+      <div class="collapse" id="export-pdf-form">
+        <div class="card-body border-bottom bg-light py-2">
+          <form method="GET" action="{{ url_for('client_export_rapports_pdf', id=client.id) }}" class="d-flex gap-2 align-items-end flex-wrap">
+            <div>
+              <label class="form-label small mb-0 text-muted">Du</label>
+              <input type="date" name="debut" class="form-control form-control-sm">
+            </div>
+            <div>
+              <label class="form-label small mb-0 text-muted">Au</label>
+              <input type="date" name="fin" class="form-control form-control-sm">
+            </div>
+            <button class="btn btn-danger btn-sm">
+              <i class="bi bi-filetype-pdf me-1"></i>Télécharger le PDF
+            </button>
+            <span class="text-muted small">Laisser les deux champs vides pour tout exporter. Les photos ne sont pas incluses (pour rester rapide) — voir chaque bon individuellement pour ses photos.</span>
+          </form>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        {% if interventions %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>Réf.</th><th>Date</th><th>Titre</th><th>N° BT</th><th>Adresse</th><th>Portail</th><th>Priorité</th><th>Statut</th><th>Bon</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for i in interventions %}
+              {% set adr = i.adresse or (client.adresse if client.adresse and client.adresse != 'None' else '') %}
+              <tr class="priority-{{ i.priorite }}">
+                <td><small class="text-muted">{{ i.reference }}</small></td>
+                <td class="text-nowrap small">{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}</td>
+                <td>{{ i.titre }}</td>
+                <td class="small text-nowrap">
+                  {% if i.numero_bon_commande %}{{ i.numero_bon_commande }}{% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td class="small text-muted" style="max-width:200px" title="{{ adr }}">
+                  {% if adr %}<i class="bi bi-geo-alt me-1"></i>{{ adr | truncate(35) }}{% else %}—{% endif %}
+                </td>
+                <td class="small">
+                  {% if i.portal_contact %}<span class="badge bg-info text-dark">{{ i.portal_contact.nom }}</span>
+                  {% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td>
+                  {% if i.priorite == 'urgente' %}<span class="badge bg-danger">Urgente</span>
+                  {% elif i.priorite == 'normale' %}<span class="badge bg-primary">Normale</span>
+                  {% else %}<span class="badge bg-secondary">Faible</span>{% endif %}
+                </td>
+                <td><span class="badge badge-{{ i.statut }}">{{ i.statut_label }}</span></td>
+                <td>
+                  {% if i.bon %}
+                    <a href="{{ url_for('bon_detail', id=i.bon.id) }}" class="badge bg-{{ i.bon.statut_couleur }} text-decoration-none">
+                      {{ i.bon.numero }}
+                    </a>
+                  {% else %}
+                    <a href="{{ url_for('bon_nouveau') }}?intervention_id={{ i.id }}" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:1px 6px">
+                      <i class="bi bi-file-plus"></i> Créer
+                    </a>
+                  {% endif %}
+                </td>
+                <td>
+                  <a href="{{ url_for('intervention_detail', id=i.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <div class="text-center py-5 text-muted">
+            <i class="bi bi-calendar fs-1 d-block mb-2"></i>
+            Aucune intervention pour ce client
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Audits -->
+    <div class="card mt-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard2-pulse me-2"></i>Audits diagnostics ({{ client.audits|length }})</span>
+        <a href="{{ url_for('audit_nouveau', id=client.id) }}" class="btn btn-sm btn-primary">
+          <i class="bi bi-plus-lg me-1"></i>Nouvel audit
+        </a>
+      </div>
+      <div class="card-body p-0">
+        {% if client.audits %}
+        {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-light">
+              <tr><th>Référence</th><th>Date</th><th>Technicien</th><th>Risque</th><th>Statut</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for a in client.audits | sort(attribute='date_audit', reverse=True) %}
+              <tr>
+                <td class="fw-semibold small">{{ a.reference }}</td>
+                <td class="small text-nowrap">{{ a.date_audit.strftime('%d/%m/%Y') }}</td>
+                <td class="small text-muted">{{ a.technicien or '—' }}</td>
+                <td>
+                  {% if a.niveau_risque %}
+                  <span class="badge bg-{{ niv_c.get(a.niveau_risque, 'secondary') }}">{{ a.niveau_label }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td><span class="badge bg-{{ a.statut_couleur }}">{{ a.statut_label }}</span></td>
+                <td class="text-end">
+                  <a href="{{ url_for('audit_detail', id=a.id) }}" class="btn btn-sm btn-outline-secondary py-0 px-2">
+                    <i class="bi bi-eye"></i>
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-clipboard2 fs-2 d-block mb-2"></i>
+          <span class="small">Aucun audit pour ce client.<br>
+          Créez un diagnostic d'infestation et plan de gestion des nuisibles.</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Fiches Techniques & FDS associées -->
+    <div class="card mt-3" id="card-documents">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+          <i class="bi bi-file-earmark-medical me-2"></i>
+          Fiches Techniques &amp; FDS
+          {% set nb_assoc = client.doc_associations | length %}
+          <span class="badge bg-secondary ms-1">{{ nb_assoc }}</span>
+        </span>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-assoc-doc">
+          <i class="bi bi-plus-lg me-1"></i>Associer
+        </button>
+      </div>
+
+      <!-- Formulaire d'association -->
+      <div class="collapse" id="form-assoc-doc">
+        <div class="card-body border-bottom bg-light pb-3">
+          {% if docs_dispo %}
+          <form method="POST" action="{{ url_for('client_document_associer', id=client.id) }}" class="d-flex gap-2 flex-wrap align-items-end">
+            <div class="flex-grow-1">
+              <label class="form-label small fw-semibold mb-1">Choisir un document à associer</label>
+              <select name="document_id" class="form-select form-select-sm" required>
+                <option value="">— Sélectionnez un document —</option>
+                {% for doc in docs_dispo %}
+                <option value="{{ doc.id }}">
+                  [{{ doc.type_doc | upper }}] {{ doc.type_prestation }} — {{ doc.nom }}{% if doc.produit %} ({{ doc.produit }}){% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success btn-sm">
+                <i class="bi bi-link-45deg me-1"></i>Associer
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#form-assoc-doc">Annuler</button>
+            </div>
+          </form>
+          {% else %}
+          <div class="text-muted small fst-italic">
+            <i class="bi bi-info-circle me-1"></i>
+            Tous les documents disponibles sont déjà associés à ce client.
+            <a href="{{ url_for('document_nouveau') }}" class="ms-2">
+              <i class="bi bi-upload me-1"></i>Ajouter un nouveau document
+            </a>
+          </div>
+          {% endif %}
+          <div class="mt-2" style="font-size:.75rem;color:#64748b">
+            <i class="bi bi-folder2-open me-1"></i>
+            <a href="{{ url_for('documents_liste') }}">Gérer la bibliothèque de documents</a>
+            &nbsp;·&nbsp;
+            <a href="{{ url_for('document_nouveau') }}">Uploader un nouveau document</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Liste des documents associés -->
+      <div class="card-body p-0">
+        {% if client.doc_associations %}
+        {% set type_colors = {'ft': 'primary', 'fds': 'warning'} %}
+        {% for cd in client.doc_associations | sort(attribute='document.type_prestation') %}
+        {% set doc = cd.document %}
+        <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+          <i class="bi {{ doc.icone }} {% if doc.type_doc == 'fds' %}text-warning{% else %}text-primary{% endif %}"
+             style="font-size:1.3rem;flex-shrink:0"></i>
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-semibold small text-truncate">
+              <span class="badge {% if doc.type_doc == 'fds' %}bg-warning text-dark{% else %}bg-primary{% endif %} me-1"
+                    style="font-size:.65rem">{{ doc.type_doc | upper }}</span>
+              {{ doc.nom }}
+            </div>
+            <div class="text-muted" style="font-size:.72rem">
+              <i class="bi bi-layers me-1"></i>{{ doc.type_prestation or '—' }}
+              {% if doc.produit %}&nbsp;·&nbsp;<i class="bi bi-tag me-1"></i>{{ doc.produit }}{% endif %}
+              {% if doc.taille_str %}&nbsp;·&nbsp;{{ doc.taille_str }}{% endif %}
+            </div>
+          </div>
+          <div class="d-flex gap-1 flex-shrink-0">
+            <a href="{{ url_for('document_voir', id=doc.id) }}" target="_blank"
+               class="btn btn-sm {% if doc.type_doc == 'fds' %}btn-outline-warning{% else %}btn-outline-primary{% endif %} py-0 px-2"
+               title="Voir">
+              <i class="bi bi-eye"></i>
+            </a>
+            <a href="{{ url_for('document_voir', id=doc.id) }}?dl=1"
+               class="btn btn-sm btn-outline-secondary py-0 px-2" title="Télécharger">
+              <i class="bi bi-download"></i>
+            </a>
+            <form method="POST" action="{{ url_for('client_document_retirer', id=client.id, did=doc.id) }}"
+                  onsubmit="return confirm('Retirer ce document de ce client ?')" class="d-inline">
+              <button class="btn btn-sm btn-outline-danger py-0 px-2" title="Retirer">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-file-earmark-medical fs-2 d-block mb-2" style="color:#cbd5e1"></i>
+          <span class="small">Aucune fiche associée à ce client.<br>
+          Cliquez sur <strong>Associer</strong> pour lier des FT/FDS depuis la bibliothèque.</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Plans d'appâtage -->
+    {% set plans = client.plans_appatage if client.plans_appatage is defined else [] %}
+    <div class="card mt-3" id="plans-appatage">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-map me-2"></i>Plans d'appâtage ({{ plans|length }})</span>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#form-plan-upload">
+          <i class="bi bi-plus-lg me-1"></i>Ajouter
+        </button>
+      </div>
+
+      <!-- Formulaire d'ajout -->
+      <div class="collapse" id="form-plan-upload">
+        <div class="card-body border-bottom bg-light pb-3">
+          <form method="POST" action="{{ url_for('plan_ajouter', id=client.id) }}"
+                enctype="multipart/form-data">
+            <div class="row g-2 mb-2">
+              <div class="col-md-5">
+                <label class="form-label small fw-semibold mb-1">Étiquette du plan</label>
+                <input type="text" name="plan_nom" class="form-control form-control-sm"
+                       placeholder="Ex : RDC cuisine, Zone A extérieur…">
+              </div>
+              <div class="col-md-7">
+                <label class="form-label small fw-semibold mb-1">Notes / remarques</label>
+                <input type="text" name="plan_notes" class="form-control form-control-sm"
+                       placeholder="Ex : 4 postes actifs, renouveler tous les 2 mois">
+              </div>
+            </div>
+            <!-- Zone de sélection fichier / caméra -->
+            <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+              <input type="file" id="plan-file-input" name="plan_file"
+                     accept="image/*,application/pdf" class="d-none"
+                     onchange="previewPlan(this)">
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      onclick="document.getElementById('plan-file-input').removeAttribute('capture');document.getElementById('plan-file-input').click()">
+                <i class="bi bi-folder2-open me-1"></i>Choisir un fichier
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm"
+                      onclick="var i=document.getElementById('plan-file-input');i.setAttribute('capture','environment');i.click()">
+                <i class="bi bi-camera me-1"></i>Prendre en photo
+              </button>
+              <span class="text-muted small">JPG, PNG, WEBP ou PDF — max 15 Mo</span>
+            </div>
+            <!-- Aperçu -->
+            <div id="plan-preview-zone" class="d-none mb-2">
+              <img id="plan-preview-img" src="" class="img-thumbnail" style="max-height:160px;max-width:100%">
+              <div id="plan-preview-pdf" class="d-none border rounded p-2 bg-white">
+                <i class="bi bi-file-earmark-pdf text-danger me-1" style="font-size:2rem"></i>
+                <span id="plan-preview-name" class="small fw-semibold"></span>
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-danger p-0 ms-1"
+                      onclick="annulerPlan()">
+                <i class="bi bi-x-circle"></i> Annuler
+              </button>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success btn-sm" id="btn-plan-submit" disabled>
+                <i class="bi bi-upload me-1"></i>Enregistrer le plan
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#form-plan-upload">
+                Annuler
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Galerie des plans -->
+      <div class="card-body p-2">
+        {% if plans %}
+        <div class="row g-2">
+          {% for plan in plans | sort(attribute='created_at', reverse=True) %}
+          <div class="col-sm-6 col-lg-4">
+            <div class="card h-100 border shadow-sm">
+              <!-- Vignette -->
+              <a href="{{ url_for('plan_voir', plan_id=plan.id) }}" target="_blank"
+                 class="d-block text-center bg-light" style="height:110px;overflow:hidden;border-radius:4px 4px 0 0">
+                {% if plan.mimetype == 'application/pdf' %}
+                  <div class="d-flex align-items-center justify-content-center h-100 text-danger">
+                    <i class="bi bi-file-earmark-pdf" style="font-size:3rem"></i>
+                  </div>
+                {% else %}
+                  <img src="data:{{ plan.mimetype }};base64,{{ plan.data }}"
+                       class="w-100 h-100" style="object-fit:cover" alt="{{ plan.nom }}">
+                {% endif %}
+              </a>
+              <div class="p-2">
+                <div class="fw-semibold small text-truncate" title="{{ plan.nom }}">
+                  {% if plan.mimetype == 'application/pdf' %}
+                    <i class="bi bi-file-earmark-pdf text-danger me-1"></i>
+                  {% else %}
+                    <i class="bi bi-image text-primary me-1"></i>
+                  {% endif %}
+                  {{ plan.nom }}
+                </div>
+                {% if plan.notes %}
+                <div class="text-muted mt-1" style="font-size:.72rem">{{ plan.notes }}</div>
+                {% endif %}
+                <div class="text-muted mt-1" style="font-size:.68rem">
+                  {{ plan.created_at.strftime('%d/%m/%Y') }}
+                </div>
+                <div class="d-flex gap-1 mt-2">
+                  <a href="{{ url_for('plan_voir', plan_id=plan.id) }}" target="_blank"
+                     class="btn btn-outline-primary btn-sm flex-fill py-0" style="font-size:.75rem">
+                    <i class="bi bi-eye me-1"></i>Voir
+                  </a>
+                  <form method="POST" action="{{ url_for('plan_supprimer', plan_id=plan.id) }}"
+                        onsubmit="return confirm('Supprimer ce plan ?')">
+                    <button class="btn btn-outline-danger btn-sm py-0" style="font-size:.75rem">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+          <div class="text-center py-4 text-muted">
+            <i class="bi bi-map fs-1 d-block mb-2"></i>
+            <span class="small">Aucun plan pour ce client.<br>
+            Ajoutez une photo ou un PDF du site pour aider les techniciens.</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+function copyLink() {
+  const el = document.getElementById('portalLink');
+  el.select();
+  navigator.clipboard.writeText(el.value).then(() => {
+    const btn = event.target.closest('button');
+    btn.innerHTML = '<i class="bi bi-check2"></i>';
+    setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i>', 2000);
+  });
+}
+
+// ── Plans d'appâtage ──
+function previewPlan(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const zone  = document.getElementById('plan-preview-zone');
+  const img   = document.getElementById('plan-preview-img');
+  const pdfBox= document.getElementById('plan-preview-pdf');
+  const pdfNm = document.getElementById('plan-preview-name');
+  const btn   = document.getElementById('btn-plan-submit');
+  zone.classList.remove('d-none');
+  btn.disabled = false;
+  // Pré-remplir le nom si vide
+  const nomInput = document.querySelector('input[name="plan_nom"]');
+  if (!nomInput.value) nomInput.value = file.name.replace(/\.[^.]+$/, '');
+  if (file.type === 'application/pdf') {
+    img.classList.add('d-none');
+    pdfBox.classList.remove('d-none');
+    pdfNm.textContent = file.name;
+  } else {
+    pdfBox.classList.add('d-none');
+    img.classList.remove('d-none');
+    const reader = new FileReader();
+    reader.onload = e => img.src = e.target.result;
+    reader.readAsDataURL(file);
+  }
+}
+
+function annulerPlan() {
+  document.getElementById('plan-file-input').value = '';
+  document.getElementById('plan-preview-zone').classList.add('d-none');
+  document.getElementById('plan-preview-img').classList.remove('d-none');
+  document.getElementById('plan-preview-pdf').classList.add('d-none');
+  document.getElementById('btn-plan-submit').disabled = true;
+}
+</script>
 {% endblock %}
