@@ -2844,33 +2844,38 @@ def client_export_rapports_pdf(id):
     total_avec_bon = sum(1 for i in interventions if i.bon)
     tronque = total_avec_bon > MAX_RAPPORTS_PDF_EXPORT
 
-    writer = PdfWriter()
-    nb_ajoutes = 0
-    for i in interventions:
-        if not i.bon:
-            continue
-        if nb_ajoutes >= MAX_RAPPORTS_PDF_EXPORT:
-            break
-        try:
-            buf = generer_pdf(i.bon)
-            reader = PdfReader(buf)
-            for page in reader.pages:
-                writer.add_page(page)
-            nb_ajoutes += 1
-        except Exception:
-            pass  # on ignore un bon qui ne génère pas correctement, sans bloquer les autres
+    try:
+        writer = PdfWriter()
+        nb_ajoutes = 0
+        for i in interventions:
+            if not i.bon:
+                continue
+            if nb_ajoutes >= MAX_RAPPORTS_PDF_EXPORT:
+                break
+            try:
+                buf = generer_pdf(i.bon)
+                reader = PdfReader(buf)
+                for page in reader.pages:
+                    writer.add_page(page)
+                nb_ajoutes += 1
+            except Exception:
+                pass  # on ignore un bon qui ne génère pas correctement, sans bloquer les autres
 
-    if nb_ajoutes == 0:
-        flash("Aucun rapport d'intervention terminée à exporter pour cette période.", 'warning')
+        if nb_ajoutes == 0:
+            flash("Aucun rapport d'intervention terminée à exporter pour cette période.", 'warning')
+            return redirect(url_for('client_detail', id=id))
+
+        out = io.BytesIO()
+        writer.write(out)
+        out.seek(0)
+    except Exception as e:
+        flash(f"Erreur lors de la génération du PDF regroupé : {e}. "
+              f"Essayez avec une période plus courte.", 'danger')
         return redirect(url_for('client_detail', id=id))
 
     if tronque:
         flash(f"Période trop large : seuls les {MAX_RAPPORTS_PDF_EXPORT} premiers rapports ont été inclus "
               f"(sur {total_avec_bon}). Choisissez une période plus courte pour tout récupérer.", 'warning')
-
-    out = io.BytesIO()
-    writer.write(out)
-    out.seek(0)
 
     nom_fichier = ''.join(ch if ch.isalnum() else '_' for ch in c.nom_affichage).strip('_') or 'client'
     suffixe = ''
