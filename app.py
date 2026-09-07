@@ -9,7 +9,7 @@ load_dotenv()  # charge le fichier .env en local, ignoré en production
 from flask import (Flask, render_template, request, redirect, url_for,
                    flash, jsonify, send_file, abort, session as flask_session, Response, g)
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, contains_eager
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -2677,7 +2677,7 @@ def dashboard():
         bons_brouillon=BonIntervention.query.filter_by(statut='brouillon').count(),
         urgentes=Intervention.query.filter_by(priorite='urgente', statut='planifiee').count(),
     )
-    prochaines = Intervention.query.filter(
+    prochaines = Intervention.query.options(joinedload(Intervention.client)).filter(
         Intervention.date_planifiee >= datetime.now(),
         Intervention.statut.in_(['planifiee', 'en_cours'])
     ).order_by(Intervention.date_planifiee).limit(8).all()
@@ -2786,12 +2786,20 @@ def client_nouveau():
     return render_template('clients/create.html', client=None,
                            techniciens=techniciens, types_inter=types_inter)
 
+LIMIT_INTERVENTIONS_FICHE_CLIENT = 100  # au-delà, affichage limité par défaut (fiches volumineuses type AMSOM)
+
 @app.route('/clients/<int:id>', methods=['GET'])
 @login_required
 def client_detail(id):
     c = Client.query.get_or_404(id)
-    interventions = Intervention.query.filter_by(client_id=id)\
-        .order_by(Intervention.date_planifiee.desc()).all()
+    total_interventions = Intervention.query.filter_by(client_id=id).count()
+    voir_tout_historique = request.args.get('tout') == '1'
+    inter_q = (Intervention.query.options(joinedload(Intervention.bon))
+               .filter_by(client_id=id)
+               .order_by(Intervention.date_planifiee.desc()))
+    if not voir_tout_historique:
+        inter_q = inter_q.limit(LIMIT_INTERVENTIONS_FICHE_CLIENT)
+    interventions = inter_q.all()
     lien = url_for('portail_access', token=c.access_token, _external=True)
     annee = datetime.now().year
     # Documents déjà associés à ce client
@@ -2805,7 +2813,10 @@ def client_detail(id):
     return render_template('clients/detail.html', client=c,
                            interventions=interventions, lien_portail=lien,
                            types_prestation=TYPES_PRESTATION, annee=annee,
-                           docs_dispo=docs_dispo, patrimoine_count=patrimoine_count)
+                           docs_dispo=docs_dispo, patrimoine_count=patrimoine_count,
+                           total_interventions=total_interventions,
+                           voir_tout_historique=voir_tout_historique,
+                           limite_interventions=LIMIT_INTERVENTIONS_FICHE_CLIENT)
 
 @app.route('/clients/<int:id>/export-bons')
 @login_required
@@ -3255,7 +3266,7 @@ def agenda():
 def agenda_events():
     start = request.args.get('start', '')
     end   = request.args.get('end', '')
-    q = Intervention.query
+    q = Intervention.query.options(joinedload(Intervention.client))
     try:
         # FullCalendar envoie des dates ISO avec timezone ex: 2026-05-24T00:00:00+02:00
         # On extrait juste YYYY-MM-DD pour éviter les problèmes de comparaison
@@ -3331,7 +3342,10 @@ def interventions_liste():
     if cid:      q = q.filter_by(client_id=int(cid))
 
     # Tri : par nom client puis par date pour la vue dossiers
+    # (contains_eager réutilise le join déjà fait pour le tri, au lieu d'en
+    # ajouter un second — et joinedload évite une requête « bon » par ligne)
     interventions = (q.join(Client)
+                      .options(contains_eager(Intervention.client), joinedload(Intervention.bon))
                       .order_by(Client.nom.asc(), Intervention.date_planifiee.desc())
                       .all())
 
@@ -3546,6 +3560,8 @@ def note_rapide_supprimer(id):
 
 # ─── BONS D'INTERVENTION ──────────────────────────────────────────────────────
 
+LIMIT_BONS_LISTE = 200  # au-delà, affichage limité par défaut (liste globale, tous clients confondus)
+
 @app.route('/bons')
 @login_required
 def bons_liste():
@@ -3573,7 +3589,13 @@ def bons_liste():
         if statut:
             query = query.filter(BonIntervention.statut == statut)
 
-    bons = query.order_by(BonIntervention.date_creation.desc()).all()
+    total_bons = query.count()
+    voir_tout_bons = request.args.get('tout') == '1'
+    query = (query.options(joinedload(BonIntervention.intervention).joinedload(Intervention.client))
+                  .order_by(BonIntervention.date_creation.desc()))
+    if not voir_tout_bons:
+        query = query.limit(LIMIT_BONS_LISTE)
+    bons = query.all()
 
     def _extrait(b, terme):
         """Renvoie un court extrait du champ où le terme recherché apparaît,
@@ -3594,7 +3616,9 @@ def bons_liste():
     extraits = {b.id: _extrait(b, texte_q) for b in bons} if texte_q else {}
 
     return render_template('bons/index.html', bons=bons, statut=statut,
-                           client_q=client_q, texte_q=texte_q, extraits=extraits)
+                           client_q=client_q, texte_q=texte_q, extraits=extraits,
+                           total_bons=total_bons, voir_tout_bons=voir_tout_bons,
+                           limite_bons=LIMIT_BONS_LISTE)
 
 @app.route('/bons/nouveau', methods=['GET', 'POST'])
 @login_required
