@@ -11,15 +11,22 @@
 {% block content %}
 <div class="card mb-3">
   <div class="card-body py-2">
-    <div class="d-flex gap-2 flex-wrap">
+    <div class="d-flex gap-2 flex-wrap mb-2">
       <span class="small text-muted fw-semibold me-1">Filtrer :</span>
       {% for s, label, cls in [('','Tous','secondary'),('brouillon','Brouillon','secondary'),('finalise','Finalisé','primary'),('envoye','Envoyé','info'),('signe','Signé','success')] %}
-      <a href="{{ url_for('bons_liste', statut=s) }}"
+      <a href="{{ url_for('bons_liste', statut=s, client=client_q, q=texte_q) }}"
          class="btn btn-sm btn-{{ 'outline-' if statut!=s else '' }}{{ cls }}">
         {{ label }}
       </a>
       {% endfor %}
     </div>
+    <form class="d-flex gap-2 flex-wrap align-items-center" method="GET">
+      <input type="hidden" name="statut" value="{{ statut }}">
+      <input type="text" name="client" value="{{ client_q }}" class="form-control form-control-sm" style="max-width:220px" placeholder="Client (ex : AMSOM)">
+      <input type="text" name="q" value="{{ texte_q }}" class="form-control form-control-sm" style="max-width:280px" placeholder="Texte dans le bon (ex : rebouchage de trou)">
+      <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-search me-1"></i>Rechercher</button>
+      {% if client_q or texte_q %}<a href="{{ url_for('bons_liste', statut=statut) }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-x-lg"></i></a>{% endif %}
+    </form>
   </div>
 </div>
 
@@ -40,6 +47,9 @@
               <a href="{{ url_for('intervention_detail', id=b.intervention_id) }}" class="text-decoration-none text-muted small">
                 {{ b.intervention.titre }}
               </a>
+              {% if extraits.get(b.id) %}
+              <div class="small text-muted fst-italic mt-1">{{ extraits[b.id] }}</div>
+              {% endif %}
             </td>
             <td class="small text-nowrap">{{ b.date_creation.strftime('%d/%m/%Y') }}</td>
             <td><span class="badge bg-{{ b.statut_couleur }}">{{ b.statut_label }}</span></td>
@@ -53,6 +63,7 @@
             <td>
               <div class="d-flex gap-1">
                 <a href="{{ url_for('bon_detail', id=b.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+                <a href="{{ url_for('bon_modifier', id=b.id) }}" class="btn btn-sm btn-outline-primary" title="Modifier"><i class="bi bi-pencil"></i></a>
                 <a href="{{ url_for('bon_pdf', id=b.id) }}" class="btn btn-sm btn-outline-danger" target="_blank"><i class="bi bi-filetype-pdf"></i></a>
               </div>
             </td>
