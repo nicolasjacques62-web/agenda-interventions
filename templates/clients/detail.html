@@ -5,46 +5,35 @@ Parcourir le patrimoine
 {% endif %}
 Fiche client {{ client.reference }}
 {% if client.societe %}{% endif %} {% if client.siret_client %}{% endif %} {% if client.email %}{% endif %} {% if client.telephone %}{% endif %} {% if client.telephone2 %}{% endif %} {% if client.adresse %}{% endif %}
-Type
-{% if client.type_client=='professionnel' %}Professionnel{% else %}Particulier{% endif %}
-SociÃ©tÃ©
-{{ client.societe }}
-SIRET
-{{ client.siret_client }}
-Nom
-{{ client.nom_complet }}
-Email
-{{ client.email }}
-TÃ©l.
-{{ client.telephone }}
-TÃ©l. 2
-{{ client.telephone2 }}
-Adresse
-{{ client.adresse }}
+Type	{% if client.type_client=='professionnel' %}Professionnel{% else %}Particulier{% endif %}
+SociÃ©tÃ©	{{ client.societe }}
+SIRET	{{ client.siret_client }}
+Nom	{{ client.nom_complet }}
+Email	{{ client.email }}
+TÃ©l.	{{ client.telephone }}
+TÃ©l. 2	{{ client.telephone2 }}
+Adresse	{{ client.adresse }}
 {{ client.code_postal }} {{ client.ville }}
-Client depuis
-{{ client.created_at.strftime('%d/%m/%Y') }}
+Client depuis	{{ client.created_at.strftime('%d/%m/%Y') }}
 {% if client.notes %}
-
 Notes
 {{ client.notes }}
 {% endif %}
 Modifier
 
-Contrats & Passages {{ annee }} Modifier
+Contrats & Passages {{ annee }}  Modifier
 Renseignez le nombre de passages/an pour chaque prestation (0 = non contractÃ©) :
 {% for t in types_prestation %} {% set couleur = '#e67e22' if 'dÃ©ratisation' in t.lower() else '#1aabe3' if 'dÃ©sinsectisation' in t.lower() else '#27ae60' if 'dÃ©sinfection' in t.lower() else '#9b59b6' if 'dÃ©pigeonnage' in t.lower() else '#795548' if 'taupe' in t.lower() else '#e74c3c' if 'frelon' in t.lower() else '#f39c12' if 'guÃªpe' in t.lower() or 'guepe' in t.lower() else '#f1c40f' if 'abeille' in t.lower() else '#3788d8' %} {% set existing = client.contrats | selectattr('type_prestation', 'equalto', t) | list | first %}
-{{ t }}
-/an
+ {{ t }}
+ /an
 {% if existing %} {{ existing.passages_realises(annee) }} rÃ©alisÃ©(s) {% endif %}
 {% endfor %}
-DÃ©but contrat
-Fin contrat
-Planifier automatiquement les passages dans l'agenda (rÃ©partis sur la pÃ©riode, Ã©vite les doublons)
-Sauvegarder & Planifier Annuler
+DÃ©but contrat  
+Fin contrat  
+ Planifier automatiquement les passages dans l'agenda (rÃ©partis sur la pÃ©riode, Ã©vite les doublons)
+Sauvegarder & Planifier  Annuler
 {% set has_contrats = client.contrats | selectattr('passages_annuels', 'gt', 0) | list %} {% if has_contrats %} {% for contrat in client.contrats %} {% if contrat.passages_annuels > 0 %} {% set realises = contrat.passages_realises(annee) %} {% set restants = contrat.passages_restants(annee) %} {% set pct = contrat.pct_realises(annee) %} {% set cp = contrat.type_prestation.lower() %} {% set couleur = '#e67e22' if 'dÃ©ratisation' in cp else '#1aabe3' if 'dÃ©sinsectisation' in cp else '#27ae60' if 'dÃ©sinfection' in cp else '#9b59b6' if 'dÃ©pigeonnage' in cp else '#795548' if 'taupe' in cp else '#e74c3c' if 'frelon' in cp else '#f39c12' if 'guÃªpe' in cp or 'guepe' in cp else '#f1c40f' if 'abeille' in cp else '#3788d8' %}
-{{ contrat.type_prestation }} {{ realises }}/{{ contrat.passages_annuels }} {% if restants > 0 %}â€” {{ restants }} restant{{ 's' if restants > 1 }}{% else %}âœ“{% endif %}
-
+ {{ contrat.type_prestation }} {{ realises }}/{{ contrat.passages_annuels }} {% if restants > 0 %}â€” {{ restants }} restant{{ 's' if restants > 1 }}{% else %}âœ“{% endif %}
 {% endif %} {% endfor %} {% else %}
 Cliquez sur Modifier pour configurer les passages contractuels
 {% endif %}
@@ -52,7 +41,7 @@ Portail client
 {% if client.portal_actif %}
 Portail actif
 Lien d'inscription / accÃ¨s
-{{ lien_portail }}
+  
 Alertes email
 {% if client.notifs_actives %} ActivÃ©es â€” le client est notifiÃ© automatiquement {% else %} DÃ©sactivÃ©es {% endif %}
 
@@ -65,41 +54,31 @@ Alertes SMS
 {% if client.sms_actif %}
 SMS envoyÃ© lors des mÃªmes Ã©vÃ©nements (via Brevo)
 {% endif %}
-
 Interlocuteurs supplÃ©mentaires {% if client.portal_contacts %}
 {% for contact in client.portal_contacts %}
 {{ contact.nom }}{% if not contact.actif %} DÃ©sactivÃ©{% endif %}
 {{ url_for('portail_access', token=contact.access_token, _external=True) }}
 {% if contact.voit_tout %}
-accÃ¨s Ã  tout (interventions + bons)
+accÃ¨s Ã  tout (interventions + bons)
 {% elif contact.visible_comme %}
 voit aussi comme Â« {{ contact.visible_comme.nom }} Â»
 {% endif %} {% if client.portal_contacts|length > 1 and not contact.voit_tout %}
-                    Voit uniquement ses propres demandes
-                    {% for autre in client.portal_contacts %}
-                      {% if autre.id != contact.id %}
-                       Voit aussi comme Â« {{ autre.nom }} Â»
-                      {% endif %}
-                    {% endfor %}
-                  
+
 {% endif %}
+
 
 
 
 {% endfor %}
 {% endif %}
-
-AccÃ¨s Ã  toutes les interventions/bons du client (ex : comptabilitÃ©)
-{% if client.portal_contacts %}
-              Voit uniquement ses propres demandes
-              {% for autre in client.portal_contacts %}
-                Voit aussi comme Â« {{ autre.nom }} Â»
-              {% endfor %}
-             {% endif %}
+    
+ AccÃ¨s Ã  toutes les interventions/bons du client (ex : comptabilitÃ©)
+{% if client.portal_contacts %}   {% endif %}
 RÃ©gÃ©nÃ©rer le lien
 DÃ©sactiver le portail
 {% else %}
 Le portail permet au client de consulter ses interventions et signer ses bons via un lien sÃ©curisÃ©.
+
 {% if not client.email %}
 Un email est requis pour activer le portail.
 {% else %}
@@ -107,88 +86,54 @@ Activer et gÃ©nÃ©rer le lien
 Un email de bienvenue sera envoyÃ© automatiquement avec le lien d'accÃ¨s.
 {% endif %} {% endif %}
 Interventions ({{ interventions|length }})
-Exporter les BT Rapports PDF Planifier
-Du
-Au
-TÃ©lÃ©charger le PDF Laisser les deux champs vides pour tout exporter. Les photos ne sont pas incluses (pour rester rapide) â€” voir chaque bon individuellement pour ses photos.
+Exporter les BT  Rapports PDF  Planifier
+Du  
+Au  
+TÃ©lÃ©charger le PDF  Laisser les deux champs vides pour tout exporter. Les photos ne sont pas incluses (pour rester rapide) â€” voir chaque bon individuellement pour ses photos.
 {% if interventions %}
 {% for i in interventions %} {% set adr = i.adresse or (client.adresse if client.adresse and client.adresse != 'None' else '') %} {% endfor %}
-RÃ©f.
-Date
-Titre
-NÂ° BT
-Adresse
-Portail
-PrioritÃ©
-Statut
-Bon
-
-{{ i.reference }}
-{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}
-{{ i.titre }}
-{% if i.numero_bon_commande %}{{ i.numero_bon_commande }}{% else %}â€”{% endif %}
-{% if adr %}{{ adr | truncate(35) }}{% else %}â€”{% endif %}
-{% if i.portal_contact %}{{ i.portal_contact.nom }} {% else %}â€”{% endif %}
-{% if i.priorite == 'urgente' %}Urgente {% elif i.priorite == 'normale' %}Normale {% else %}Faible{% endif %}
-{{ i.statut_label }}
-{% if i.bon %} {{ i.bon.numero }} {% else %} CrÃ©er {% endif %}
-
+RÃ©f.	Date	Titre	NÂ° BT	Adresse	Portail	PrioritÃ©	Statut	Bon	
+{{ i.reference }}	{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}	{{ i.titre }}	{% if i.numero_bon_commande %}{{ i.numero_bon_commande }}{% else %}â€”{% endif %}	{% if adr %}{{ adr | truncate(35) }}{% else %}â€”{% endif %}	{% if i.portal_contact %}{{ i.portal_contact.nom }} {% else %}â€”{% endif %}	{% if i.priorite == 'urgente' %}Urgente {% elif i.priorite == 'normale' %}Normale {% else %}Faible{% endif %}	{{ i.statut_label }}	{% if i.bon %} {{ i.bon.numero }} {% else %} CrÃ©er {% endif %}	
 {% else %}
 Aucune intervention pour ce client
 {% endif %}
 Audits diagnostics ({{ client.audits|length }}) Nouvel audit
 {% if client.audits %} {% set niv_c = {'faible':'success','moyen':'warning','eleve':'danger','critique':'danger'} %}
 {% for a in client.audits | sort(attribute='date_audit', reverse=True) %} {% endfor %}
-RÃ©fÃ©rence
-Date
-Technicien
-Risque
-Statut
-
-{{ a.reference }}
-{{ a.date_audit.strftime('%d/%m/%Y') }}
-{{ a.technicien or 'â€”' }}
-{% if a.niveau_risque %} {{ a.niveau_label }} {% else %}â€”{% endif %}
-{{ a.statut_label }}
-
+RÃ©fÃ©rence	Date	Technicien	Risque	Statut	
+{{ a.reference }}	{{ a.date_audit.strftime('%d/%m/%Y') }}	{{ a.technicien or 'â€”' }}	{% if a.niveau_risque %} {{ a.niveau_label }} {% else %}â€”{% endif %}	{{ a.statut_label }}	
 {% else %}
 Aucun audit pour ce client.
 CrÃ©ez un diagnostic d'infestation et plan de gestion des nuisibles.
 {% endif %}
-Fiches Techniques & FDS {% set nb_assoc = client.doc_associations | length %} {{ nb_assoc }} Associer
+Fiches Techniques & FDS {% set nb_assoc = client.doc_associations | length %} {{ nb_assoc }}  Associer
 {% if docs_dispo %}
-Choisir un document Ã  associer
-                â€” SÃ©lectionnez un document â€”
-                {% for doc in docs_dispo %}
-                 [{{ doc.type_doc | upper }}] {{ doc.type_prestation }} â€” {{ doc.nom }}{% if doc.produit %} ({{ doc.produit }}){% endif %}
-                {% endfor %}
-              
-Associer Annuler
+Choisir un document Ã  associer 
+Associer   Annuler
 {% else %}
-Tous les documents disponibles sont dÃ©jÃ  associÃ©s Ã  ce client. Ajouter un nouveau document
+Tous les documents disponibles sont dÃ©jÃ  associÃ©s Ã  ce client. Ajouter un nouveau document
 {% endif %}
-GÃ©rer la bibliothÃ¨que de documents  Â·  Uploader un nouveau document
+GÃ©rer la bibliothÃ¨que de documents  Â·  Uploader un nouveau document
 {% if client.doc_associations %} {% set type_colors = {'ft': 'primary', 'fds': 'warning'} %} {% for cd in client.doc_associations | sort(attribute='document.type_prestation') %} {% set doc = cd.document %}
 {{ doc.type_doc | upper }} {{ doc.nom }}
-{{ doc.type_prestation or 'â€”' }} {% if doc.produit %} Â· {{ doc.produit }}{% endif %} {% if doc.taille_str %} Â· {{ doc.taille_str }}{% endif %}
-
+{{ doc.type_prestation or 'â€”' }} {% if doc.produit %} Â· {{ doc.produit }}{% endif %} {% if doc.taille_str %} Â· {{ doc.taille_str }}{% endif %}
+ 
 {% endfor %} {% else %}
-Aucune fiche associÃ©e Ã  ce client.
+Aucune fiche associÃ©e Ã  ce client.
 Cliquez sur Associer pour lier des FT/FDS depuis la bibliothÃ¨que.
 {% endif %}
 {% set plans = client.plans_appatage if client.plans_appatage is defined else [] %}
-Plans d'appÃ¢tage ({{ plans|length }}) Ajouter
-Ã‰tiquette du plan
-Notes / remarques
-Choisir un fichier Prendre en photo JPG, PNG, WEBP ou PDF â€” max 15 Mo
+Plans d'appÃ¢tage ({{ plans|length }})  Ajouter
+Ã‰tiquette du plan  
+Notes / remarques  
+  Choisir un fichier   Prendre en photo  JPG, PNG, WEBP ou PDF â€” max 15 Mo
 
-Annuler
-Enregistrer le plan Annuler
+ Annuler
+Enregistrer le plan   Annuler
 {% if plans %}
 {% for plan in plans | sort(attribute='created_at', reverse=True) %}
 {% if plan.mimetype == 'application/pdf' %}
-
-{% else %} {% endif %}
+{% else %}  {{ plan.nom }} {% endif %}
 {% if plan.mimetype == 'application/pdf' %} {% else %} {% endif %} {{ plan.nom }}
 {% if plan.notes %}
 {{ plan.notes }}
