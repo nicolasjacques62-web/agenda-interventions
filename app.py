@@ -1242,22 +1242,32 @@ def generer_pdf(bon):
                 # fortement (voire fait échouer/timeout) la génération du PDF sur
                 # un serveur aux ressources limitées.
                 if PILLOW_OK:
+                    pil_img = PILImage.open(buf_img)
+                    max_dim = 1000
+                    largeur, hauteur = pil_img.size
+                    if largeur * hauteur > 40_000_000:
+                        # Photo extrêmement haute résolution (~40 mégapixels ou plus) :
+                        # la décoder entièrement en mémoire pour la redimensionner
+                        # risquerait de saturer la RAM du serveur et de le faire planter
+                        # (SIGKILL) — on l'ignore plutôt que de bloquer tout le PDF.
+                        raise ValueError('photo trop volumineuse pour être intégrée')
                     try:
-                        pil_img = PILImage.open(buf_img)
-                        pil_img = pil_img.convert('RGB')
-                        max_dim = 1000
-                        if max(pil_img.size) > max_dim:
-                            pil_img.thumbnail((max_dim, max_dim), PILImage.LANCZOS)
-                        small_buf = io.BytesIO()
-                        pil_img.save(small_buf, format='JPEG', quality=70, optimize=True)
-                        small_buf.seek(0)
-                        buf_img = small_buf
+                        # Décode directement en basse résolution pour les JPEG :
+                        # évite de charger l'image complète en mémoire avant réduction.
+                        pil_img.draft('RGB', (max_dim, max_dim))
                     except Exception:
-                        buf_img.seek(0)
+                        pass
+                    pil_img = pil_img.convert('RGB')
+                    if max(pil_img.size) > max_dim:
+                        pil_img.thumbnail((max_dim, max_dim), PILImage.LANCZOS)
+                    small_buf = io.BytesIO()
+                    pil_img.save(small_buf, format='JPEG', quality=70, optimize=True)
+                    small_buf.seek(0)
+                    buf_img = small_buf
                 img_photo = RLImage(buf_img, width=8*cm, height=6*cm, kind='proportional')
                 photo_row.append(img_photo)
             except Exception:
-                photo_row.append(Paragraph(photo.nom or 'Photo', s_n))
+                photo_row.append(Paragraph((photo.nom or 'Photo') + ' (photo non affichée)', s_n))
             if len(photo_row) == 2:
                 t_ph = Table([photo_row], colWidths=[8.75*cm, 8.75*cm])
                 t_ph.setStyle(TableStyle([
