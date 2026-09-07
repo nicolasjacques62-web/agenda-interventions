@@ -1070,7 +1070,7 @@ def _txt_client(v):
     s = str(v).strip()
     return '' if s.lower() == 'none' else s
 
-def generer_pdf(bon):
+def generer_pdf(bon, inclure_photos=True):
     if not PDF_OK:
         raise RuntimeError("ReportLab non installé.")
     buf = io.BytesIO()
@@ -1226,7 +1226,7 @@ def generer_pdf(bon):
         elems.append(Spacer(1, 0.3*cm))
 
     # ── Photos du bon d'intervention ──
-    if bon.photos:
+    if inclure_photos and bon.photos:
         elems.append(Paragraph("Photos :", s_h))
         elems.append(Spacer(1, 0.2*cm))
         photo_row = []
@@ -2863,7 +2863,7 @@ def client_export_rapports_pdf(id):
             if nb_ajoutes >= MAX_RAPPORTS_PDF_EXPORT:
                 break
             try:
-                buf = generer_pdf(i.bon)
+                buf = generer_pdf(i.bon, inclure_photos=False)
                 reader = PdfReader(buf)
                 for page in reader.pages:
                     writer.add_page(page)
