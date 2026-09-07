@@ -413,9 +413,14 @@
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-wrench me-2"></i>Interventions ({{ interventions|length }})</span>
-        <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
-          <i class="bi bi-plus-lg me-1"></i>Planifier
-        </a>
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('client_export_bons', id=client.id) }}" class="btn btn-outline-secondary btn-sm" title="Exporter les bons (N° BT, type, date) en CSV">
+            <i class="bi bi-download me-1"></i>Exporter les BT
+          </a>
+          <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i>Planifier
+          </a>
+        </div>
       </div>
       <div class="card-body p-0">
         {% if interventions %}
