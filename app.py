@@ -2811,26 +2811,46 @@ def client_export_bons(id):
     resp.headers['Content-Disposition'] = f'attachment; filename="bons_{nom_fichier}.csv"'
     return resp
 
+MAX_RAPPORTS_PDF_EXPORT = 150  # limite de sécurité pour éviter un export trop long (timeout serveur)
+
 @app.route('/clients/<int:id>/export-rapports-pdf')
 @login_required
 def client_export_rapports_pdf(id):
-    """Regroupe en un seul PDF les rapports d'intervention (bons) de toutes
-    les interventions réalisées (terminées) de ce client, triés par date."""
+    """Regroupe en un seul PDF les rapports d'intervention (bons) des
+    interventions réalisées (terminées) de ce client, triés par date.
+    Filtrable sur une période via ?debut=YYYY-MM-DD&fin=YYYY-MM-DD
+    (l'un ou l'autre, ou les deux, sont optionnels)."""
     c = Client.query.get_or_404(id)
     if not PDF_OK or not PDF_MERGE_OK:
         flash("Export PDF indisponible (bibliothèque manquante sur le serveur).", 'danger')
         return redirect(url_for('client_detail', id=id))
 
-    interventions = (Intervention.query
-                      .filter(Intervention.client_id == id, Intervention.statut == 'terminee')
-                      .order_by(Intervention.date_planifiee)
-                      .all())
+    debut_str = request.args.get('debut', '').strip()
+    fin_str = request.args.get('fin', '').strip()
+
+    q = Intervention.query.filter(Intervention.client_id == id, Intervention.statut == 'terminee')
+    try:
+        if debut_str:
+            q = q.filter(Intervention.date_planifiee >= datetime.strptime(debut_str, '%Y-%m-%d'))
+        if fin_str:
+            fin_dt = datetime.strptime(fin_str, '%Y-%m-%d') + timedelta(days=1)  # fin de journée incluse
+            q = q.filter(Intervention.date_planifiee < fin_dt)
+    except ValueError:
+        flash('Dates invalides.', 'danger')
+        return redirect(url_for('client_detail', id=id))
+
+    interventions = q.order_by(Intervention.date_planifiee).all()
+
+    total_avec_bon = sum(1 for i in interventions if i.bon)
+    tronque = total_avec_bon > MAX_RAPPORTS_PDF_EXPORT
 
     writer = PdfWriter()
     nb_ajoutes = 0
     for i in interventions:
         if not i.bon:
             continue
+        if nb_ajoutes >= MAX_RAPPORTS_PDF_EXPORT:
+            break
         try:
             buf = generer_pdf(i.bon)
             reader = PdfReader(buf)
@@ -2841,15 +2861,22 @@ def client_export_rapports_pdf(id):
             pass  # on ignore un bon qui ne génère pas correctement, sans bloquer les autres
 
     if nb_ajoutes == 0:
-        flash("Aucun rapport d'intervention terminée à exporter pour ce client.", 'warning')
+        flash("Aucun rapport d'intervention terminée à exporter pour cette période.", 'warning')
         return redirect(url_for('client_detail', id=id))
+
+    if tronque:
+        flash(f"Période trop large : seuls les {MAX_RAPPORTS_PDF_EXPORT} premiers rapports ont été inclus "
+              f"(sur {total_avec_bon}). Choisissez une période plus courte pour tout récupérer.", 'warning')
 
     out = io.BytesIO()
     writer.write(out)
     out.seek(0)
 
     nom_fichier = ''.join(ch if ch.isalnum() else '_' for ch in c.nom_affichage).strip('_') or 'client'
-    return send_file(out, download_name=f"rapports_interventions_{nom_fichier}.pdf",
+    suffixe = ''
+    if debut_str or fin_str:
+        suffixe = '_' + (debut_str or '...') + '_' + (fin_str or '...')
+    return send_file(out, download_name=f"rapports_interventions_{nom_fichier}{suffixe}.pdf",
                      mimetype='application/pdf', as_attachment=True)
 
 @app.route('/clients/<int:id>/patrimoine')
