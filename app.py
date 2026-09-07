@@ -33,6 +33,12 @@ except ImportError:
     PDF_OK = False
 
 try:
+    from pypdf import PdfReader, PdfWriter
+    PDF_MERGE_OK = True
+except ImportError:
+    PDF_MERGE_OK = False
+
+try:
     from PIL import Image as PILImage, ExifTags
     PILLOW_OK = True
 except ImportError:
@@ -2804,6 +2810,47 @@ def client_export_bons(id):
     resp = Response(buffer.getvalue(), mimetype='text/csv')
     resp.headers['Content-Disposition'] = f'attachment; filename="bons_{nom_fichier}.csv"'
     return resp
+
+@app.route('/clients/<int:id>/export-rapports-pdf')
+@login_required
+def client_export_rapports_pdf(id):
+    """Regroupe en un seul PDF les rapports d'intervention (bons) de toutes
+    les interventions réalisées (terminées) de ce client, triés par date."""
+    c = Client.query.get_or_404(id)
+    if not PDF_OK or not PDF_MERGE_OK:
+        flash("Export PDF indisponible (bibliothèque manquante sur le serveur).", 'danger')
+        return redirect(url_for('client_detail', id=id))
+
+    interventions = (Intervention.query
+                      .filter(Intervention.client_id == id, Intervention.statut == 'terminee')
+                      .order_by(Intervention.date_planifiee)
+                      .all())
+
+    writer = PdfWriter()
+    nb_ajoutes = 0
+    for i in interventions:
+        if not i.bon:
+            continue
+        try:
+            buf = generer_pdf(i.bon)
+            reader = PdfReader(buf)
+            for page in reader.pages:
+                writer.add_page(page)
+            nb_ajoutes += 1
+        except Exception:
+            pass  # on ignore un bon qui ne génère pas correctement, sans bloquer les autres
+
+    if nb_ajoutes == 0:
+        flash("Aucun rapport d'intervention terminée à exporter pour ce client.", 'warning')
+        return redirect(url_for('client_detail', id=id))
+
+    out = io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+
+    nom_fichier = ''.join(ch if ch.isalnum() else '_' for ch in c.nom_affichage).strip('_') or 'client'
+    return send_file(out, download_name=f"rapports_interventions_{nom_fichier}.pdf",
+                     mimetype='application/pdf', as_attachment=True)
 
 @app.route('/clients/<int:id>/patrimoine')
 @login_required
@@ -5738,4 +5785,3 @@ if __name__ == '__main__':
     print("  http://localhost:5000")
     print()
     app.run(debug=False, host='0.0.0.0', port=5000)
-    
