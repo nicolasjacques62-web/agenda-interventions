@@ -420,6 +420,9 @@
           <a href="{{ url_for('client_export_bons', id=client.id) }}" class="btn btn-outline-secondary btn-sm" title="Exporter les bons (N° BT, type, date) en CSV">
             <i class="bi bi-download me-1"></i>Exporter les BT
           </a>
+          <a href="{{ url_for('client_export_rapports_pdf', id=client.id) }}" class="btn btn-outline-danger btn-sm" title="Regrouper en un seul PDF les rapports des interventions terminées">
+            <i class="bi bi-filetype-pdf me-1"></i>Rapports PDF
+          </a>
           <a href="{{ url_for('intervention_nouvelle') }}?client_id={{ client.id }}" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-lg me-1"></i>Planifier
           </a>
