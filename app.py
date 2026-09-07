@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()  # charge le fichier .env en local, ignoré en production
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   flash, jsonify, send_file, abort, session as flask_session)
+                   flash, jsonify, send_file, abort, session as flask_session, Response)
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
@@ -2775,6 +2775,34 @@ def client_detail(id):
                            types_prestation=TYPES_PRESTATION, annee=annee,
                            docs_dispo=docs_dispo, patrimoine_count=patrimoine_count)
 
+@app.route('/clients/<int:id>/export-bons')
+@login_required
+def client_export_bons(id):
+    """Export CSV des bons d'intervention de ce client : numéro de BT, type
+    d'intervention, date d'intervention — trié par numéro de BT."""
+    c = Client.query.get_or_404(id)
+    bons = (BonIntervention.query
+            .join(Intervention, BonIntervention.intervention_id == Intervention.id)
+            .filter(Intervention.client_id == id)
+            .order_by(BonIntervention.numero)
+            .all())
+
+    buffer = io.StringIO()
+    buffer.write('﻿')  # BOM : Excel détecte l'UTF-8 et affiche correctement les accents
+    writer = csv.writer(buffer, delimiter=';')
+    writer.writerow(['Numéro de BT', "Type d'intervention", "Date d'intervention"])
+    for b in bons:
+        writer.writerow([
+            b.numero,
+            b.intervention.type_intervention or '',
+            b.intervention.date_planifiee.strftime('%d/%m/%Y') if b.intervention.date_planifiee else '',
+        ])
+
+    nom_fichier = ''.join(ch if ch.isalnum() else '_' for ch in c.nom_affichage).strip('_') or 'client'
+    resp = Response(buffer.getvalue(), mimetype='text/csv')
+    resp.headers['Content-Disposition'] = f'attachment; filename="bons_{nom_fichier}.csv"'
+    return resp
+
 @app.route('/clients/<int:id>/patrimoine')
 @login_required
 def client_patrimoine(id):
@@ -3395,10 +3423,51 @@ def note_rapide_supprimer(id):
 @login_required
 def bons_liste():
     statut = request.args.get('statut','')
-    q = BonIntervention.query
-    if statut: q = q.filter_by(statut=statut)
-    bons = q.order_by(BonIntervention.date_creation.desc()).all()
-    return render_template('bons/index.html', bons=bons, statut=statut)
+    client_q = request.args.get('client','').strip()
+    texte_q = request.args.get('q','').strip()
+
+    query = BonIntervention.query
+    if statut or client_q or texte_q:
+        query = query.join(Intervention, BonIntervention.intervention_id == Intervention.id)
+        if client_q:
+            query = query.join(Client, Intervention.client_id == Client.id).filter(db.or_(
+                Client.nom.ilike(f'%{client_q}%'),
+                Client.prenom.ilike(f'%{client_q}%'),
+                Client.societe.ilike(f'%{client_q}%'),
+            ))
+        if texte_q:
+            query = query.filter(db.or_(
+                BonIntervention.travaux_effectues.ilike(f'%{texte_q}%'),
+                BonIntervention.observations.ilike(f'%{texte_q}%'),
+                BonIntervention.recommandations.ilike(f'%{texte_q}%'),
+                Intervention.titre.ilike(f'%{texte_q}%'),
+                Intervention.adresse.ilike(f'%{texte_q}%'),
+            ))
+        if statut:
+            query = query.filter(BonIntervention.statut == statut)
+
+    bons = query.order_by(BonIntervention.date_creation.desc()).all()
+
+    def _extrait(b, terme):
+        """Renvoie un court extrait du champ où le terme recherché apparaît,
+        pour l'afficher dans la liste sans avoir à ouvrir chaque bon."""
+        if not terme:
+            return None
+        terme_l = terme.lower()
+        for champ, label in [(b.travaux_effectues, 'Travaux'), (b.observations, 'Observations'),
+                              (b.recommandations, 'Recommandations')]:
+            if champ and terme_l in champ.lower():
+                idx = champ.lower().index(terme_l)
+                debut = max(0, idx - 40)
+                fin = min(len(champ), idx + len(terme) + 40)
+                extrait = champ[debut:fin].strip()
+                return f"{label} : " + ('…' if debut > 0 else '') + extrait + ('…' if fin < len(champ) else '')
+        return None
+
+    extraits = {b.id: _extrait(b, texte_q) for b in bons} if texte_q else {}
+
+    return render_template('bons/index.html', bons=bons, statut=statut,
+                           client_q=client_q, texte_q=texte_q, extraits=extraits)
 
 @app.route('/bons/nouveau', methods=['GET', 'POST'])
 @login_required
