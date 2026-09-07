@@ -251,6 +251,11 @@ class PortalContact(db.Model):
     # Permet à cet interlocuteur de voir, en plus des siennes, les demandes
     # d'un autre interlocuteur du même client (ex: Mugnier voit comme Lavallard)
     visible_comme_id = db.Column(db.Integer, db.ForeignKey('portal_contacts.id'))
+    # Accès complet : voit toutes les interventions/bons du client (comme le
+    # lien principal du client), au lieu d'être limité à celles qui lui sont
+    # explicitement assignées — utile pour un interlocuteur interne (ex :
+    # comptabilité) qui doit pouvoir consulter tous les bons d'intervention.
+    voit_tout = db.Column(db.Boolean, default=False)
     client = db.relationship('Client', backref=db.backref('portal_contacts', cascade='all, delete-orphan'))
     visible_comme = db.relationship('PortalContact', remote_side=[id])
 
@@ -3169,13 +3174,32 @@ def portail_contact_ajouter(id):
         cible = PortalContact.query.get(visible_comme_id)
         if not cible or cible.client_id != c.id:
             visible_comme_id = None
+    voit_tout = request.form.get('voit_tout') == '1'
     contact = PortalContact(client_id=c.id, nom=nom, email=email or None,
-                             visible_comme_id=visible_comme_id)
+                             visible_comme_id=visible_comme_id, voit_tout=voit_tout)
     db.session.add(contact)
     db.session.commit()
-    suffixe = f' (voit aussi les demandes de « {cible.nom} »)' if visible_comme_id else ''
+    if voit_tout:
+        suffixe = ' (accès à toutes les interventions/bons du client)'
+    elif visible_comme_id:
+        suffixe = f' (voit aussi les demandes de « {cible.nom} »)'
+    else:
+        suffixe = ''
     flash(f'Interlocuteur « {nom} » ajouté — un lien de connexion dédié a été créé{suffixe}.', 'success')
     return redirect(url_for('client_detail', id=id))
+
+@app.route('/clients/portail/interlocuteurs/<int:contact_id>/voit-tout', methods=['POST'])
+@login_required
+def portail_contact_voit_tout(contact_id):
+    contact = PortalContact.query.get_or_404(contact_id)
+    cid = contact.client_id
+    contact.voit_tout = not contact.voit_tout
+    db.session.commit()
+    if contact.voit_tout:
+        flash(f'« {contact.nom} » a maintenant accès à toutes les interventions/bons du client.', 'success')
+    else:
+        flash(f'« {contact.nom} » ne voit plus que les demandes qui lui sont assignées.', 'success')
+    return redirect(url_for('client_detail', id=cid))
 
 @app.route('/clients/portail/interlocuteurs/<int:contact_id>/visibilite', methods=['POST'])
 @login_required
@@ -5109,9 +5133,11 @@ def portail_dashboard(token):
     # Interlocuteur secondaire (sous-portail) : ne voit que les interventions
     # qui lui ont été explicitement assignées à la planification, plus celles
     # de l'interlocuteur qu'il "mire" le cas échéant (visible_comme_id — ex:
-    # Mugnier configuré pour voir aussi les demandes de Lavallard). Le contact
-    # principal du client (lien historique) continue de tout voir.
-    if contact:
+    # Mugnier configuré pour voir aussi les demandes de Lavallard) — sauf s'il
+    # a l'accès complet (voit_tout), auquel cas il voit tout comme le contact
+    # principal du client (ex : comptabilité interne). Le contact principal
+    # du client (lien historique) continue de tout voir dans tous les cas.
+    if contact and not contact.voit_tout:
         contact_ids = {contact.id}
         if contact.visible_comme_id:
             contact_ids.add(contact.visible_comme_id)
@@ -5650,6 +5676,7 @@ def init_db():
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_bon_commande VARCHAR(50)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS portal_contact_id INTEGER REFERENCES portal_contacts(id)",
             "ALTER TABLE portal_contacts ADD COLUMN IF NOT EXISTS visible_comme_id INTEGER REFERENCES portal_contacts(id)",
+            "ALTER TABLE portal_contacts ADD COLUMN IF NOT EXISTS voit_tout BOOLEAN DEFAULT FALSE",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS numero_passage INTEGER DEFAULT 1",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS intervention_origine_id INTEGER REFERENCES interventions(id)",
             "ALTER TABLE interventions ADD COLUMN IF NOT EXISTS outlook_event_id VARCHAR(300)",
