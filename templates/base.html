@@ -137,6 +137,41 @@
       height: 36px;
       width: auto;
     }
+
+    /* ── MENU MOBILE ── */
+    .sidebar-toggle-btn { display: none; }
+    .sidebar-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(10, 22, 40, .5);
+      z-index: 199;
+    }
+    .sidebar-overlay.show { display: block; }
+
+    @media (max-width: 991.98px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        z-index: 200;
+      }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; padding: 1rem; }
+      .topbar {
+        margin: -1rem -1rem 1rem;
+        padding: .6rem 1rem;
+        flex-wrap: wrap;
+        row-gap: .5rem;
+      }
+      .topbar h4 { font-size: 1rem; }
+      .sidebar-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* Cibles tactiles un peu plus grandes sur mobile */
+      .btn-sm { padding: .35rem .65rem; }
+      .table td, .table th { white-space: nowrap; }
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -199,13 +234,19 @@
     </a>
   </nav>
 </div>
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
 
 <div class="main">
   <div class="topbar">
-    <h4>{% block page_title %}{% endblock %}</h4>
-    <div class="d-flex align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-outline-secondary sidebar-toggle-btn" id="sidebar-toggle" aria-label="Ouvrir le menu">
+        <i class="bi bi-list fs-5"></i>
+      </button>
+      <h4>{% block page_title %}{% endblock %}</h4>
+    </div>
+    <div class="d-flex align-items-center flex-wrap gap-2 justify-content-end">
       <span id="offline-badge" style="display:none;" title="Statut connexion"></span>
-      <span class="text-muted small"><i class="bi bi-person-circle"></i> {{ current_user.nom or current_user.username }}</span>
+      <span class="text-muted small d-none d-sm-inline"><i class="bi bi-person-circle"></i> {{ current_user.nom or current_user.username }}</span>
       {% block topbar_actions %}{% endblock %}
     </div>
   </div>
@@ -228,6 +269,30 @@
 <script src="/static/offline.js"></script>
 {% block scripts %}{% endblock %}
 <script>
+// ── Menu mobile (sidebar rétractable) ──
+(function() {
+  var sidebar = document.querySelector('.sidebar');
+  var toggle  = document.getElementById('sidebar-toggle');
+  var overlay = document.getElementById('sidebar-overlay');
+  if (!sidebar || !toggle || !overlay) return;
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+  }
+  function openSidebar() {
+    sidebar.classList.add('open');
+    overlay.classList.add('show');
+  }
+  toggle.addEventListener('click', function() {
+    if (sidebar.classList.contains('open')) closeSidebar(); else openSidebar();
+  });
+  overlay.addEventListener('click', closeSidebar);
+  // Referme automatiquement le menu après avoir choisi une page (mobile)
+  sidebar.querySelectorAll('.nav-link').forEach(function(link) {
+    link.addEventListener('click', closeSidebar);
+  });
+})();
+
 // ── Enregistrement du Service Worker ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
