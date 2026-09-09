@@ -81,14 +81,21 @@
 <script src="{{ url_for('static', filename='documents/fullcalendar-locale-fr.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  // Sur petit écran (téléphone), la vue Semaine est illisible et la barre
+  // d'outils complète déborde — on bascule sur la vue Jour et on renvoie les
+  // boutons de changement de vue sur une seconde ligne (footerToolbar).
+  const isMobile = window.innerWidth < 576;
   const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
     locale: 'fr',
-    initialView: 'timeGridWeek',
+    initialView: isMobile ? 'timeGridDay' : 'timeGridWeek',
     headerToolbar: {
       left: 'prev,next today',
       center: 'title',
-      right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
+      right: isMobile ? '' : 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
     },
+    footerToolbar: isMobile ? {
+      left: '', center: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek', right: ''
+    } : false,
     slotMinTime: '07:00:00',
     slotMaxTime: '20:00:00',
     allDaySlot: false,
