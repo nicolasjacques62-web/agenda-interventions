@@ -171,11 +171,24 @@
       /* Cibles tactiles un peu plus grandes sur mobile */
       .btn-sm { padding: .35rem .65rem; }
       .table td, .table th { white-space: nowrap; }
+      /* Barre du haut toujours accessible (menu + titre) en scrollant une longue page */
+      .topbar { position: sticky; top: 0; z-index: 60; }
     }
+
+    /* ── BARRE DE PROGRESSION (retour visuel pendant un chargement) ── */
+    #page-loading-bar {
+      position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+      background: var(--hps-blue); z-index: 9999;
+      transition: width .3s ease, opacity .3s ease;
+      opacity: 0;
+    }
+    #page-loading-bar.active { opacity: 1; }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
+
+<div id="page-loading-bar"></div>
 
 <div class="sidebar">
   <div class="brand py-3">
@@ -254,7 +267,8 @@
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for cat, msg in messages %}
-        <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+        <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert"
+             {% if cat in ('success', 'info') %}data-auto-dismiss="1"{% endif %}>
           {{ msg }}
           <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
@@ -269,6 +283,49 @@
 <script src="/static/offline.js"></script>
 {% block scripts %}{% endblock %}
 <script>
+// ── Barre de progression : retour visuel immédiat après un clic ──
+// (utile sur un serveur parfois lent à répondre — évite le doute
+// « est-ce que mon clic a bien été pris en compte ? »)
+(function() {
+  var bar = document.getElementById('page-loading-bar');
+  if (!bar) return;
+  var timer = null;
+  function start() {
+    clearTimeout(timer);
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    bar.classList.add('active');
+    // Force le recalcul du style avant de relancer la transition
+    void bar.offsetWidth;
+    bar.style.transition = 'width .3s ease, opacity .3s ease';
+    bar.style.width = '80%';
+  }
+  window.addEventListener('beforeunload', start);
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest('a[href]');
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    var isExternal = a.target === '_blank' || href.startsWith('#') ||
+                      href.startsWith('mailto:') || href.startsWith('tel:') ||
+                      href.startsWith('javascript:') || a.hasAttribute('data-bs-toggle');
+    if (isExternal || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    start();
+  });
+  document.addEventListener('submit', function(e) {
+    if (!e.defaultPrevented) start();
+  });
+})();
+
+// ── Fermeture automatique des messages de succès/info après quelques secondes ──
+(function() {
+  document.querySelectorAll('[data-auto-dismiss]').forEach(function(el) {
+    setTimeout(function() {
+      var alert = bootstrap.Alert.getOrCreateInstance(el);
+      alert.close();
+    }, 4000);
+  });
+})();
+
 // ── Menu mobile (sidebar rétractable) ──
 (function() {
   var sidebar = document.querySelector('.sidebar');
