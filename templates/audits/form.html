@@ -432,6 +432,15 @@
             <i class="bi bi-info-circle me-1"></i>
             Choisissez une date pour programmer directement le prochain passage (2ème, 3ème…) chez ce client — adresse et technicien préremplis mais modifiables. Rien n'est programmé si aucune date n'est renseignée.
           </div>
+          <div id="planningSuiviBox" class="d-none border rounded p-2 mb-3 bg-light">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="small fw-semibold"><i class="bi bi-calendar-week me-1"></i>Planning actuel (30 prochains jours)</span>
+              <a href="{{ url_for('agenda') }}" target="_blank" class="small text-decoration-none">Agenda complet <i class="bi bi-box-arrow-up-right"></i></a>
+            </div>
+            <div id="planningSuiviBody" style="max-height:220px; overflow-y:auto;">
+              <div class="text-center text-muted small py-2">Chargement…</div>
+            </div>
+          </div>
           <datalist id="types-list-suivi">
             {% for t in (types_inter or '').split(',') if t.strip() %}<option value="{{ t.strip() }}">{% endfor %}
           </datalist>
@@ -524,9 +533,48 @@ function addTr() {
 
 // ── Passages de suivi (2ème/3ème passage à programmer) ──
 let suiviCount = 0;
+let planningSuiviCharge = false;
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function afficherPlanningSuivi() {
+  const box = document.getElementById('planningSuiviBox');
+  if (!box) return;
+  box.classList.remove('d-none');
+  if (planningSuiviCharge) return;
+  planningSuiviCharge = true;
+  const body = document.getElementById('planningSuiviBody');
+  fetch('{{ url_for("agenda_planning_suivi") }}?jours=30')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.length) {
+        body.innerHTML = '<div class="text-center text-muted small py-2">Aucune intervention planifiée dans les 30 prochains jours.</div>';
+        return;
+      }
+      const card = document.getElementById('suivi-card');
+      const techRef = (card && card.dataset.technicien || '').trim().toLowerCase();
+      let html = '<table class="table table-sm table-borderless mb-0"><tbody>';
+      data.forEach(function(ev) {
+        const highlight = techRef && (ev.technicien || '').trim().toLowerCase() === techRef;
+        html += '<tr class="' + (highlight ? 'table-warning' : '') + '">'
+          + '<td class="text-nowrap small">' + escapeHtml(ev.jour) + ' ' + escapeHtml(ev.date) + '<br><span class="text-muted">' + escapeHtml(ev.heure) + '</span></td>'
+          + '<td class="small">' + escapeHtml(ev.client) + (ev.technicien ? '<br><span class="text-muted">' + escapeHtml(ev.technicien) + '</span>' : '') + '</td>'
+          + '<td class="small text-muted">' + escapeHtml(ev.adresse || '—') + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+      body.innerHTML = html;
+    })
+    .catch(function() {
+      body.innerHTML = '<div class="text-center text-danger small py-2">Impossible de charger le planning.</div>';
+    });
+}
 function ajouterSuivi() {
   if (suiviCount >= 3) { alert('Maximum 3 passages de suivi à la fois.'); return; }
   suiviCount++;
+  afficherPlanningSuivi();
   document.getElementById('suiviEmpty').classList.add('d-none');
   const card = document.getElementById('suivi-card');
   const defTech = card.dataset.technicien || '';
