@@ -54,7 +54,7 @@
   </div>
   <div class="d-flex gap-3 align-items-center flex-wrap mt-2">
     <span class="small text-muted fw-semibold">Repères :</span>
-    <span><small class="text-muted"><i class="bi bi-info-circle me-1"></i>Chaque rendez-vous n'affiche que l'heure et le client pour rester lisible même quand plusieurs se chevauchent — survolez ou cliquez pour voir le type, le technicien, le n° de passage et le délai curatif.</small></span>
+    <span><small class="text-muted"><i class="bi bi-info-circle me-1"></i>Chaque rendez-vous n'affiche que l'heure, le n° de passage et le client pour rester lisible même quand plusieurs se chevauchent — survolez ou cliquez pour voir le type, le technicien et le délai curatif.</small></span>
     <span><span class="badge-passage border me-1">2</span><small class="text-muted">= n° de passage</small></span>
     <span><span class="badge-curatif border me-1">J-21</span><small class="text-muted">= délai curatif (35j depuis la 1ère intervention)</small></span>
   </div>
@@ -121,6 +121,12 @@ document.addEventListener('DOMContentLoaded', function() {
         html += `<div class="fc-event-time">${arg.timeText}</div>`;
       }
       html += '<div class="fc-event-title-wrap">';
+      // Le n° de passage reste indispensable même en affichage compact : sur une
+      // journée chargée, plusieurs rendez-vous du même client se suivent et sont
+      // sinon indiscernables les uns des autres sans cliquer sur chacun.
+      if (p.source !== 'outlook' && p.numero_passage > 1) {
+        html += `<span class="badge-passage" title="${p.numero_passage}e passage">${p.numero_passage}</span>`;
+      }
       html += `<span class="fc-event-title">${arg.event.title}</span>`;
       html += '</div></div>';
       return { html: html };
