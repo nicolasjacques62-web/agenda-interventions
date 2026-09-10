@@ -10,7 +10,8 @@
   .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
   .fc-event-main-custom { line-height:1.2; }
   .fc-event-time { font-weight:600; }
-  .fc-event-title-wrap { display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+  .fc-event-title-wrap { display:flex; align-items:center; gap:3px; flex-wrap:nowrap; overflow:hidden; }
+  .fc-event-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .badge-passage {
     display:inline-flex; align-items:center; justify-content:center;
     width:15px; height:15px; min-width:15px; border-radius:50%;
@@ -53,8 +54,9 @@
   </div>
   <div class="d-flex gap-3 align-items-center flex-wrap mt-2">
     <span class="small text-muted fw-semibold">Repères :</span>
-    <span><span class="badge-passage border me-1">2</span><small>N° de passage</small></span>
-    <span><span class="badge-curatif border me-1">J-21</span><small>Jours restants avant la fin du traitement curatif (35j depuis la 1ère intervention — dératisation/désinfection)</small></span>
+    <span><small class="text-muted"><i class="bi bi-info-circle me-1"></i>Chaque rendez-vous n'affiche que l'heure et le client pour rester lisible même quand plusieurs se chevauchent — survolez ou cliquez pour voir le type, le technicien, le n° de passage et le délai curatif.</small></span>
+    <span><span class="badge-passage border me-1">2</span><small class="text-muted">= n° de passage</small></span>
+    <span><span class="badge-curatif border me-1">J-21</span><small class="text-muted">= délai curatif (35j depuis la 1ère intervention)</small></span>
   </div>
 </div>
 
@@ -101,8 +103,17 @@ document.addEventListener('DOMContentLoaded', function() {
     allDaySlot: false,
     height: 'auto',
     nowIndicator: true,
+    // Quand plusieurs rendez-vous se chevauchent au même horaire, on préfère
+    // des colonnes propres côte à côte (quitte à être étroites) plutôt que le
+    // rendu en cascade par défaut de FullCalendar, illisible dès que 2-3 rendez-vous
+    // se superposent (texte et badges qui se marchent dessus).
+    slotEventOverlap: false,
     businessHours: { daysOfWeek:[1,2,3,4,5], startTime:'08:00', endTime:'18:00' },
     events: '{{ url_for("agenda_events") }}',
+    // Contenu volontairement minimal sur le bloc (heure + client) pour rester
+    // lisible même dans une colonne étroite : le type est déjà porté par la
+    // couleur, le reste (technicien, n° de passage, délai curatif) est
+    // disponible au survol (infobulle) et en détail au clic.
     eventContent: function(arg) {
       const p = arg.event.extendedProps;
       let html = '<div class="fc-event-main-custom">';
@@ -110,18 +121,7 @@ document.addEventListener('DOMContentLoaded', function() {
         html += `<div class="fc-event-time">${arg.timeText}</div>`;
       }
       html += '<div class="fc-event-title-wrap">';
-      if (p.source !== 'outlook' && p.numero_passage) {
-        html += `<span class="badge-passage" title="${p.numero_passage}e passage">${p.numero_passage}</span>`;
-      }
       html += `<span class="fc-event-title">${arg.event.title}</span>`;
-      if (p.decompte_curatif !== null && p.decompte_curatif !== undefined) {
-        const jr = p.decompte_curatif;
-        let cls = 'badge-curatif';
-        if (jr < 0) cls += ' badge-curatif-depasse';
-        else if (jr <= 5) cls += ' badge-curatif-urgent';
-        const texte = jr < 0 ? ('J+' + Math.abs(jr)) : ('J-' + jr);
-        html += `<span class="${cls}" title="Traitement curatif : ${texte} (délai de 35 jours depuis la 1ère intervention)">${texte}</span>`;
-      }
       html += '</div></div>';
       return { html: html };
     },
@@ -147,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         document.getElementById('modalBody').innerHTML =
           `<strong>Client :</strong> ${p.client}<br>
+           ${p.type ? '<strong>Type :</strong> ' + p.type + '<br>' : ''}
            ${p.telephone ? '<strong>Tél. :</strong> <a href="tel:' + p.telephone + '">' + p.telephone + '</a><br>' : ''}
            <strong>Passage :</strong> n°${p.numero_passage}<br>
            ${curatifLigne}
@@ -161,7 +162,19 @@ document.addEventListener('DOMContentLoaded', function() {
     },
     eventDidMount: function(info) {
       const p = info.event.extendedProps;
-      info.el.title = p.source === 'outlook' ? info.event.title : (p.client + ' — ' + p.statut);
+      if (p.source === 'outlook') {
+        info.el.title = info.event.title + (p.lieu ? ' — ' + p.lieu : '');
+        return;
+      }
+      const lignes = [p.client, p.type].filter(Boolean);
+      if (p.numero_passage > 1) lignes.push(p.numero_passage + 'e passage');
+      if (p.technicien) lignes.push('Technicien : ' + p.technicien);
+      lignes.push('Statut : ' + p.statut);
+      if (p.decompte_curatif !== null && p.decompte_curatif !== undefined) {
+        const jr = p.decompte_curatif;
+        lignes.push('Curatif : ' + (jr < 0 ? ('délai dépassé de ' + Math.abs(jr) + ' j') : (jr + ' j restant(s)')));
+      }
+      info.el.title = lignes.join('\n');
     },
     dateClick: function(info) {
       window.location.href = '{{ url_for("intervention_nouvelle") }}?date=' + info.dateStr;
