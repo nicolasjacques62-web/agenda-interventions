@@ -264,6 +264,22 @@ class PortalContact(db.Model):
         return check_password_hash(self.portal_password_hash, p) if self.portal_password_hash else False
 
 
+def _teinte_passage(hex_base, numero_passage, max_passages=5):
+    """Assombrit progressivement une couleur de base selon le numéro de passage
+    (1 = couleur d'origine inchangée, chaque passage suivant un peu plus foncé),
+    pour distinguer d'un coup d'œil les passages successifs d'un même type
+    d'intervention sur l'agenda, tout en gardant la teinte du type reconnaissable.
+    Le numéro est plafonné à max_passages (au-delà, on réutilise la nuance la
+    plus foncée plutôt que de continuer à assombrir indéfiniment)."""
+    n = min(max(numero_passage or 1, 1), max_passages)
+    if n <= 1:
+        return hex_base
+    h = hex_base.lstrip('#')
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    facteur = max(1 - 0.15 * (n - 1), 0.35)
+    r, g, b = int(r * facteur), int(g * facteur), int(b * facteur)
+    return f'#{r:02x}{g:02x}{b:02x}'
+
 class Intervention(db.Model):
     __tablename__ = 'interventions'
     id = db.Column(db.Integer, primary_key=True)
@@ -315,8 +331,8 @@ class Intervention(db.Model):
     def couleur(self):
         if self.priorite == 'urgente': return '#e74c3c'
         t = (self.type_intervention or '').lower()
-        if 'dératisation' in t:    return '#e67e22'   # orange
-        if 'désinsectisation' in t: return '#1aabe3'  # bleu HPS
+        if 'dératisation' in t:    return _teinte_passage('#e67e22', self.numero_passage)   # orange, assombri à chaque passage
+        if 'désinsectisation' in t: return _teinte_passage('#1aabe3', self.numero_passage)  # bleu HPS, assombri à chaque passage
         if 'désinfection' in t:    return '#27ae60'   # vert
         if 'dépigeonnage' in t:    return '#9b59b6'   # violet
         if 'taupe' in t:           return '#795548'   # marron
