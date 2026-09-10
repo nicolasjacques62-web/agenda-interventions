@@ -476,7 +476,17 @@
               <tr class="priority-{{ i.priorite }}">
                 <td><small class="text-muted">{{ i.reference }}</small></td>
                 <td class="text-nowrap small">{{ i.date_planifiee.strftime('%d/%m/%Y %H:%M') }}</td>
-                <td>{{ i.titre }}</td>
+                <td>
+                  {{ i.titre }}
+                  {% if i.passage_label %}
+                    <span class="badge ms-1" style="background:{{ i.passage_couleur }}" title="Rendez-vous de suivi programmé depuis l'intervention précédente">{{ i.passage_label }}</span>
+                    <div class="small text-muted mt-1">
+                      {% if i.technicien %}<i class="bi bi-person-badge me-1"></i>{{ i.technicien }}{% endif %}
+                      {% if i.technicien and i.portal_contact %} · {% endif %}
+                      {% if i.portal_contact %}<i class="bi bi-share me-1"></i>{{ i.portal_contact.nom }}{% endif %}
+                    </div>
+                  {% endif %}
+                </td>
                 <td class="small text-nowrap">
                   {% if i.numero_bon_commande %}{{ i.numero_bon_commande }}{% else %}<span class="text-muted">—</span>{% endif %}
                 </td>
