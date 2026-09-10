@@ -3328,6 +3328,39 @@ def agenda_events():
             })
     return jsonify(events)
 
+@app.route('/agenda/api/planning-suivi')
+@login_required
+def agenda_planning_suivi():
+    """Liste légère des interventions déjà planifiées sur les prochains jours,
+    avec leur adresse — utilisée par le widget « Planning actuel » affiché lors
+    de la programmation d'un passage de suivi (bon d'intervention / audit), pour
+    aider à choisir une date sans double-réserver un technicien ou repasser deux
+    fois dans le même secteur inutilement."""
+    horizon_jours = request.args.get('jours', 30, type=int)
+    debut = datetime.now()
+    fin = debut + timedelta(days=horizon_jours)
+    q = (Intervention.query.options(joinedload(Intervention.client))
+         .filter(Intervention.date_planifiee >= debut,
+                 Intervention.date_planifiee <= fin,
+                 Intervention.statut != 'annulee')
+         .order_by(Intervention.date_planifiee.asc()))
+    data = []
+    for i in q.all():
+        try:
+            data.append({
+                'date': i.date_planifiee.strftime('%d/%m/%Y'),
+                'jour': i.date_planifiee.strftime('%a').capitalize(),
+                'heure': i.date_planifiee.strftime('%H:%M'),
+                'client': i.client.nom_affichage if i.client else '',
+                'adresse': (i.adresse or (_adresse_client(i.client) if i.client else '') or ''),
+                'technicien': i.technicien or '',
+                'type': i.type_intervention or i.titre or '',
+                'statut': i.statut_label,
+            })
+        except Exception:
+            pass
+    return jsonify(data)
+
 @app.route('/interventions')
 @login_required
 def interventions_liste():
