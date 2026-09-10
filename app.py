@@ -3900,6 +3900,11 @@ def _creer_interventions_suivi(form, client_id, adresse_defaut='', type_defaut='
             i.description = intervention_origine.description
             i.priorite = intervention_origine.priorite or 'normale'
             i.duree_estimee = intervention_origine.duree_estimee
+            # Reprend le même interlocuteur portail que l'intervention d'origine
+            # (celui choisi à la création, généralement la personne ayant envoyé
+            # la commande) — sans ça, chaque passage de suivi retombait sur le
+            # portail principal au lieu de rester visible au bon interlocuteur.
+            i.portal_contact_id = intervention_origine.portal_contact_id
             i.numero_bon_commande = intervention_origine.numero_bon_commande
             i.notes = intervention_origine.notes
         db.session.add(i)
@@ -5803,6 +5808,17 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "ALTER TABLE amdec_fiches ADD COLUMN IF NOT EXISTS bon_id INTEGER REFERENCES bons_intervention(id)",
+            # Rattrapage ponctuel : les passages de suivi créés avant la correction
+            # de _creer_interventions_suivi() n'héritaient pas de l'interlocuteur
+            # portail choisi sur l'intervention d'origine (celle où l'on sélectionne
+            # la personne ayant envoyé la commande). Sans effet sur les lignes déjà
+            # correctes ou sans origine — sûr à rejouer à chaque démarrage.
+            """UPDATE interventions AS t
+               SET portal_contact_id = o.portal_contact_id
+               FROM interventions AS o
+               WHERE t.intervention_origine_id = o.id
+                 AND t.portal_contact_id IS NULL
+                 AND o.portal_contact_id IS NOT NULL""",
         ]
         for sql in migrations:
             try:
