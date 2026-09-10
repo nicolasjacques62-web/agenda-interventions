@@ -494,7 +494,10 @@
                   {% if adr %}<i class="bi bi-geo-alt me-1"></i>{{ adr | truncate(35) }}{% else %}—{% endif %}
                 </td>
                 <td class="small">
-                  {% if i.portal_contact %}<span class="badge bg-info text-dark">{{ i.portal_contact.nom }}</span>
+                  {% if i.portal_contact %}
+                    <span class="badge bg-info text-dark">{{ i.portal_contact.nom }}</span>
+                  {% elif client.portal_actif %}
+                    <span class="badge bg-light text-dark border" title="Aucun interlocuteur spécifique assigné — visible sur le portail principal du client (et par tout interlocuteur en accès complet)">Portail principal</span>
                   {% else %}<span class="text-muted">—</span>{% endif %}
                 </td>
                 <td>
