@@ -3302,7 +3302,12 @@ def agenda_events():
             fin = i.date_planifiee + timedelta(minutes=duree)
             events.append({
                 'id': i.id,
-                'title': f"[{i.client.nom_affichage}] {i.titre}",
+                # Titre simplifié au nom du client seul (le type est déjà porté par la
+                # couleur/nuance du bloc) — le détail complet (type, technicien, passage,
+                # délai curatif) reste disponible au survol et au clic, pour une lecture
+                # rapide et sans surcharge sur l'agenda, surtout quand plusieurs rendez-vous
+                # se chevauchent au même horaire.
+                'title': i.client.nom_affichage,
                 'start': i.date_planifiee.isoformat(),
                 'end': fin.isoformat(),
                 'color': i.couleur,
@@ -3313,6 +3318,7 @@ def agenda_events():
                     'client': i.client.nom_affichage,
                     'telephone': i.client.telephone or i.client.telephone2 or '',
                     'technicien': i.technicien or '',
+                    'type': i.type_intervention or i.titre or '',
                     'numero_passage': i.numero_passage or 1,
                     'decompte_curatif': i.decompte_curatif,
                 },
