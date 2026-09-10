@@ -2794,7 +2794,8 @@ def client_detail(id):
     c = Client.query.get_or_404(id)
     total_interventions = Intervention.query.filter_by(client_id=id).count()
     voir_tout_historique = request.args.get('tout') == '1'
-    inter_q = (Intervention.query.options(joinedload(Intervention.bon))
+    inter_q = (Intervention.query.options(joinedload(Intervention.bon),
+                                           joinedload(Intervention.portal_contact))
                .filter_by(client_id=id)
                .order_by(Intervention.date_planifiee.desc()))
     if not voir_tout_historique:
