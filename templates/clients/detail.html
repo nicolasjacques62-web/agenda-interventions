@@ -318,11 +318,19 @@
                 <div class="text-muted" style="font-size:.7rem">
                   {{ url_for('portail_access', token=contact.access_token, _external=True) }}
                 </div>
-                {% if contact.voit_tout %}
-                  <div class="mt-1"><span class="badge bg-success" style="font-size:.65rem">
-                    <i class="bi bi-unlock me-1"></i>accès à tout (interventions + bons)
-                  </span></div>
-                {% elif contact.visible_comme %}
+                <form method="POST" action="{{ url_for('portail_contact_voit_tout', contact_id=contact.id) }}"
+                      class="form-check form-switch mt-1 mb-0 ps-0">
+                  <input class="form-check-input ms-0 me-1" type="checkbox" role="switch" id="voit_tout_{{ contact.id }}"
+                         onchange="this.form.submit()" {% if contact.voit_tout %}checked{% endif %}>
+                  <label class="form-check-label" for="voit_tout_{{ contact.id }}" style="font-size:.72rem;cursor:pointer">
+                    {% if contact.voit_tout %}
+                      <span class="text-success fw-semibold">Voit tout (interventions + bons)</span>
+                    {% else %}
+                      <span class="text-muted">Voit seulement ce qui le concerne</span>
+                    {% endif %}
+                  </label>
+                </form>
+                {% if contact.visible_comme %}
                   <div class="mt-1"><span class="badge bg-info text-dark" style="font-size:.65rem">
                     <i class="bi bi-eye me-1"></i>voit aussi comme « {{ contact.visible_comme.nom }} »
                   </span></div>
@@ -352,12 +360,6 @@
                 <a href="{{ url_for('portail_contact_acces', contact_id=contact.id) }}" class="btn btn-outline-primary btn-sm py-0 px-1"
                    title="Choisir les interventions visibles pour cet interlocuteur"><i class="bi bi-list-check"></i></a>
                 {% endif %}
-                <form method="POST" action="{{ url_for('portail_contact_voit_tout', contact_id=contact.id) }}">
-                  <button class="btn btn-outline-{% if contact.voit_tout %}success{% else %}secondary{% endif %} btn-sm py-0 px-1"
-                          title="{% if contact.voit_tout %}Retirer l'accès à tout{% else %}Donner accès à toutes les interventions/bons{% endif %}">
-                    <i class="bi bi-{% if contact.voit_tout %}unlock{% else %}lock{% endif %}"></i>
-                  </button>
-                </form>
                 <form method="POST" action="{{ url_for('portail_contact_desactiver', contact_id=contact.id) }}">
                   <button class="btn btn-outline-{% if contact.actif %}warning{% else %}success{% endif %} btn-sm py-0 px-1"
                           title="{% if contact.actif %}Désactiver{% else %}Réactiver{% endif %}">
