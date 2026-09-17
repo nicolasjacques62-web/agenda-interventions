@@ -348,6 +348,10 @@
                 <button class="btn btn-outline-secondary btn-sm py-0 px-1"
                         onclick="navigator.clipboard.writeText('{{ url_for('portail_access', token=contact.access_token, _external=True) }}')"
                         title="Copier le lien"><i class="bi bi-clipboard"></i></button>
+                {% if not contact.voit_tout %}
+                <a href="{{ url_for('portail_contact_acces', contact_id=contact.id) }}" class="btn btn-outline-primary btn-sm py-0 px-1"
+                   title="Choisir les interventions visibles pour cet interlocuteur"><i class="bi bi-list-check"></i></a>
+                {% endif %}
                 <form method="POST" action="{{ url_for('portail_contact_voit_tout', contact_id=contact.id) }}">
                   <button class="btn btn-outline-{% if contact.voit_tout %}success{% else %}secondary{% endif %} btn-sm py-0 px-1"
                           title="{% if contact.voit_tout %}Retirer l'accès à tout{% else %}Donner accès à toutes les interventions/bons{% endif %}">
