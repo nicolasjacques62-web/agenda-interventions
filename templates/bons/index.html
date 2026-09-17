@@ -30,60 +30,71 @@
   </div>
 </div>
 
+{% if bons %}
+  {% for adresse, bons_groupe in groupes_bons %}
+  <div class="card mb-3">
+    <div class="card-header d-flex align-items-center gap-2 bg-light">
+      <i class="bi bi-geo-alt{% if adresse == 'Adresse non renseignée' %} text-muted{% endif %}"></i>
+      <span class="fw-semibold{% if adresse == 'Adresse non renseignée' %} text-muted fst-italic{% endif %}">{{ adresse }}</span>
+      <span class="badge bg-secondary ms-auto">{{ bons_groupe|length }} bon(s)</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr><th>N°</th><th>Client</th><th>Intervention</th><th>Date</th><th>Statut</th><th>Signature</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for b in bons_groupe %}
+            <tr>
+              <td><a href="{{ url_for('bon_detail', id=b.id) }}" class="fw-semibold text-decoration-none">{{ b.numero }}</a></td>
+              <td>{{ b.intervention.client.nom_affichage }}</td>
+              <td>
+                <a href="{{ url_for('intervention_detail', id=b.intervention_id) }}" class="text-decoration-none text-muted small">
+                  {{ b.intervention.titre }}
+                </a>
+                {% if extraits.get(b.id) %}
+                <div class="small text-muted fst-italic mt-1">{{ extraits[b.id] }}</div>
+                {% endif %}
+              </td>
+              <td class="small text-nowrap">{{ b.date_creation.strftime('%d/%m/%Y') }}</td>
+              <td><span class="badge bg-{{ b.statut_couleur }}">{{ b.statut_label }}</span></td>
+              <td>
+                {% if b.signature_client %}
+                  <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Signé</span>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex gap-1">
+                  <a href="{{ url_for('bon_detail', id=b.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
+                  <a href="{{ url_for('bon_modifier', id=b.id) }}" class="btn btn-sm btn-outline-primary" title="Modifier"><i class="bi bi-pencil"></i></a>
+                  <a href="{{ url_for('bon_pdf', id=b.id) }}" class="btn btn-sm btn-outline-danger" target="_blank"><i class="bi bi-filetype-pdf"></i></a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if not voir_tout_bons and total_bons > bons|length %}
+  <div class="text-center py-2 small text-muted">
+    Affichage des {{ limite_bons }} bons les plus récents sur {{ total_bons }} —
+    <a href="{{ url_for('bons_liste', statut=statut, client=client_q, q=texte_q, tout=1) }}">voir tout</a>
+  </div>
+  {% endif %}
+  <div class="text-muted small mb-3">{{ total_bons }} bon(s) — {{ groupes_bons|length }} adresse(s)</div>
+{% else %}
 <div class="card">
-  <div class="card-body p-0">
-    {% if bons %}
-    <div class="table-responsive">
-      <table class="table table-hover mb-0">
-        <thead class="table-light">
-          <tr><th>N°</th><th>Client</th><th>Intervention</th><th>Date</th><th>Statut</th><th>Signature</th><th></th></tr>
-        </thead>
-        <tbody>
-          {% for b in bons %}
-          <tr>
-            <td><a href="{{ url_for('bon_detail', id=b.id) }}" class="fw-semibold text-decoration-none">{{ b.numero }}</a></td>
-            <td>{{ b.intervention.client.nom_affichage }}</td>
-            <td>
-              <a href="{{ url_for('intervention_detail', id=b.intervention_id) }}" class="text-decoration-none text-muted small">
-                {{ b.intervention.titre }}
-              </a>
-              {% if extraits.get(b.id) %}
-              <div class="small text-muted fst-italic mt-1">{{ extraits[b.id] }}</div>
-              {% endif %}
-            </td>
-            <td class="small text-nowrap">{{ b.date_creation.strftime('%d/%m/%Y') }}</td>
-            <td><span class="badge bg-{{ b.statut_couleur }}">{{ b.statut_label }}</span></td>
-            <td>
-              {% if b.signature_client %}
-                <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Signé</span>
-              {% else %}
-                <span class="text-muted small">—</span>
-              {% endif %}
-            </td>
-            <td>
-              <div class="d-flex gap-1">
-                <a href="{{ url_for('bon_detail', id=b.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye"></i></a>
-                <a href="{{ url_for('bon_modifier', id=b.id) }}" class="btn btn-sm btn-outline-primary" title="Modifier"><i class="bi bi-pencil"></i></a>
-                <a href="{{ url_for('bon_pdf', id=b.id) }}" class="btn btn-sm btn-outline-danger" target="_blank"><i class="bi bi-filetype-pdf"></i></a>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% if not voir_tout_bons and total_bons > bons|length %}
-    <div class="text-center py-2 border-top small text-muted">
-      Affichage des {{ limite_bons }} bons les plus récents sur {{ total_bons }} —
-      <a href="{{ url_for('bons_liste', statut=statut, client=client_q, q=texte_q, tout=1) }}">voir tout</a>
-    </div>
-    {% endif %}
-    {% else %}
+  <div class="card-body">
     <div class="text-center py-5 text-muted">
       <i class="bi bi-file-earmark-x fs-1 d-block mb-2"></i>Aucun bon d'intervention
     </div>
-    {% endif %}
   </div>
-  <div class="card-footer text-muted small">{{ total_bons }} bon(s)</div>
 </div>
+{% endif %}
 {% endblock %}
