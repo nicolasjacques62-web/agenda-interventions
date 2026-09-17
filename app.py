@@ -3271,6 +3271,32 @@ def portail_contact_supprimer(contact_id):
     flash(f'Interlocuteur « {nom} » supprimé.', 'info')
     return redirect(url_for('client_detail', id=cid))
 
+@app.route('/clients/portail/interlocuteurs/<int:contact_id>/acces', methods=['GET', 'POST'])
+@login_required
+def portail_contact_acces(contact_id):
+    """Permet de choisir, parmi toutes les interventions du client, lesquelles
+    sont visibles pour cet interlocuteur à accès limité (celles qui lui sont
+    explicitement assignées) — sans avoir à rouvrir chaque intervention une
+    par une pour changer son interlocuteur portail."""
+    contact = PortalContact.query.get_or_404(contact_id)
+    client = contact.client
+    interventions = (Intervention.query.options(joinedload(Intervention.portal_contact))
+                      .filter_by(client_id=client.id)
+                      .order_by(Intervention.date_planifiee.desc()).all())
+    if request.method == 'POST':
+        checked_ids = {int(x) for x in request.form.getlist('intervention_ids') if x.isdigit()}
+        nb = 0
+        for i in interventions:
+            if i.id in checked_ids:
+                i.portal_contact_id = contact.id
+                nb += 1
+            elif i.portal_contact_id == contact.id:
+                i.portal_contact_id = None
+        db.session.commit()
+        flash(f'Accès mis à jour pour « {contact.nom} » : {nb} intervention(s) visible(s) désormais.', 'success')
+        return redirect(url_for('client_detail', id=client.id))
+    return render_template('clients/portail_acces.html', contact=contact, client=client, interventions=interventions)
+
 # ─── AGENDA / INTERVENTIONS ───────────────────────────────────────────────────
 
 @app.route('/agenda')
