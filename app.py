@@ -3697,7 +3697,24 @@ def bons_liste():
 
     extraits = {b.id: _extrait(b, texte_q) for b in bons} if texte_q else {}
 
-    return render_template('bons/index.html', bons=bons, statut=statut,
+    def _adresse_bon(b):
+        i = b.intervention
+        if not i:
+            return 'Adresse non renseignée'
+        adr = i.adresse or (_adresse_client(i.client) if i.client else '')
+        return adr.strip() if adr and adr.strip() else 'Adresse non renseignée'
+
+    # Regroupe les bons par adresse d'intervention. Comme `bons` est déjà trié
+    # par date de création décroissante, la première rencontre de chaque adresse
+    # correspond à son bon le plus récent : en conservant l'ordre d'insertion
+    # (dict Python), les groupes se retrouvent naturellement triés par « adresse
+    # ayant le bon le plus récent en premier », sans tri supplémentaire à part.
+    groupes_par_adresse = {}
+    for b in bons:
+        groupes_par_adresse.setdefault(_adresse_bon(b), []).append(b)
+    groupes_bons = list(groupes_par_adresse.items())
+
+    return render_template('bons/index.html', bons=bons, groupes_bons=groupes_bons, statut=statut,
                            client_q=client_q, texte_q=texte_q, extraits=extraits,
                            total_bons=total_bons, voir_tout_bons=voir_tout_bons,
                            limite_bons=LIMIT_BONS_LISTE)
