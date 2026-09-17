@@ -169,6 +169,12 @@
             {{ b.intervention.type_intervention or b.intervention.titre }} —
             {{ b.intervention.date_planifiee.strftime('%d/%m/%Y') }}
           </div>
+          {% set adr = b.intervention.adresse or ((b.intervention.client.adresse or '') ~ (', ' ~ b.intervention.client.code_postal if b.intervention.client.code_postal else '') ~ (' ' ~ b.intervention.client.ville if b.intervention.client.ville else '')) %}
+          {% if adr and adr.strip() %}
+          <div class="text-muted" style="font-size:.75rem">
+            <i class="bi bi-geo-alt me-1"></i>{{ adr.strip() }}
+          </div>
+          {% endif %}
         </div>
         <div class="d-flex gap-2">
           <a href="{{ url_for('portail_bon_pdf', token=token, bid=b.id) }}"
