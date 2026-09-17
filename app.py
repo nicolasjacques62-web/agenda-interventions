@@ -3234,16 +3234,25 @@ def portail_contact_voit_tout(contact_id):
 def portail_contact_visibilite(contact_id):
     contact = PortalContact.query.get_or_404(contact_id)
     cid = contact.client_id
-    vc_id = request.form.get('visible_comme_id', '').strip()
-    if not vc_id:
+    valeur = request.form.get('visible_comme_id', '').strip()
+    if valeur == 'tout':
+        # Option « Voit tout » regroupée dans le même menu déroulant que les
+        # autres choix de visibilité, pour n'avoir qu'un seul contrôle par
+        # interlocuteur au lieu d'un interrupteur séparé + un menu.
+        contact.voit_tout = True
+        contact.visible_comme_id = None
+        flash(f'« {contact.nom} » a maintenant accès à toutes les interventions/bons du client.', 'success')
+    elif not valeur:
+        contact.voit_tout = False
         contact.visible_comme_id = None
         flash(f'« {contact.nom} » ne voit plus que ses propres demandes.', 'success')
     else:
-        vc_id = int(vc_id)
+        vc_id = int(valeur)
         cible = PortalContact.query.get(vc_id)
         if not cible or cible.client_id != cid or vc_id == contact.id:
             flash('Interlocuteur cible invalide.', 'warning')
             return redirect(url_for('client_detail', id=cid))
+        contact.voit_tout = False
         contact.visible_comme_id = vc_id
         flash(f'« {contact.nom} » voit désormais aussi les demandes de « {cible.nom} ».', 'success')
     db.session.commit()
