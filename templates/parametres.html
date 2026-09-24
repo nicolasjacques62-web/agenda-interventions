@@ -49,6 +49,34 @@
   </div>
 
   <div class="col-12">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-images me-2"></i>Stockage des photos</div>
+      <div class="card-body">
+        <p class="mb-2">
+          <strong>{{ nb_photos }}</strong> photo(s) enregistrée(s), pour environ <strong>{{ mo_photos }} Mo</strong> en base de données.
+        </p>
+        <p class="form-text mt-0 mb-3">
+          Depuis peu, chaque nouvelle photo est automatiquement redimensionnée et compressée avant d'être enregistrée.
+          Le bouton ci-dessous applique la même compression aux photos déjà en base (envoyées avant ce changement),
+          pour libérer de la place sans perte visible sur les bons PDF ou le portail client.
+        </p>
+        {% if photos_compression_derniere %}
+        <p class="text-muted small mb-2">
+          <i class="bi bi-clock-history me-1"></i>Dernière compression rétroactive lancée le
+          {{ photos_compression_derniere[:16]|replace('T', ' à ') }}.
+        </p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('compresser_photos_existantes') }}"
+              onsubmit="return confirm('Lancer la compression de toutes les photos existantes ? Ça se fait en arrière-plan, vous recevrez un email une fois terminé.')">
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-arrow-down-circle me-1"></i>Compresser les photos existantes
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
     <div class="card border-primary">
       <div class="card-header bg-primary bg-opacity-10">
         <i class="bi bi-microsoft me-2"></i>Intégration Outlook
