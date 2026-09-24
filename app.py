@@ -976,8 +976,13 @@ def _parse_audit_form(form):
         recommandations=form.get('recommandations', '').strip(),
     )
 
+TAILLE_MAX_PHOTO = 1600  # px, plus grand côté — largement suffisant pour le PDF (8 cm) et le portail
+
 def _corriger_orientation(image_bytes):
-    """Lit les données EXIF d'une photo mobile et la remet dans le bon sens.
+    """Lit les données EXIF d'une photo mobile, la remet dans le bon sens et la
+    redimensionne si besoin avant stockage (les photos de téléphone arrivent
+    souvent à 3000-4000 px de large, très au-delà de ce qui est jamais affiché
+    — un bon d'intervention n'en a pas besoin, et ça alourdit la base pour rien).
     Retourne les bytes corrigés (JPEG), ou les bytes originaux si Pillow absent."""
     if not PILLOW_OK:
         return image_bytes
@@ -1013,9 +1018,13 @@ def _corriger_orientation(image_bytes):
         # Convertit en RGB si nécessaire (ex : PNG RGBA → JPEG)
         if img.mode in ('RGBA', 'P', 'LA'):
             img = img.convert('RGB')
+        # Redimensionne si la photo dépasse largement ce qui sera jamais affiché
+        # (garde le ratio, ne touche pas aux photos déjà petites)
+        if max(img.size) > TAILLE_MAX_PHOTO:
+            img.thumbnail((TAILLE_MAX_PHOTO, TAILLE_MAX_PHOTO), PILImage.LANCZOS)
         # Ré-encode en JPEG en supprimant l'EXIF pour éviter double rotation
         out = io.BytesIO()
-        img.save(out, format='JPEG', quality=85, exif=b'')
+        img.save(out, format='JPEG', quality=82, optimize=True, exif=b'')
         return out.getvalue()
     except Exception:
         return image_bytes
