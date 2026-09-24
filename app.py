@@ -1030,6 +1030,60 @@ def _corriger_orientation(image_bytes):
         return image_bytes
 
 
+def _compresser_photos_existantes_async():
+    """Recompresse en arrière-plan toutes les photos déjà enregistrées en base
+    (celles envoyées avant l'activation du redimensionnement automatique à
+    l'upload). Traite par petits lots pour ne jamais garder beaucoup de photos
+    non compressées en mémoire en même temps (photos d'origine potentiellement
+    volumineuses), et ne remplace une photo que si le gain est réel — sûr à
+    relancer plusieurs fois, les photos déjà compressées sont simplement
+    ignorées au passage suivant."""
+    with app.app_context():
+        LOT = 15
+        dernier_id = 0
+        total = modifiees = erreurs = 0
+        octets_avant = octets_apres = 0
+        try:
+            while True:
+                lot = (BonPhoto.query.filter(BonPhoto.id > dernier_id)
+                       .order_by(BonPhoto.id).limit(LOT).all())
+                if not lot:
+                    break
+                for photo in lot:
+                    dernier_id = photo.id
+                    total += 1
+                    try:
+                        raw = base64.b64decode(photo.data)
+                        taille_avant = len(raw)
+                        out = _corriger_orientation(raw)
+                        taille_apres = len(out)
+                        # Ne réécrit que si le gain est net (évite de ré-encoder
+                        # inutilement une photo déjà petite ou déjà compressée)
+                        if taille_apres < taille_avant * 0.9:
+                            photo.data = base64.b64encode(out).decode('utf-8')
+                            photo.mimetype = 'image/jpeg'
+                            modifiees += 1
+                            octets_avant += taille_avant
+                            octets_apres += taille_apres
+                    except Exception:
+                        erreurs += 1
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+        gain_mo = (octets_avant - octets_apres) / (1024 * 1024)
+        set_param('photos_compression_retro_derniere', datetime.utcnow().isoformat())
+        ligne_erreurs = (f"<p style=\"color:#e67e22\">{erreurs} photo(s) n'ont pas pu être traitées "
+                         f"(fichier corrompu ou illisible) — laissées inchangées.</p>") if erreurs else ''
+        envoyer_email_admin(
+            "✅ Compression des photos existantes terminée",
+            f"""<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+                  <p>{modifiees} photo(s) compressée(s) sur {total} passée(s) en revue.</p>
+                  <p>Espace gagné en base de données : environ <strong>{gain_mo:.1f} Mo</strong>.</p>
+                  {ligne_erreurs}
+                </div>""")
+
+
 def _sig_to_image(b64_data, max_w=7*cm, max_h=3*cm):
     """Convertit une signature base64 (data URL ou raw) en objet RLImage, ou '' si invalide."""
     if not b64_data:
@@ -5520,10 +5574,27 @@ def parametres():
         return redirect(url_for('parametres'))
     params = {p.cle: p.valeur for p in Parametre.query.all()}
     mail_password_configure = bool(params.pop('mail_password', ''))
+    # Stats photos (agrégat SQL — ne charge pas les photos elles-mêmes en mémoire)
+    nb_photos, octets_photos = db.session.query(
+        db.func.count(BonPhoto.id), db.func.coalesce(db.func.sum(db.func.length(BonPhoto.data)), 0)
+    ).first()
     return render_template('parametres.html', params=params, mail_password_configure=mail_password_configure,
                            outlook_configure=outlook_configure(), outlook_connecte=outlook_connecte(),
                            outlook_email=get_param('outlook_email', ''),
-                           techniciens_liste=[t.strip() for t in get_param('techniciens','').split(',') if t.strip()])
+                           techniciens_liste=[t.strip() for t in get_param('techniciens','').split(',') if t.strip()],
+                           nb_photos=nb_photos, mo_photos=round(octets_photos / (1024*1024), 1),
+                           photos_compression_derniere=get_param('photos_compression_retro_derniere', ''))
+
+@app.route('/parametres/compresser-photos', methods=['POST'])
+@login_required
+def compresser_photos_existantes():
+    if not PILLOW_OK:
+        flash("Pillow n'est pas installé sur le serveur — compression impossible.", 'danger')
+        return redirect(url_for('parametres'))
+    threading.Thread(target=_compresser_photos_existantes_async, daemon=True).start()
+    flash("Compression des photos existantes lancée en arrière-plan — un email de confirmation "
+          "vous sera envoyé une fois terminé (ça peut prendre plusieurs minutes selon le nombre de photos).", 'success')
+    return redirect(url_for('parametres'))
 
 @app.route('/parametres/maintenance/programmer', methods=['POST'])
 @login_required
