@@ -5,7 +5,7 @@
  * Permet la consultation hors-ligne des pages et du planning déjà chargés.
  */
 
-const CACHE_NAME = 'hps3d-v2';
+const CACHE_NAME = 'hps3d-v3';
 
 // Pages et ressources à mettre en cache dès l'installation
 const PRECACHE_URLS = ['/offline'];

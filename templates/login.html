@@ -8,7 +8,9 @@
   <link href="{{ url_for('static', filename='documents/bootstrap-icons.min.css') }}" rel="stylesheet">
   <style>
     body {
-      background: linear-gradient(135deg, #0a1628 0%, #112240 60%, #1AABE3 100%);
+      background: #f5f7f9;
+      font-family: -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color: #1E1E1E;
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -16,11 +18,13 @@
     }
     .login-card {
       background: #fff;
-      border-radius: 16px;
-      padding: 2.5rem;
+      border: 1px solid #e3e7ec;
+      border-radius: 10px;
+      padding: 2.2rem 2rem;
       width: 100%;
       max-width: 420px;
-      box-shadow: 0 24px 60px rgba(0,0,0,.35);
+      box-shadow: none;
+      margin: 1rem;
     }
     .login-logo-img {
       max-width: 220px;
@@ -30,25 +34,27 @@
     }
     .login-logo-fallback {
       width: 72px; height: 72px;
-      background: #1AABE3;
+      background: #29ACE2;
       border-radius: 16px;
       display: flex; align-items: center; justify-content: center;
       margin: 0 auto 1.2rem;
     }
-    .btn-hps {
-      background: #1AABE3;
-      border-color: #1AABE3;
+    .form-control { border-color: #cfd6dd; }
+    .btn-hps { border-radius: 7px;
+      background: #29ACE2;
+      border-color: #29ACE2;
       color: #fff;
       font-weight: 600;
     }
     .btn-hps:hover {
-      background: #1292C4;
-      border-color: #1292C4;
+      background: #1b8fc0;
+      border-color: #1b8fc0;
       color: #fff;
     }
-    .form-control:focus { border-color: #1AABE3; box-shadow: 0 0 0 .2rem rgba(26,171,227,.2); }
-    .input-group-text { background: #e8f6fc; border-color: #dee2e6; color: #1AABE3; }
-    .divider { border-top: 1px solid #e8f0f6; margin: 1.5rem 0 1rem; }
+    .form-control:focus { border-color: #29ACE2; box-shadow: 0 0 0 .2rem rgba(41,172,226,.18); }
+    .input-group-text { background: #e1f3fb; border-color: #dee2e6; color: #29ACE2; }
+    a { color: #1b8fc0; }
+    .divider { border-top: 1px solid #e3e7ec; margin: 1.5rem 0 1rem; }
   </style>
 </head>
 <body>
@@ -63,8 +69,8 @@
     <i class="bi bi-tools text-white fs-2"></i>
   </div>
 
-  <h5 class="text-center fw-bold mb-1" style="color:#0a1628;">Hygiene Pro Services 3D</h5>
-  <p class="text-center text-muted small mb-3">Agenda — Espace Administration</p>
+  <h5 class="text-center fw-bold mb-1" style="color:#29ACE2;">Agenda</h5>
+  <p class="text-center text-muted small mb-3">Accès réservé</p>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}{% for cat, msg in messages %}
@@ -142,7 +148,7 @@
       <a href="{{ url_for('login_reset_request') }}" class="small text-decoration-none">Mot de passe oublié ?</a>
     </p>
     <div class="mb-4 form-check">
-      <input type="checkbox" class="form-check-input" name="remember" id="remember" style="accent-color:#1AABE3;">
+      <input type="checkbox" class="form-check-input" name="remember" id="remember" style="accent-color:#29ACE2;">
       <label class="form-check-label small text-muted" for="remember">Rester connecté</label>
     </div>
     <button type="submit" class="btn btn-hps w-100 py-2">

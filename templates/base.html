@@ -5,174 +5,130 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}Agenda Hygiene Pro Services 3D{% endblock %}</title>
-  <meta name="theme-color" content="#1AABE3">
+  <meta name="theme-color" content="#1E1E1E">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/static/logo.png">
   <link href="{{ url_for('static', filename='documents/bootstrap.min.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='documents/bootstrap-icons.min.css') }}" rel="stylesheet">
   <style>
+    /* Charte commune avec l'application de prospection HPS 3D */
     :root {
-      --hps-blue:      #1AABE3;
-      --hps-blue-dark: #1292C4;
-      --hps-blue-light:#E8F6FC;
-      --hps-dark:      #0a1628;
-      --hps-dark2:     #112240;
-      --hps-grey:      #94a3b8;
+      --hps-blue:      #29ACE2;
+      --hps-blue-dark: #1b8fc0;
+      --hps-blue-light:#e1f3fb;
+      --hps-dark:      #1E1E1E;
+      --hps-dark2:     #2f3337;
+      --hps-grey:      #9aa3ad;
+      --ink2:          #5b6470;
+      --line:          #e3e7ec;
+      --bg:            #f5f7f9;
+      --bs-primary:    #29ACE2;
+      --bs-primary-rgb: 41,172,226;
+      --bs-link-color: #1b8fc0;
+      --bs-link-hover-color: #1b8fc0;
+      --bs-body-font-family: -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
     }
+    body { background: var(--bg); color: var(--hps-dark); font-size: 15px; line-height: 1.45; }
+    a { color: var(--hps-blue-dark); text-decoration: none; }
+    a:hover { color: var(--hps-blue-dark); text-decoration: underline; }
+    .btn:hover, .nav-link:hover, .dropdown-item:hover, .list-group-item:hover { text-decoration: none; }
 
-    body { background: #f0f6fa; }
+    /* ── BARRE DU HAUT ── */
+    .app-top { background: var(--hps-dark); position: sticky; top: 0; z-index: 1030; padding: .45rem 1rem; }
+    .app-top .navbar-brand { display: flex; align-items: center; gap: .6rem; color: #fff; font-weight: 700; letter-spacing: .3px; margin-right: 1.2rem; }
+    .app-top .navbar-brand span.t { color: var(--hps-blue); }
+    .logo-box { background: #fff; border-radius: 6px; padding: 3px 8px; display: inline-flex; }
+    .logo-box img { height: 26px; display: block; }
+    .app-top .nav-link { color: #cfd6dd; padding: .4rem .65rem !important; border-radius: 6px; font-size: .9rem; display: flex; align-items: center; gap: .4rem; white-space: nowrap; }
+    .app-top .nav-link:hover, .app-top .nav-link:focus { background: var(--hps-dark2); color: #fff; }
+    .app-top .nav-link.active { background: var(--hps-dark2); color: #fff; box-shadow: inset 0 -2px 0 var(--hps-blue); }
+    .app-top .navbar-toggler { border-color: #4a4f55; color: #fff; padding: .3rem .55rem; }
+    .app-top .navbar-toggler:focus { box-shadow: none; }
+    .app-top .dropdown-menu { border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+    .app-top .dropdown-item { font-size: .9rem; display: flex; gap: .5rem; align-items: center; }
+    .app-top .dropdown-item.active, .app-top .dropdown-item:active { background: var(--hps-blue); }
+    #offline-badge { font-size: .72rem; }
 
-    /* ── SIDEBAR ── */
-    .sidebar {
-      width: 240px; min-height: 100vh;
-      background: var(--hps-dark);
-      position: fixed; top: 0; left: 0; z-index: 100;
-      border-right: 3px solid var(--hps-blue);
-    }
-    .sidebar .brand {
-      padding: .8rem 1rem;
-      border-bottom: 3px solid var(--hps-blue);
-      background: #fff;
-      text-align: center;
-    }
-    .sidebar .brand img {
-      max-width: 190px;
-      height: auto;
-    }
-    .sidebar .brand-fallback {
-      display: none;
-    }
-    .sidebar .brand img.logo-error {
-      display: none;
-    }
-    .sidebar .brand img.logo-error ~ .brand-fallback {
-      display: block;
-    }
-    .sidebar .brand-fallback h6 { color: var(--hps-grey); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; margin: 0; }
-    .sidebar .brand-fallback h5 { color: #fff; font-size: 1rem; margin: .2rem 0 0; }
+    /* ── EN-TÊTE DE PAGE ── */
+    .main { max-width: 1280px; margin: 0 auto; padding: 1.4rem 1rem 3rem; }
+    .page-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.2rem; }
+    .page-head h4 { margin: 0; font-size: 1.45rem; font-weight: 700; color: var(--hps-dark); }
 
-    .sidebar .nav-link {
-      color: var(--hps-grey);
-      padding: .55rem 1rem;
-      display: flex; align-items: center; gap: .6rem;
-      border-radius: 6px;
-      margin: 1px 6px;
-      font-size: .88rem;
-      transition: all .15s;
-    }
-    .sidebar .nav-link:hover {
-      background: var(--hps-dark2);
-      color: var(--hps-blue);
-    }
-    .sidebar .nav-link.active {
-      background: var(--hps-blue);
-      color: #fff;
-    }
-    .sidebar .nav-link i { font-size: 1rem; width: 18px; }
-    .sidebar .nav-section {
-      color: var(--hps-blue);
-      font-size: .68rem;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      padding: .8rem 1rem .3rem;
-      opacity: .7;
-    }
+    /* ── CARTES ── */
+    .card { border: 1px solid var(--line); box-shadow: none; border-radius: 10px; }
+    .card-header { background: #fafbfc; border-bottom: 1px solid var(--line); font-weight: 600; }
+    .card-header:first-child { border-radius: 10px 10px 0 0; }
+    .card-footer { background: #fafbfc; border-top: 1px solid var(--line); }
+    .stat-card { border-color: var(--hps-blue); box-shadow: inset 3px 0 0 var(--hps-blue); }
+    .shadow, .shadow-sm { box-shadow: none !important; }
 
-    /* ── MAIN ── */
-    .main { margin-left: 240px; padding: 1.5rem; }
-    .topbar {
-      background: #fff;
-      border-bottom: 2px solid var(--hps-blue);
-      padding: .7rem 1.5rem;
-      margin: -1.5rem -1.5rem 1.5rem;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .topbar h4 { margin: 0; font-size: 1.1rem; color: var(--hps-dark); font-weight: 600; }
+    /* ── TABLEAUX ── */
+    .table { --bs-table-bg: #fff; font-size: .92rem; }
+    .table > :not(caption) > * > * { border-bottom-color: var(--line); padding: .6rem .65rem; }
+    .table thead th, .table th { font-size: .74rem; text-transform: uppercase; letter-spacing: .4px; color: var(--ink2); font-weight: 600; background: #fafbfc; }
+    .table-light { --bs-table-bg: #fafbfc; }
+    .table-hover > tbody > tr:hover > * { --bs-table-bg-state: #f3f9fd; }
 
-    /* ── CARDS ── */
-    .card { border: none; box-shadow: 0 1px 4px rgba(0,0,0,.08); border-radius: 10px; }
-    .card-header { background: #fff; border-bottom: 1px solid #e8f0f6; font-weight: 600; }
+    /* ── PASTILLES (badges) ── */
+    .badge { font-weight: 600; border-radius: 12px; padding: .3em .7em; }
+    .badge.bg-primary, .badge-planifiee { background: var(--hps-blue-light) !important; color: var(--hps-blue-dark) !important; }
+    .badge.bg-success, .badge-terminee { background: #dcf2e5 !important; color: #2e9e5b !important; }
+    .badge.bg-danger, .badge-urgente   { background: #fde5de !important; color: #e4572e !important; }
+    .badge.bg-warning, .badge-en_cours { background: #fbf0d5 !important; color: #9a6a06 !important; }
+    .badge.bg-info                     { background: #e1f3fb !important; color: var(--hps-blue-dark) !important; }
+    .badge.bg-secondary, .badge-annulee{ background: #eef0f2 !important; color: #6c757d !important; }
+    .badge.bg-light                    { background: #fff !important; color: var(--hps-dark) !important; border-color: var(--line) !important; }
+    .badge.bg-dark                     { background: var(--hps-dark) !important; color: #fff !important; }
 
-    /* ── BADGES STATUTS ── */
-    .badge-planifiee  { background: var(--hps-blue); }
-    .badge-en_cours   { background: #f39c12; }
-    .badge-terminee   { background: #27ae60; }
-    .badge-annulee    { background: #95a5a6; }
-    .badge-urgente    { background: #e74c3c; }
-
-    .priority-urgente { border-left: 3px solid #e74c3c; }
+    .priority-urgente { border-left: 3px solid #e4572e; }
     .priority-normale { border-left: 3px solid var(--hps-blue); }
-    .priority-faible  { border-left: 3px solid #95a5a6; }
+    .priority-faible  { border-left: 3px solid #9aa3ad; }
 
     /* ── BOUTONS ── */
-    .btn-primary {
-      background: var(--hps-blue);
-      border-color: var(--hps-blue);
-    }
-    .btn-primary:hover, .btn-primary:focus {
-      background: var(--hps-blue-dark);
-      border-color: var(--hps-blue-dark);
-    }
-    .btn-outline-primary {
-      color: var(--hps-blue);
-      border-color: var(--hps-blue);
-    }
-    .btn-outline-primary:hover {
-      background: var(--hps-blue);
-      border-color: var(--hps-blue);
-    }
+    .btn { border-radius: 7px; }
+    .btn-primary { --bs-btn-bg: var(--hps-blue); --bs-btn-border-color: var(--hps-blue); --bs-btn-hover-bg: var(--hps-blue-dark);
+      --bs-btn-hover-border-color: var(--hps-blue-dark); --bs-btn-active-bg: var(--hps-blue-dark); --bs-btn-active-border-color: var(--hps-blue-dark);
+      --bs-btn-disabled-bg: var(--hps-blue); --bs-btn-disabled-border-color: var(--hps-blue); }
+    .btn-outline-primary { --bs-btn-color: var(--hps-blue-dark); --bs-btn-border-color: var(--hps-blue); --bs-btn-hover-bg: var(--hps-blue);
+      --bs-btn-hover-border-color: var(--hps-blue); --bs-btn-active-bg: var(--hps-blue); --bs-btn-active-border-color: var(--hps-blue); }
+    .btn-outline-secondary { --bs-btn-color: var(--hps-dark); --bs-btn-bg: #fff; --bs-btn-border-color: var(--line);
+      --bs-btn-hover-color: var(--hps-dark); --bs-btn-hover-bg: #fff; --bs-btn-hover-border-color: var(--hps-blue);
+      --bs-btn-active-color: var(--hps-dark); --bs-btn-active-bg: var(--hps-blue-light); --bs-btn-active-border-color: var(--hps-blue); }
+    .text-primary { color: var(--hps-blue-dark) !important; }
+    .bg-primary:not(.badge) { background-color: var(--hps-blue) !important; }
+    .border-primary { border-color: var(--hps-blue) !important; }
 
-    /* ── STAT CARDS ── */
-    .stat-card { border-left: 4px solid var(--hps-blue); }
+    /* ── FORMULAIRES ── */
+    .form-control, .form-select { border-color: #cfd6dd; border-radius: 7px; }
+    .form-control:focus, .form-select:focus { border-color: var(--hps-blue); box-shadow: 0 0 0 .2rem rgba(41,172,226,.18); }
+    .form-check-input:checked { background-color: var(--hps-blue); border-color: var(--hps-blue); }
+    .form-label { font-weight: 600; font-size: .85rem; }
 
-    /* ── LIENS ── */
-    a { color: var(--hps-blue); }
-    a:hover { color: var(--hps-blue-dark); }
+    /* ── MESSAGES ── */
+    .alert { border: 0; border-radius: 8px; }
+    .alert-success { background: #dcf2e5; color: #1f6b3e; }
+    .alert-danger  { background: #fde5de; color: #9b2f13; }
+    .alert-warning { background: #fbf0d5; color: #7a5405; }
+    .alert-info    { background: #e1f3fb; color: #155f80; }
 
-    /* ── TABLE ── */
-    .table th { color: var(--hps-dark); }
+    .nav-tabs .nav-link.active { color: var(--hps-dark); border-bottom-color: #fff; font-weight: 600; }
+    .nav-tabs .nav-link { color: var(--ink2); }
+    .nav-pills .nav-link.active { background: var(--hps-blue); }
+    .pagination { --bs-pagination-color: var(--hps-blue-dark); --bs-pagination-active-bg: var(--hps-blue); --bs-pagination-active-border-color: var(--hps-blue); }
+    .list-group-item.active { background: var(--hps-blue); border-color: var(--hps-blue); }
 
-    /* ── TOPBAR ICON ── */
-    .topbar-logo {
-      height: 36px;
-      width: auto;
+    @media (max-width: 1199.98px) {
+      .app-top .navbar-collapse { padding: .5rem 0 .3rem; }
+      .app-top .nav-link { padding: .55rem .7rem !important; }
+      .app-top .dropdown-menu { background: var(--hps-dark2); border-color: #3a3f44; }
+      .app-top .dropdown-item { color: #cfd6dd; }
+      .app-top .dropdown-item:hover { background: #3a3f44; color: #fff; }
     }
-
-    /* ── MENU MOBILE ── */
-    .sidebar-toggle-btn { display: none; }
-    .sidebar-overlay {
-      display: none;
-      position: fixed; inset: 0;
-      background: rgba(10, 22, 40, .5);
-      z-index: 199;
-    }
-    .sidebar-overlay.show { display: block; }
-
-    @media (max-width: 991.98px) {
-      .sidebar {
-        transform: translateX(-100%);
-        transition: transform .25s ease;
-        z-index: 200;
-      }
-      .sidebar.open { transform: translateX(0); }
-      .main { margin-left: 0; padding: 1rem; }
-      .topbar {
-        margin: -1rem -1rem 1rem;
-        padding: .6rem 1rem;
-        flex-wrap: wrap;
-        row-gap: .5rem;
-      }
-      .topbar h4 { font-size: 1rem; }
-      .sidebar-toggle-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
-      /* Cibles tactiles un peu plus grandes sur mobile */
+    @media (max-width: 767.98px) {
+      .main { padding: 1rem .75rem 2.5rem; }
+      .page-head h4 { font-size: 1.15rem; }
       .btn-sm { padding: .35rem .65rem; }
       .table td, .table th { white-space: nowrap; }
-      /* Barre du haut toujours accessible (menu + titre) en scrollant une longue page */
-      .topbar { position: sticky; top: 0; z-index: 60; }
     }
 
     /* ── BARRE DE PROGRESSION (retour visuel pendant un chargement) ── */
@@ -189,72 +145,50 @@
 <body>
 
 <div id="page-loading-bar"></div>
-
-<div class="sidebar">
-  <div class="brand py-3">
-    <img src="{{ url_for('static', filename='logo.png') }}"
-         alt="HPS — Hygiene Pro Services 3D"
-         onerror="this.classList.add('logo-error')">
-    <div class="brand-fallback">
-      <h6>Agenda</h6>
-      <h5><i class="bi bi-tools"></i> Hygiene Pro Services 3D</h5>
-    </div>
+{% set ep = request.endpoint or '' %}
+<nav class="navbar navbar-expand-xl navbar-dark app-top">
+  <a class="navbar-brand" href="{{ url_for('dashboard') }}">
+    <span class="logo-box"><img src="{{ url_for('static', filename='logo.png') }}" alt="HPS 3D" onerror="this.parentNode.style.display='none'"></span>
+    <span class="t d-none d-sm-inline">Agenda</span>
+  </a>
+  <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu-principal" aria-controls="menu-principal" aria-expanded="false" aria-label="Ouvrir le menu">
+    <i class="bi bi-list fs-4"></i>
+  </button>
+  <div class="collapse navbar-collapse" id="menu-principal">
+    <ul class="navbar-nav me-auto gap-xl-1">
+      <li class="nav-item"><a href="{{ url_for('dashboard') }}" class="nav-link {% if ep=='dashboard' %}active{% endif %}"><i class="bi bi-speedometer2"></i> Tableau de bord</a></li>
+      <li class="nav-item"><a href="{{ url_for('agenda') }}" class="nav-link {% if ep=='agenda' %}active{% endif %}"><i class="bi bi-calendar3"></i> Agenda</a></li>
+      <li class="nav-item"><a href="{{ url_for('tournee') }}" class="nav-link {% if ep=='tournee' %}active{% endif %}"><i class="bi bi-map"></i> Tournée</a></li>
+      <li class="nav-item"><a href="{{ url_for('clients_liste') }}" class="nav-link {% if 'client' in ep %}active{% endif %}"><i class="bi bi-people"></i> Clients</a></li>
+      <li class="nav-item"><a href="{{ url_for('interventions_liste') }}" class="nav-link {% if 'intervention' in ep and ep!='agenda' and 'note_rapide' not in ep %}active{% endif %}"><i class="bi bi-wrench"></i> Interventions</a></li>
+      <li class="nav-item"><a href="{{ url_for('notes_rapides_liste') }}" class="nav-link {% if 'note_rapide' in ep or ep=='notes_rapides_liste' %}active{% endif %}"><i class="bi bi-journal-text"></i> Notes
+        {% if notes_rapides_a_traiter %}<span class="badge bg-warning ms-1">{{ notes_rapides_a_traiter }}</span>{% endif %}</a></li>
+      <li class="nav-item"><a href="{{ url_for('bons_liste') }}" class="nav-link {% if 'bon' in ep %}active{% endif %}"><i class="bi bi-file-earmark-text"></i> Bons</a></li>
+      <li class="nav-item"><a href="{{ url_for('audits_liste') }}" class="nav-link {% if 'audit' in ep %}active{% endif %}"><i class="bi bi-clipboard2-pulse"></i> Audits</a></li>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle {% if 'amdec' in ep or 'document' in ep %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots"></i> Plus</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item {% if 'amdec' in ep %}active{% endif %}" href="{{ url_for('amdec_liste') }}"><i class="bi bi-shield-exclamation"></i> AMDEC</a></li>
+          <li><a class="dropdown-item {% if 'document' in ep %}active{% endif %}" href="{{ url_for('documents_liste') }}"><i class="bi bi-file-earmark-medical"></i> Fiches Tech. / FDS</a></li>
+        </ul>
+      </li>
+    </ul>
+    <ul class="navbar-nav align-items-xl-center">
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle {% if ep=='parametres' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i> <span class="d-xl-none d-xxl-inline">{{ current_user.nom or current_user.username }}</span></a>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item {% if ep=='parametres' %}active{% endif %}" href="{{ url_for('parametres') }}"><i class="bi bi-gear"></i> Paramètres</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Déconnexion</a></li>
+        </ul>
+      </li>
+    </ul>
   </div>
-  <nav class="pt-2">
-    <div class="nav-section">Principal</div>
-    <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint=='dashboard' %}active{% endif %}">
-      <i class="bi bi-speedometer2"></i> Tableau de bord
-    </a>
-    <a href="{{ url_for('agenda') }}" class="nav-link {% if request.endpoint=='agenda' %}active{% endif %}">
-      <i class="bi bi-calendar3"></i> Agenda
-    </a>
-    <a href="{{ url_for('tournee') }}" class="nav-link {% if request.endpoint=='tournee' %}active{% endif %}">
-      <i class="bi bi-map"></i> Tournée
-    </a>
-
-    <div class="nav-section">Gestion</div>
-    <a href="{{ url_for('clients_liste') }}" class="nav-link {% if 'client' in request.endpoint %}active{% endif %}">
-      <i class="bi bi-people"></i> Clients
-    </a>
-    <a href="{{ url_for('interventions_liste') }}" class="nav-link {% if 'intervention' in request.endpoint and request.endpoint!='agenda' and 'note_rapide' not in request.endpoint %}active{% endif %}">
-      <i class="bi bi-wrench"></i> Interventions
-    </a>
-    <a href="{{ url_for('notes_rapides_liste') }}" class="nav-link {% if 'note_rapide' in request.endpoint or request.endpoint=='notes_rapides_liste' %}active{% endif %}">
-      <i class="bi bi-journal-text"></i> Notes rapides
-      {% if notes_rapides_a_traiter %}
-        <span class="badge bg-warning text-dark ms-1">{{ notes_rapides_a_traiter }}</span>
-      {% endif %}
-    </a>
-    <a href="{{ url_for('bons_liste') }}" class="nav-link {% if 'bon' in request.endpoint %}active{% endif %}">
-      <i class="bi bi-file-earmark-text"></i> Bons d'intervention
-    </a>
-    <a href="{{ url_for('audits_liste') }}" class="nav-link {% if 'audit' in request.endpoint %}active{% endif %}">
-      <i class="bi bi-clipboard2-pulse"></i> Audits
-    </a>
-    <a href="{{ url_for('amdec_liste') }}" class="nav-link {% if 'amdec' in request.endpoint %}active{% endif %}">
-      <i class="bi bi-shield-exclamation"></i> AMDEC
-    </a>
-    <a href="{{ url_for('documents_liste') }}" class="nav-link {% if 'document' in request.endpoint %}active{% endif %}">
-      <i class="bi bi-file-earmark-medical"></i> Fiches Tech. / FDS
-    </a>
-
-    <div class="nav-section">Compte</div>
-    <a href="{{ url_for('parametres') }}" class="nav-link {% if request.endpoint=='parametres' %}active{% endif %}">
-      <i class="bi bi-gear"></i> Paramètres
-    </a>
-    <a href="{{ url_for('logout') }}" class="nav-link">
-      <i class="bi bi-box-arrow-right"></i> Déconnexion
-    </a>
-  </nav>
-</div>
-<div class="sidebar-overlay" id="sidebar-overlay"></div>
+</nav>
 
 <div class="main">
-  <div class="topbar">
+  <div class="page-head">
     <div class="d-flex align-items-center gap-2">
-      <button type="button" class="btn btn-outline-secondary sidebar-toggle-btn" id="sidebar-toggle" aria-label="Ouvrir le menu">
-        <i class="bi bi-list fs-5"></i>
-      </button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-retour" onclick="retourArriere()" title="Revenir à la page précédente">
         <i class="bi bi-arrow-left"></i> <span class="d-none d-md-inline">Retour</span>
       </button>
@@ -262,7 +196,6 @@
     </div>
     <div class="d-flex align-items-center flex-wrap gap-2 justify-content-end">
       <span id="offline-badge" style="display:none;" title="Statut connexion"></span>
-      <span class="text-muted small d-none d-sm-inline"><i class="bi bi-person-circle"></i> {{ current_user.nom or current_user.username }}</span>
       {% block topbar_actions %}{% endblock %}
     </div>
   </div>
