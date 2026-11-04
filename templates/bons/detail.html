@@ -50,6 +50,11 @@
           <tr><td class="text-muted small fw-semibold" style="width:110px">Numéro</td><td class="fw-bold">{{ bon.numero }}</td></tr>
           <tr><td class="text-muted small fw-semibold">Client</td>
             <td><a href="{{ url_for('client_detail', id=bon.intervention.client_id) }}">{{ bon.intervention.client.nom_affichage }}</a></td></tr>
+          {% set _c = bon.intervention.client %}
+          {% set adr_site = bon.intervention.adresse or ((_c.adresse or '') ~ (', ' ~ _c.code_postal if _c.code_postal else '') ~ (' ' ~ _c.ville if _c.ville else '')) %}
+          {% if adr_site and adr_site|trim and adr_site|trim|lower != 'none' %}
+          <tr><td class="text-muted small fw-semibold">Site</td><td style="white-space:pre-line">{{ adr_site|trim }}</td></tr>
+          {% endif %}
           <tr><td class="text-muted small fw-semibold">Intervention</td>
             <td><a href="{{ url_for('intervention_detail', id=bon.intervention_id) }}">{{ bon.intervention.reference }}</a></td></tr>
           <tr><td class="text-muted small fw-semibold">Date inter.</td><td>{{ bon.intervention.date_planifiee.strftime('%d/%m/%Y') }}</td></tr>

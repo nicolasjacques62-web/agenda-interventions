@@ -1241,7 +1241,7 @@ def generer_pdf(bon, inclure_photos=True, inclure_logos=True):
     elems.append(Spacer(1, 0.4*cm))
 
     data_h = [
-        ['', 'INTERVENTION', '', 'CLIENT', ''],
+        ['INTERVENTION', '', '', 'CLIENT', ''],
         ['Réf.', inter.reference, '', 'Nom', cli.nom_affichage],
         ['Date', inter.date_planifiee.strftime('%d/%m/%Y %H:%M'), '',
          'Email', _txt_client(cli.email)],
@@ -1268,6 +1268,24 @@ def generer_pdf(bon, inclure_photos=True, inclure_logos=True):
         ('ROWBACKGROUNDS', (3, 1), (4, -1), [colors.white, colors.HexColor('#f5f5f5')]),
     ]))
     elems.append(t)
+
+    # ── Adresse du site d'intervention (celle de l'intervention, sinon celle du client) ──
+    from html import escape as _html_escape
+    adresse_site = _txt_client(inter.adresse) or _adresse_client(cli)
+    if adresse_site:
+        s_site = ParagraphStyle('site', parent=styles['Normal'], fontSize=9, leading=12)
+        t_site = Table([
+            [Paragraph("<b>SITE D'INTERVENTION</b>", ParagraphStyle(
+                'site_h', parent=s_site, textColor=colors.white))],
+            [Paragraph(_html_escape(adresse_site).replace('\n', '<br/>'), s_site)],
+        ], colWidths=[17.5*cm])
+        t_site.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#2c3e50')),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elems.append(Spacer(1, 0.3*cm))
+        elems.append(t_site)
     elems.append(Spacer(1, 0.5*cm))
 
     # ── Grille AMDEC Fréquence x Gravité (case surlignée) ──
