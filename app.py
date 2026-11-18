@@ -753,6 +753,8 @@ class PlanAppatage(db.Model):
     notes = db.Column(db.Text)                         # remarques libres
     data = db.Column(db.Text, nullable=False)          # contenu encodé en base64
     mimetype = db.Column(db.String(80), default='image/jpeg')
+    # 'plan' (plan d'appâtage) | 'conduite' (conduite à tenir) | 'certibiocide'
+    categorie = db.Column(db.String(30), default='plan', nullable=False, server_default='plan')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     client = db.relationship('Client', backref='plans_appatage')
 
@@ -5142,31 +5144,43 @@ def contrat_supprimer(cid):
 
 # ─── PLANS D'APPÂTAGE ────────────────────────────────────────────────────────
 
+# Catégories de documents gérées par la même table (plans_appatage)
+PLAN_CATEGORIES = {
+    'plan':         {'label': "Plan d'appâtage",  'ancre': 'plans-appatage'},
+    'conduite':     {'label': 'Conduite à tenir', 'ancre': 'conduite-a-tenir'},
+    'certibiocide': {'label': 'Certibiocide',     'ancre': 'certibiocide'},
+}
+
+def _plan_cat(value):
+    return value if value in PLAN_CATEGORIES else 'plan'
+
 @app.route('/clients/<int:id>/plans/ajouter', methods=['POST'])
 @login_required
 def plan_ajouter(id):
     c = Client.query.get_or_404(id)
+    cat = _plan_cat(request.form.get('categorie', 'plan'))
+    ancre = '#' + PLAN_CATEGORIES[cat]['ancre']
     file = request.files.get('plan_file')
     if not file or not file.filename:
         flash('Aucun fichier sélectionné.', 'warning')
-        return redirect(url_for('client_detail', id=id))
+        return redirect(url_for('client_detail', id=id) + ancre)
     mime = file.mimetype or 'application/octet-stream'
     if not (mime.startswith('image/') or mime == 'application/pdf'):
         flash('Format accepté : image (JPG, PNG, WEBP) ou PDF.', 'danger')
-        return redirect(url_for('client_detail', id=id))
+        return redirect(url_for('client_detail', id=id) + ancre)
     file.seek(0, 2); size = file.tell(); file.seek(0)
     if size > 15 * 1024 * 1024:
         flash('Fichier trop lourd (max 15 Mo).', 'danger')
-        return redirect(url_for('client_detail', id=id))
+        return redirect(url_for('client_detail', id=id) + ancre)
     nom = request.form.get('plan_nom', '').strip() or file.filename
     notes = request.form.get('plan_notes', '').strip()
     data_b64 = base64.b64encode(file.read()).decode('utf-8')
     plan = PlanAppatage(client_id=id, nom=nom, notes=notes,
-                        data=data_b64, mimetype=mime)
+                        data=data_b64, mimetype=mime, categorie=cat)
     db.session.add(plan)
     db.session.commit()
-    flash(f'Plan « {nom} » ajouté.', 'success')
-    return redirect(url_for('client_detail', id=id) + '#plans-appatage')
+    flash(f'{PLAN_CATEGORIES[cat]["label"]} « {nom} » ajouté.', 'success')
+    return redirect(url_for('client_detail', id=id) + ancre)
 
 @app.route('/clients/plans/<int:plan_id>')
 @login_required
@@ -5184,10 +5198,11 @@ def plan_supprimer(plan_id):
     p = PlanAppatage.query.get_or_404(plan_id)
     cid = p.client_id
     nom = p.nom
+    cat = _plan_cat(p.categorie)
     db.session.delete(p)
     db.session.commit()
-    flash(f'Plan « {nom} » supprimé.', 'info')
-    return redirect(url_for('client_detail', id=cid) + '#plans-appatage')
+    flash(f'{PLAN_CATEGORIES[cat]["label"]} « {nom} » supprimé.', 'info')
+    return redirect(url_for('client_detail', id=cid) + '#' + PLAN_CATEGORIES[cat]['ancre'])
 
 
 # ─── PHOTOS BONS ─────────────────────────────────────────────────────────────
@@ -5821,6 +5836,7 @@ def init_db():
         db.create_all()
         # ── Migrations manuelles : ajout de colonnes sur tables existantes ──
         migrations = [
+            "ALTER TABLE plans_appatage ADD COLUMN IF NOT EXISTS categorie VARCHAR(30) NOT NULL DEFAULT 'plan'",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS latitude FLOAT",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS longitude FLOAT",
             "ALTER TABLE bons_intervention ADD COLUMN IF NOT EXISTS signature_image TEXT",
@@ -5931,6 +5947,7 @@ def init_db():
                 notes TEXT,
                 data TEXT NOT NULL,
                 mimetype VARCHAR(80) DEFAULT 'image/jpeg',
+                categorie VARCHAR(30) NOT NULL DEFAULT 'plan',
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             """CREATE TABLE IF NOT EXISTS client_documents (
