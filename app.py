@@ -2832,6 +2832,99 @@ def clients_liste():
     clients = query.order_by(Client.nom).all()
     return render_template('clients/index.html', clients=clients, q=q)
 
+@app.route('/api/siret/<numero>')
+@login_required
+@limiter.limit("30 per minute")
+def api_recherche_siret(numero):
+    """
+    Recherche d'un client par SIRET (14 chiffres) ou SIREN (9 chiffres) :
+      1. dans la base locale (doublon éventuel)
+      2. dans l'API publique « Recherche d'entreprises » (recherche-entreprises.api.gouv.fr)
+    Retourne un JSON exploitable par le formulaire client.
+    """
+    num = ''.join(ch for ch in numero if ch.isdigit())
+    if len(num) not in (9, 14):
+        return jsonify({'ok': False, 'erreur': 'Le SIRET doit contenir 14 chiffres (ou 9 pour un SIREN).'}), 400
+
+    # ── 1. Client déjà présent dans l'agenda ? ──
+    existant = None
+    exclure_id = request.args.get('exclure', type=int)
+    candidats = Client.query.filter(Client.siret_client.isnot(None), Client.siret_client != '').all()
+    for cl in candidats:
+        s = ''.join(ch for ch in (cl.siret_client or '') if ch.isdigit())
+        if not s or cl.id == exclure_id:
+            continue
+        if s == num or (len(num) == 9 and s.startswith(num)):
+            existant = {'id': cl.id, 'reference': cl.reference, 'nom': cl.nom_affichage,
+                        'ville': cl.ville or '', 'url': url_for('client_detail', id=cl.id)}
+            break
+
+    # ── 2. API Recherche d'entreprises (gratuite, sans clé) ──
+    entreprise = None
+    erreur_api = None
+    try:
+        url = ('https://recherche-entreprises.api.gouv.fr/search?'
+               + urllib.parse.urlencode({'q': num, 'page': 1, 'per_page': 1}))
+        req = urllib.request.Request(url, headers={'Accept': 'application/json',
+                                                   'User-Agent': 'agenda-interventions/1.0'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        resultats = data.get('results') or []
+        if resultats:
+            r = resultats[0]
+            siege = r.get('siege') or {}
+            etab = siege
+            if len(num) == 14:
+                for e in (r.get('matching_etablissements') or []):
+                    if e.get('siret') == num:
+                        etab = e
+                        break
+            # Adresse rue seule (sans CP / ville)
+            rue = ' '.join(x for x in [
+                etab.get('numero_voie'), etab.get('indice_repetition'),
+                etab.get('type_voie'), etab.get('libelle_voie')] if x)
+            if not rue:
+                rue = (etab.get('adresse') or '').replace(etab.get('code_postal') or '', '') \
+                        .replace(etab.get('libelle_commune') or '', '').strip(' ,')
+            complement = etab.get('complement_adresse')
+            if complement:
+                rue = f"{complement}, {rue}" if rue else complement
+            dirigeant = ''
+            dir_nom = dir_prenom = ''
+            for d in (r.get('dirigeants') or []):
+                if d.get('type_dirigeant', d.get('type_personne')) in ('personne physique', None) and d.get('nom'):
+                    dir_nom = (d.get('nom') or '').upper()
+                    dir_prenom = ((d.get('prenoms') or '').split(' ')[0]).title()
+                    dirigeant = ' '.join(x for x in [dir_prenom, dir_nom] if x)
+                    if d.get('qualite'):
+                        dirigeant += f" ({d['qualite']})"
+                    break
+            enseignes = etab.get('liste_enseignes') or []
+            entreprise = {
+                'siren': r.get('siren'),
+                'siret': etab.get('siret') or (num if len(num) == 14 else siege.get('siret')),
+                'raison_sociale': r.get('nom_raison_sociale') or r.get('nom_complet') or '',
+                'nom_complet': r.get('nom_complet') or '',
+                'enseigne': enseignes[0] if enseignes else '',
+                'adresse': rue,
+                'code_postal': etab.get('code_postal') or '',
+                'ville': etab.get('libelle_commune') or '',
+                'naf': etab.get('activite_principale') or r.get('activite_principale') or '',
+                'est_siege': bool(etab.get('est_siege', etab is siege)),
+                'ferme': (etab.get('etat_administratif') == 'F'),
+                'dirigeant': dirigeant,
+                'dirigeant_nom': dir_nom,
+                'dirigeant_prenom': dir_prenom,
+            }
+    except Exception as e:
+        app.logger.warning(f"API recherche-entreprises : {e}")
+        erreur_api = "Service de l'État injoignable pour le moment."
+
+    if not entreprise and not existant and not erreur_api:
+        return jsonify({'ok': False, 'erreur': 'Aucune entreprise trouvée pour ce numéro.'}), 404
+    return jsonify({'ok': True, 'existant': existant, 'entreprise': entreprise, 'erreur_api': erreur_api})
+
+
 @app.route('/clients/nouveau', methods=['GET', 'POST'])
 @login_required
 def client_nouveau():

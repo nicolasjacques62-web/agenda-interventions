@@ -32,14 +32,21 @@
           </div>
           <div class="col-12 pro-fields" style="{{ 'display:none' if (not client or client.type_client=='particulier') else '' }}">
             <div class="row g-3">
-              <div class="col-md-8">
+              <div class="col-md-5">
+                <label class="form-label fw-semibold">SIRET <small class="text-muted fw-normal">(remplit la fiche automatiquement)</small></label>
+                <div class="input-group">
+                  <input type="text" name="siret_client" id="siretInput" class="form-control" inputmode="numeric"
+                         autocomplete="off" placeholder="14 chiffres" value="{{ client.siret_client if client else '' }}">
+                  <button type="button" class="btn btn-outline-primary" id="siretBtn" title="Rechercher l'entreprise">
+                    <i class="bi bi-search"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-md-7">
                 <label class="form-label fw-semibold">Société</label>
                 <input type="text" name="societe" class="form-control" value="{{ client.societe if client else '' }}">
               </div>
-              <div class="col-md-4">
-                <label class="form-label fw-semibold">SIRET</label>
-                <input type="text" name="siret_client" class="form-control" value="{{ client.siret_client if client else '' }}">
-              </div>
+              <div class="col-12" id="siretResultat" style="display:none"></div>
             </div>
           </div>
         </div>
@@ -173,6 +180,111 @@ document.getElementById('typeClient').addEventListener('change', function() {
     el.style.display = this.value === 'professionnel' ? '' : 'none';
   });
 });
+
+// ── Recherche SIRET : doublon dans l'agenda + remplissage via l'API de l'État ──
+(function() {
+  const input = document.getElementById('siretInput');
+  const btn   = document.getElementById('siretBtn');
+  const zone  = document.getElementById('siretResultat');
+  const form  = input.closest('form');
+  const clientId = {{ client.id if client else 'null' }};
+  let dernier = '';
+
+  const champ = n => form.querySelector('[name="' + n + '"]');
+  const esc = t => String(t || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const afficher = html => { zone.innerHTML = html; zone.style.display = html ? '' : 'none'; };
+
+  // Remplit un champ ; si écraser=false, seulement s'il est vide
+  function remplir(nom, val, ecraser) {
+    const el = champ(nom);
+    if (!el || !val) return;
+    if (ecraser || !el.value.trim()) {
+      el.value = val;
+      el.classList.add('is-valid');
+      setTimeout(() => el.classList.remove('is-valid'), 2500);
+    }
+  }
+
+  async function chercher(force) {
+    const num = input.value.replace(/\D/g, '');
+    if (num.length !== 14 && num.length !== 9) {
+      if (force) afficher('<div class="alert alert-warning py-2 mb-0 small">Saisissez 14 chiffres (SIRET) ou 9 chiffres (SIREN).</div>');
+      return;
+    }
+    if (num === dernier && !force) return;
+    dernier = num;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    afficher('<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Recherche en cours…</div>');
+    try {
+      const url = '{{ url_for("api_recherche_siret", numero="__N__") }}'.replace('__N__', num)
+                + (clientId ? '?exclure=' + clientId : '');
+      const r = await fetch(url, {credentials: 'same-origin'});
+      const d = await r.json();
+      let html = '';
+
+      if (d.existant) {
+        const e = d.existant;
+        html += '<div class="alert alert-danger py-2 mb-2 small"><i class="bi bi-exclamation-triangle-fill me-1"></i>'
+              + '<strong>Ce client existe déjà dans l\'agenda :</strong> ' + esc(e.nom)
+              + (e.ville ? ' — ' + esc(e.ville) : '') + ' (' + esc(e.reference) + ') '
+              + '<a href="' + esc(e.url) + '" class="alert-link ms-1">Ouvrir sa fiche →</a></div>';
+      }
+
+      if (d.entreprise) {
+        const e = d.entreprise;
+        const ecraser = !clientId;   // création : on remplit tout ; modification : seulement les champs vides
+        remplir('societe', e.raison_sociale, ecraser);
+        remplir('adresse', e.adresse, ecraser);
+        remplir('code_postal', e.code_postal, ecraser);
+        remplir('ville', e.ville, ecraser);
+        if (e.dirigeant_nom) {
+          remplir('nom', e.dirigeant_nom, false);
+          remplir('prenom', e.dirigeant_prenom, false);
+        } else {
+          remplir('nom', e.raison_sociale, false);
+        }
+        if (e.siret && num.length === 9) input.value = e.siret;   // SIREN → SIRET du siège
+        const notes = champ('notes');
+        const infos = [];
+        if (e.naf) infos.push('Code NAF : ' + e.naf);
+        if (e.dirigeant) infos.push('Dirigeant : ' + e.dirigeant);
+        if (notes && !clientId && infos.length && !notes.value.includes('Code NAF')) {
+          notes.value = (notes.value ? notes.value + '\n' : '') + infos.join('\n');
+        }
+        html += '<div class="alert alert-' + (e.ferme ? 'warning' : 'success') + ' py-2 mb-0 small">'
+              + (e.ferme ? '<i class="bi bi-x-octagon-fill me-1"></i><strong>Établissement fermé</strong> — vérifiez le SIRET.<br>'
+                         : '<i class="bi bi-check-circle-fill me-1"></i>')
+              + '<strong>' + esc(e.raison_sociale) + '</strong>'
+              + (e.enseigne ? ' (' + esc(e.enseigne) + ')' : '')
+              + ' — ' + esc(e.adresse) + ' ' + esc(e.code_postal) + ' ' + esc(e.ville)
+              + (e.naf ? ' · NAF ' + esc(e.naf) : '')
+              + (e.dirigeant ? '<br>Dirigeant : ' + esc(e.dirigeant) : '')
+              + (e.est_siege ? ' <span class="badge bg-secondary ms-1">Siège</span>' : ' <span class="badge bg-info ms-1">Établissement secondaire</span>')
+              + '</div>';
+      } else if (d.erreur_api) {
+        html += '<div class="alert alert-warning py-2 mb-0 small">' + esc(d.erreur_api) + ' Remplissez la fiche à la main.</div>';
+      } else if (!d.ok) {
+        html += '<div class="alert alert-warning py-2 mb-0 small">' + esc(d.erreur || 'Aucun résultat.') + '</div>';
+      }
+      afficher(html);
+    } catch (err) {
+      afficher('<div class="alert alert-warning py-2 mb-0 small">Recherche impossible (connexion ?). Remplissez la fiche à la main.</div>');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-search"></i>';
+    }
+  }
+
+  btn.addEventListener('click', () => chercher(true));
+  input.addEventListener('input', () => {
+    if (input.value.replace(/\D/g, '').length === 14) chercher(false);
+  });
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); chercher(true); }
+  });
+})();
+
 {% if not client %}
 document.getElementById('planifAuto').addEventListener('change', function() {
   document.getElementById('planifFields').style.display = this.checked ? '' : 'none';
