@@ -745,6 +745,18 @@ class BonPhoto(db.Model):
     bon = db.relationship('BonIntervention', backref='photos')
 
 
+class PhotoLinkedin(db.Model):
+    """Sélection des photos de chantier pour les posts LinkedIn (Photothèque).
+    Table séparée : créée automatiquement par db.create_all(), sans toucher à bon_photos."""
+    __tablename__ = 'photos_linkedin'
+    id = db.Column(db.Integer, primary_key=True)
+    photo_id = db.Column(db.Integer, db.ForeignKey('bon_photos.id', ondelete='CASCADE'), unique=True, nullable=False)
+    statut = db.Column(db.String(20), nullable=False, default='validee')   # validee | refusee | publiee
+    note = db.Column(db.String(300))                                       # idée de post / légende
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    photo = db.relationship('BonPhoto', backref=db.backref('linkedin', uselist=False, cascade='all, delete-orphan'))
+
+
 class PlanAppatage(db.Model):
     __tablename__ = 'plans_appatage'
     id = db.Column(db.Integer, primary_key=True)
@@ -5253,6 +5265,68 @@ def bon_photo_supprimer(photo_id):
     db.session.commit()
     flash('Photo supprimée.', 'info')
     return redirect(url_for('bon_detail', id=bid))
+
+# ─── PHOTOTHÈQUE LINKEDIN ────────────────────────────────────────────────────
+
+PHOTOTHEQUE_FILTRES = {
+    'a_trier': 'À trier', 'validee': 'Validées', 'publiee': 'Publiées', 'refusee': 'Refusées', 'toutes': 'Toutes',
+}
+
+@app.route('/phototheque')
+@login_required
+def phototheque():
+    filtre = request.args.get('filtre', 'a_trier')
+    if filtre not in PHOTOTHEQUE_FILTRES:
+        filtre = 'a_trier'
+    page = request.args.get('page', 1, type=int)
+    q = (db.session.query(BonPhoto.id, BonPhoto.nom, BonPhoto.created_at, BonPhoto.bon_id,
+                          PhotoLinkedin.statut, PhotoLinkedin.note)
+         .outerjoin(PhotoLinkedin, PhotoLinkedin.photo_id == BonPhoto.id))
+    if filtre == 'a_trier':
+        q = q.filter(PhotoLinkedin.id.is_(None))
+    elif filtre != 'toutes':
+        q = q.filter(PhotoLinkedin.statut == filtre)
+    pagination = q.order_by(BonPhoto.created_at.desc(), BonPhoto.id.desc()).paginate(page=page, per_page=24, error_out=False)
+    bons = {b.id: b for b in BonIntervention.query.filter(
+        BonIntervention.id.in_([r.bon_id for r in pagination.items] or [0])).all()}
+    compteurs = {k: 0 for k in PHOTOTHEQUE_FILTRES}
+    compteurs['toutes'] = BonPhoto.query.count()
+    for st, n in db.session.query(PhotoLinkedin.statut, db.func.count(PhotoLinkedin.id)).group_by(PhotoLinkedin.statut):
+        compteurs[st] = n
+    compteurs['a_trier'] = compteurs['toutes'] - sum(compteurs[k] for k in ('validee', 'publiee', 'refusee'))
+    return render_template('phototheque/index.html', pagination=pagination, bons=bons,
+                           filtre=filtre, filtres=PHOTOTHEQUE_FILTRES, compteurs=compteurs)
+
+@app.route('/phototheque/<int:photo_id>/statut', methods=['POST'])
+@login_required
+def phototheque_statut(photo_id):
+    BonPhoto.query.get_or_404(photo_id)
+    statut = request.form.get('statut', '')
+    sel = PhotoLinkedin.query.filter_by(photo_id=photo_id).first()
+    if statut == 'a_trier':
+        if sel:
+            db.session.delete(sel)
+    elif statut in ('validee', 'refusee', 'publiee'):
+        if not sel:
+            sel = PhotoLinkedin(photo_id=photo_id)
+            db.session.add(sel)
+        sel.statut = statut
+        if 'note' in request.form:
+            sel.note = (request.form.get('note') or '').strip()[:300] or None
+    else:
+        abort(400)
+    db.session.commit()
+    if request.headers.get('X-Requested-With') == 'fetch':
+        return jsonify({'ok': True, 'statut': statut})
+    return redirect(request.referrer or url_for('phototheque'))
+
+@app.route('/phototheque/<int:photo_id>/telecharger')
+@login_required
+def phototheque_telecharger(photo_id):
+    p = BonPhoto.query.get_or_404(photo_id)
+    nom = f"HPS3D_photo_{p.id}.jpg"
+    return send_file(io.BytesIO(base64.b64decode(p.data)), mimetype='image/jpeg',
+                     as_attachment=True, download_name=nom)
 
 # ─── PORTAIL CLIENT ───────────────────────────────────────────────────────────
 

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Photothèque LinkedIn{% endblock %}
+{% block page_title %}<i class="bi bi-images me-2"></i>Photothèque LinkedIn{% endblock %}
+
+{% block content %}
+<style>
+  .pt-card { position: relative; border-radius: 10px; overflow: hidden; background: #f1f5f9; }
+  .pt-card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: zoom-in; }
+  .pt-card .pt-meta { font-size: .78rem; padding: .45rem .6rem; background: #fff; }
+  .pt-card .pt-actions { display: flex; gap: .35rem; padding: 0 .6rem .6rem; background: #fff; }
+  .pt-card .pt-actions .btn { flex: 1; }
+  .pt-card.is-validee { outline: 3px solid #198754; }
+  .pt-card.is-refusee { opacity: .45; }
+  .pt-card.is-publiee { outline: 3px solid #1aabe3; }
+  .pt-badge { position: absolute; top: .5rem; left: .5rem; }
+</style>
+
+<div class="alert alert-info small mb-3">
+  <i class="bi bi-shield-check me-1"></i>
+  Avant de valider : pas de visage, pas de plaque d'immatriculation, pas de nom de client ni d'adresse lisible sur la photo.
+</div>
+
+<ul class="nav nav-pills mb-3 flex-wrap gap-1">
+  {% for k, label in filtres.items() %}
+  <li class="nav-item">
+    <a class="nav-link {% if filtre==k %}active{% endif %}" href="{{ url_for('phototheque', filtre=k) }}">
+      {{ label }} <span class="badge bg-light text-dark ms-1">{{ compteurs[k] }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+
+{% if not pagination.items %}
+<div class="card"><div class="card-body text-center py-5 text-muted">
+  <i class="bi bi-images fs-1 d-block mb-3" style="color:#cbd5e1"></i>
+  Aucune photo dans cette catégorie.
+</div></div>
+{% else %}
+<div class="row g-3">
+  {% for r in pagination.items %}
+  {% set b = bons.get(r.bon_id) %}
+  {% set itv = b.intervention if b else None %}
+  <div class="col-6 col-md-4 col-xl-3">
+    <div class="pt-card shadow-sm is-{{ r.statut or 'a_trier' }}" id="photo-{{ r.id }}">
+      {% if r.statut %}<span class="badge pt-badge {{ {'validee':'bg-success','refusee':'bg-secondary','publiee':'bg-info'}[r.statut] }}">{{ filtres[r.statut] }}</span>{% endif %}
+      <a href="{{ url_for('bon_photo_voir', photo_id=r.id) }}" target="_blank">
+        <img src="{{ url_for('bon_photo_voir', photo_id=r.id) }}" loading="lazy" alt="Photo {{ r.id }}">
+      </a>
+      <div class="pt-meta">
+        <div class="fw-semibold text-truncate">{{ itv.type_intervention or itv.titre if itv else '—' }}</div>
+        <div class="text-muted text-truncate">
+          {{ (itv.date_planifiee or r.created_at).strftime('%d/%m/%Y') if itv else r.created_at.strftime('%d/%m/%Y') }}
+          {% if itv and itv.client %} · {{ itv.client.nom }}{% endif %}
+          {% if b %} · <a href="{{ url_for('bon_detail', id=b.id) }}">{{ b.numero }}</a>{% endif %}
+        </div>
+        {% if r.note %}<div class="small fst-italic text-truncate mt-1">{{ r.note }}</div>{% endif %}
+      </div>
+      <div class="pt-actions">
+        {% if r.statut != 'validee' %}
+        <form method="post" action="{{ url_for('phototheque_statut', photo_id=r.id) }}" class="d-flex flex-fill">
+          <input type="hidden" name="statut" value="validee">
+          <button class="btn btn-success btn-sm w-100" title="Valider pour LinkedIn"><i class="bi bi-check-lg"></i></button>
+        </form>
+        {% endif %}
+        {% if r.statut != 'refusee' %}
+        <form method="post" action="{{ url_for('phototheque_statut', photo_id=r.id) }}" class="d-flex flex-fill">
+          <input type="hidden" name="statut" value="refusee">
+          <button class="btn btn-outline-secondary btn-sm w-100" title="Refuser"><i class="bi bi-x-lg"></i></button>
+        </form>
+        {% endif %}
+        {% if r.statut == 'validee' %}
+        <form method="post" action="{{ url_for('phototheque_statut', photo_id=r.id) }}" class="d-flex flex-fill">
+          <input type="hidden" name="statut" value="publiee">
+          <button class="btn btn-info btn-sm w-100 text-white" title="Marquer comme publiée"><i class="bi bi-linkedin"></i></button>
+        </form>
+        {% endif %}
+        {% if r.statut %}
+        <form method="post" action="{{ url_for('phototheque_statut', photo_id=r.id) }}" class="d-flex flex-fill">
+          <input type="hidden" name="statut" value="a_trier">
+          <button class="btn btn-outline-dark btn-sm w-100" title="Remettre à trier"><i class="bi bi-arrow-counterclockwise"></i></button>
+        </form>
+        {% endif %}
+        <a class="btn btn-outline-primary btn-sm flex-fill" href="{{ url_for('phototheque_telecharger', photo_id=r.id) }}" title="Télécharger"><i class="bi bi-download"></i></a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if pagination.pages > 1 %}
+<nav class="mt-4"><ul class="pagination justify-content-center">
+  {% if pagination.has_prev %}<li class="page-item"><a class="page-link" href="{{ url_for('phototheque', filtre=filtre, page=pagination.prev_num) }}">‹</a></li>{% endif %}
+  <li class="page-item disabled"><span class="page-link">Page {{ pagination.page }} / {{ pagination.pages }}</span></li>
+  {% if pagination.has_next %}<li class="page-item"><a class="page-link" href="{{ url_for('phototheque', filtre=filtre, page=pagination.next_num) }}">›</a></li>{% endif %}
+</ul></nav>
+{% endif %}
+{% endif %}
+{% endblock %}

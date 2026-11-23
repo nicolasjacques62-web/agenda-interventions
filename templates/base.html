@@ -166,10 +166,11 @@
       <li class="nav-item"><a href="{{ url_for('bons_liste') }}" class="nav-link {% if 'bon' in ep %}active{% endif %}"><i class="bi bi-file-earmark-text"></i> Bons</a></li>
       <li class="nav-item"><a href="{{ url_for('audits_liste') }}" class="nav-link {% if 'audit' in ep %}active{% endif %}"><i class="bi bi-clipboard2-pulse"></i> Audits</a></li>
       <li class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle {% if 'amdec' in ep or 'document' in ep %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots"></i> Plus</a>
+        <a class="nav-link dropdown-toggle {% if 'amdec' in ep or 'document' in ep or 'phototheque' in ep %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots"></i> Plus</a>
         <ul class="dropdown-menu">
           <li><a class="dropdown-item {% if 'amdec' in ep %}active{% endif %}" href="{{ url_for('amdec_liste') }}"><i class="bi bi-shield-exclamation"></i> AMDEC</a></li>
           <li><a class="dropdown-item {% if 'document' in ep %}active{% endif %}" href="{{ url_for('documents_liste') }}"><i class="bi bi-file-earmark-medical"></i> Fiches Tech. / FDS</a></li>
+          <li><a class="dropdown-item {% if 'phototheque' in ep %}active{% endif %}" href="{{ url_for('phototheque') }}"><i class="bi bi-images"></i> Photothèque LinkedIn</a></li>
         </ul>
       </li>
     </ul>
