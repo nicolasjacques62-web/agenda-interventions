@@ -5247,6 +5247,30 @@ def bon_photo_ajouter(id):
     flash('Photo ajoutée.', 'success')
     return redirect(url_for('bon_detail', id=id))
 
+@app.route('/bons/<int:id>/photos/importer-lien', methods=['POST'])
+@login_required
+def bon_photo_importer_lien(id):
+    """Importe des photos depuis un fichier JSON {nom: base64} heberge sur le depot GitHub de HPS
+    (utilise par l'assistant pour ajouter des photos a distance). Lien limite au depot HPS."""
+    BonIntervention.query.get_or_404(id)
+    url = (request.form.get('url') or '').strip()
+    prefixe = 'https://raw.githubusercontent.com/nicolasjacques62-web/agenda-interventions/'
+    if not url.startswith(prefixe):
+        return jsonify({'ok': False, 'erreur': 'lien non autorise'}), 400
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            donnees = json.loads(r.read().decode('utf-8'))
+    except Exception as e:
+        return jsonify({'ok': False, 'erreur': str(e)}), 400
+    ajoutees = []
+    for nom, b64 in donnees.items():
+        img = _corriger_orientation(base64.b64decode(b64))
+        db.session.add(BonPhoto(bon_id=id, nom=nom[:200],
+                                data=base64.b64encode(img).decode('utf-8'), mimetype='image/jpeg'))
+        ajoutees.append(nom)
+    db.session.commit()
+    return jsonify({'ok': True, 'photos': ajoutees})
+
 @app.route('/bons/photos/<int:photo_id>')
 @login_required
 def bon_photo_voir(photo_id):
