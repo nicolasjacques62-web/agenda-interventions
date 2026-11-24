@@ -3925,6 +3925,14 @@ def bon_modifier(id):
         b.niveau_risque = request.form.get('niveau_risque', '').strip() or None
         b.risque_frequence = request.form.get('risque_frequence', '').strip() or None
         b.risque_gravite = request.form.get('risque_gravite', '').strip() or None
+        dc = (request.form.get('date_creation') or '').strip()
+        if dc:
+            try:
+                b.date_creation = datetime.strptime(dc, '%Y-%m-%d').replace(
+                    hour=b.date_creation.hour if b.date_creation else 12,
+                    minute=b.date_creation.minute if b.date_creation else 0)
+            except ValueError:
+                pass
         mats = _extract_mats(request)
         b.materiaux_utilises = json.dumps(mats, ensure_ascii=False) if mats else None
         if request.form.get('finaliser'):

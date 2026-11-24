@@ -140,6 +140,13 @@
           <input type="number" name="temps_passe" class="form-control" min="0" step="15"
                  value="{{ bon.temps_passe if bon else '' }}" placeholder="Ex : 90">
         </div>
+        {% if bon %}
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small">Date du bon</label>
+          <input type="date" name="date_creation" class="form-control"
+                 value="{{ bon.date_creation.strftime('%Y-%m-%d') if bon.date_creation else '' }}">
+        </div>
+        {% endif %}
       </div>
     </div>
 
